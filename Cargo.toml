@@ -1,0 +1,18 @@
+[package]
+name = "e2manage-pos-terminal"
+version = "0.1.0"
+edition = "2021"
+description = "Open-source POS Terminal for E2Manage ERP - Rust + Slint"
+license = "MIT"
+repository = "https://github.com/e2manage/e2manage-pos-terminal"
+homepage = "https://e2manage.com"
+readme = "README.md"
+keywords = ["pos", "point-of-sale", "retail", "erp", "slint"]
+categories = ["gui", "embedded"]
+authors = ["E2Manage Team"]
+
+[dependencies]
+slint = "1.8"
+
+[build-dependencies]
+slint-build = "1.8"

@@ -1,0 +1,24 @@
+# Build
+/target/
+Cargo.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Config (may contain secrets)
+config.toml
+
+# Local database
+*.db
+*.sqlite
+
+# Logs
+*.log
+wadi-pos-terminal-linux
