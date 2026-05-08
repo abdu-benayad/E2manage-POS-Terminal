@@ -1,0 +1,46 @@
+[package]
+name = "pos-api"
+version = "0.1.0"
+edition = "2021"
+description = "HTTP API client for E2Manage POS Terminal"
+license = "MIT"
+authors = ["E2Manage Team"]
+
+[dependencies]
+pos-models.workspace = true
+pos-db.workspace = true
+
+# HTTP Client
+reqwest = { version = "0.12", features = ["json", "rustls-tls", "cookies"], default-features = false }
+
+# Async Runtime
+tokio = { version = "1", features = ["sync", "time"] }
+
+# Decimal
+rust_decimal.workspace = true
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+# Date/Time
+chrono.workspace = true
+
+# UUID
+uuid.workspace = true
+
+# Error Handling
+thiserror.workspace = true
+anyhow.workspace = true
+
+# Logging
+tracing.workspace = true
+
+# System Information (for hardware ID)
+hostname = "0.4"
+
+# URL Encoding
+urlencoding = "2.1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt", "macros"] }

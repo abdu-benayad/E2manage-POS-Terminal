@@ -1,0 +1,40 @@
+[package]
+name = "pos-db"
+version = "0.1.0"
+edition = "2021"
+description = "SQLite database layer for E2Manage POS Terminal"
+license = "MIT"
+authors = ["E2Manage Team"]
+
+[dependencies]
+pos-models.workspace = true
+
+# Database
+rusqlite = { version = "0.32", features = ["bundled", "chrono"] }
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+# Date/Time
+chrono.workspace = true
+
+# UUID
+uuid.workspace = true
+
+# Error Handling
+thiserror.workspace = true
+anyhow.workspace = true
+
+# Logging
+tracing.workspace = true
+
+# Cryptography (for PIN hashing)
+bcrypt = "0.15"
+parking_lot.workspace = true
+
+# Decimal Numbers (for currency)
+rust_decimal.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

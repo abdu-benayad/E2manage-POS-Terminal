@@ -1,0 +1,18 @@
+[package]
+name = "pos-models"
+version = "0.1.0"
+edition = "2021"
+description = "Domain models for E2Manage POS Terminal"
+license = "MIT"
+authors = ["E2Manage Team"]
+
+[dependencies]
+serde.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+thiserror.workspace = true
+rust_decimal.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

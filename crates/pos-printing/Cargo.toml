@@ -1,0 +1,22 @@
+[package]
+name = "pos-printing"
+version = "0.1.0"
+edition = "2021"
+description = "Receipt printing service for E2Manage POS Terminal"
+license = "MIT"
+authors = ["E2Manage Team"]
+
+[dependencies]
+pos-models.workspace = true
+pos-escpos.workspace = true
+
+# Error Handling
+anyhow.workspace = true
+
+# Logging
+tracing.workspace = true
+
+# Decimal Numbers (for currency)
+rust_decimal.workspace = true
+
+[dev-dependencies]

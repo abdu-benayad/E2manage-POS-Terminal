@@ -1,0 +1,14 @@
+[package]
+name = "pos-escpos"
+version = "0.1.0"
+edition = "2021"
+description = "ESC/POS thermal printer command builder"
+license = "MIT"
+authors = ["E2Manage Team"]
+keywords = ["escpos", "thermal-printer", "pos", "receipt"]
+categories = ["hardware-support", "encoding"]
+
+# This crate has zero external dependencies - pure Rust!
+[dependencies]
+
+[dev-dependencies]

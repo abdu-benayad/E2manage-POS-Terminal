@@ -1,0 +1,51 @@
+[package]
+name = "pos-updater"
+version = "0.1.0"
+edition = "2021"
+description = "Auto-updater and launcher for E2Manage POS Terminal"
+license = "MIT"
+
+[[bin]]
+name = "pos-launcher"
+path = "src/main.rs"
+
+[dependencies]
+# HTTP client
+reqwest = { version = "0.11", features = ["blocking", "json"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Async runtime (for downloads)
+tokio = { version = "1", features = ["rt-multi-thread", "fs", "io-util", "process"] }
+
+# File operations
+tempfile = "3"
+flate2 = "1"
+tar = "0.4"
+
+# Crypto for signature verification
+sha2 = "0.10"
+hex = "0.4"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Error handling
+anyhow = "1"
+thiserror = "1"
+
+# Async utilities
+futures-util = "0.3"
+
+# Directories
+dirs = "5"
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Unix-specific
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

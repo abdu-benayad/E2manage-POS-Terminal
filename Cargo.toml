@@ -1,3 +1,22 @@
+# ============================================================================
+# E2Manage POS Terminal - Workspace Root
+# ============================================================================
+
+[workspace]
+resolver = "2"
+members = [
+    "crates/pos-models",
+    "crates/pos-escpos",
+    "crates/pos-db",
+    "crates/pos-api",
+    "crates/pos-printing",
+    "crates/pos-services",
+    # "crates/pos-updater",  # Temporarily excluded - needs vendor deps
+]
+
+# The main terminal binary
+default-members = ["."]
+
 [package]
 name = "e2manage-pos-terminal"
 version = "0.1.0"
@@ -11,8 +30,150 @@ keywords = ["pos", "point-of-sale", "retail", "erp", "slint"]
 categories = ["gui", "embedded"]
 authors = ["E2Manage Team"]
 
+# ============================================================================
+# WORKSPACE DEPENDENCIES (shared versions)
+# ============================================================================
+
+[workspace.dependencies]
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Date/Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# UUID
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# Error Handling
+thiserror = "1"
+anyhow = "1"
+
+# Logging
+tracing = "0.1"
+
+# Decimal Numbers (for currency)
+rust_decimal = { version = "1", features = ["serde", "serde-with-float"] }
+
+# Synchronization
+parking_lot = "0.12"
+
+# Internal crates
+pos-models = { path = "crates/pos-models" }
+pos-escpos = { path = "crates/pos-escpos" }
+pos-db = { path = "crates/pos-db" }
+pos-api = { path = "crates/pos-api" }
+pos-printing = { path = "crates/pos-printing" }
+pos-services = { path = "crates/pos-services" }
+
+# ============================================================================
+# MAIN BINARY DEPENDENCIES
+# ============================================================================
+
 [dependencies]
-slint = "1.8"
+# Internal crates
+pos-models.workspace = true
+pos-escpos.workspace = true
+pos-db.workspace = true
+pos-api.workspace = true
+pos-printing.workspace = true
+pos-services.workspace = true
+
+# UI Framework - using specific backend to reduce compile time
+# Available backends: backend-qt, backend-winit, backend-linuxkms
+slint = { version = "1.8", default-features = false, features = ["backend-winit", "renderer-femtovg", "compat-1-2"] }
+
+# Async Runtime
+tokio = { version = "1", features = ["sync", "time", "rt-multi-thread", "macros"] }
+
+# Re-exports from internal crates
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+rust_decimal.workspace = true
+parking_lot.workspace = true
+
+# Logging subscriber (only needed in main binary)
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# File-based logging with rotation
+tracing-appender = "0.2"
+
+# System Directories
+directories = "5"
+
+# Lazy Initialization
+once_cell = "1"
+
+# ============================================================================
+# BUILD DEPENDENCIES
+# ============================================================================
 
 [build-dependencies]
 slint-build = "1.8"
+
+# ============================================================================
+# PLATFORM-SPECIFIC DEPENDENCIES
+# ============================================================================
+
+[target.'cfg(windows)'.dependencies]
+serialport = { version = "4", optional = true }
+
+[target.'cfg(unix)'.dependencies]
+serialport = { version = "4", optional = true }
+
+# ============================================================================
+# FEATURES
+# ============================================================================
+
+[features]
+default = []
+hardware = ["serialport"]
+encrypted-db = []
+face-recognition = []
+
+# ============================================================================
+# PROFILES
+# ============================================================================
+
+[profile.dev]
+opt-level = 0
+incremental = true
+codegen-units = 16
+debug = 1
+split-debuginfo = "unpacked"
+
+# Fast release builds (use for development/testing)
+[profile.release]
+opt-level = 3
+lto = "thin"           # Thin LTO - much faster than full, still good optimization
+codegen-units = 16     # Parallel codegen - uses all cores
+strip = true
+
+# Production builds - smallest/fastest binary but SLOW compilation (~40+ min)
+[profile.release-prod]
+inherits = "release"
+opt-level = 3
+lto = true             # Full LTO - slow but smallest binary
+codegen-units = 1      # Single codegen unit - slow but best optimization
+strip = true
+
+[profile.release-small]
+inherits = "release-prod"
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+
+# ============================================================================
+# DEV DEPENDENCIES
+# ============================================================================
+
+[dev-dependencies]
+tempfile = "3"
+urlencoding = "2.1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
