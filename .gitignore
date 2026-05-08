@@ -22,3 +22,10 @@ config.toml
 # Logs
 *.log
 wadi-pos-terminal-linux
+
+# Vendored Rust deps (offline builds only; do not track)
+/vendor/
+*.tar.gz
+
+# Migration backup dirs
+*.bak/
