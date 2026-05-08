@@ -13,7 +13,9 @@ pos-api.workspace = true
 pos-printing.workspace = true
 
 # Async Runtime
-tokio = { version = "1", features = ["sync", "time"] }
+# rt-multi-thread is required because update_service::install_update calls
+# tokio::task::block_in_place, which is gated behind that feature.
+tokio = { version = "1", features = ["sync", "time", "rt-multi-thread"] }
 
 # Serialization
 serde.workspace = true
