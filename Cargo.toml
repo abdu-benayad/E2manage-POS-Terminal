@@ -11,6 +11,8 @@ members = [
     "crates/pos-api",
     "crates/pos-printing",
     "crates/pos-services",
+    "crates/pos-bootstrap",
+    "crates/pos-headless",
     # "crates/pos-updater",  # Temporarily excluded - needs vendor deps
 ]
 
@@ -65,6 +67,7 @@ pos-db = { path = "crates/pos-db" }
 pos-api = { path = "crates/pos-api" }
 pos-printing = { path = "crates/pos-printing" }
 pos-services = { path = "crates/pos-services" }
+pos-bootstrap = { path = "crates/pos-bootstrap" }
 
 # ============================================================================
 # MAIN BINARY DEPENDENCIES

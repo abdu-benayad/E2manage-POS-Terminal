@@ -1,0 +1,28 @@
+[package]
+name = "pos-bootstrap"
+version = "0.1.0"
+edition = "2021"
+description = "Process-startup wiring shared by pos-terminal binary and pos-headless binary"
+license = "MIT"
+authors = ["E2Manage Team"]
+
+[dependencies]
+pos-models.workspace = true
+pos-db.workspace = true
+pos-api.workspace = true
+pos-services.workspace = true
+
+# Async runtime — needed to set the saved session token on ApiClient at startup
+# (ApiClient::set_token is async). rt-multi-thread is required because the
+# resulting Runtime is shared with the rest of the application.
+tokio = { version = "1", features = ["sync", "time", "rt-multi-thread", "macros"] }
+
+# Sync primitives — broadcast::Sender for SyncEvent fanout
+parking_lot.workspace = true
+
+# Errors
+thiserror.workspace = true
+anyhow.workspace = true
+
+# Logging
+tracing.workspace = true

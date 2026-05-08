@@ -1,0 +1,33 @@
+[package]
+name = "pos-headless"
+version = "0.1.0"
+edition = "2021"
+description = "Slint-free CLI driver for the POS service layer (developer iteration tool)"
+license = "MIT"
+authors = ["E2Manage Team"]
+
+[[bin]]
+name = "pos-headless"
+path = "src/main.rs"
+
+[dependencies]
+pos-bootstrap.workspace = true
+pos-models.workspace = true
+pos-services.workspace = true
+
+# CLI parsing — pico-args is already vendored and adds zero macro/codegen
+# overhead, which keeps this binary's compile time minimal (its whole point).
+pico-args = "0.5"
+
+# Async runtime — only macros; the real runtime is built by pos-bootstrap.
+tokio = { version = "1", features = ["macros"] }
+
+# Errors
+anyhow.workspace = true
+
+# Logging
+tracing.workspace = true
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Decimal for cart demo amounts
+rust_decimal.workspace = true
