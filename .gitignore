@@ -29,3 +29,6 @@ wadi-pos-terminal-linux
 
 # Migration backup dirs
 *.bak/
+
+# Local worktrees (used by EnterWorktree)
+.worktrees/
