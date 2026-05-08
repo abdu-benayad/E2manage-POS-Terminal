@@ -1,0 +1,638 @@
+// ============================================================================
+// E2Manage POS Terminal - Receipt Screen (Phase 26)
+// ============================================================================
+// Transaction complete / receipt preview screen
+// Shows transaction summary and allows print/email/new transaction
+// ============================================================================
+
+import { Colors, Typography, Spacing, Sizes, Radius, Layout, Locale, AppState, CartState } from "../../theme.slint";
+import { Button, SmallButton } from "../../components/mod.slint";
+import { StatusBar } from "../../components/mod.slint";
+
+// Receipt item data structure
+export struct ReceiptItem {
+    name: string,
+    name-ar: string,
+    quantity: int,
+    unit-price: string,
+    line-total: string,
+    has-discount: bool,
+    discount-label: string,
+}
+
+// Receipt payment entry data structure
+export struct ReceiptPayment {
+    method: string,
+    method-ar: string,
+    amount: string,
+    card-last-four: string,   // For card payments
+    auth-code: string,        // For card payments
+}
+
+// ============================================================================
+// RECEIPT SCREEN COMPONENT
+// ============================================================================
+
+export component ReceiptScreen inherits Rectangle {
+    // Transaction info
+    in property <string> transaction-number: "TXN240115001";
+    in property <string> receipt-number: "RCP-001";
+    in property <string> terminal-id: "POS-001";
+
+    // Store info
+    in property <string> store-name: "E2Manage Store";
+    in property <string> store-name-ar: "متجر E2Manage";
+    in property <string> store-address: "Tripoli, Libya";
+    in property <string> store-address-ar: "طرابلس، ليبيا";
+    in property <string> store-phone: "+218-21-1234567";
+    in property <string> tax-registration: "TAX-123456";
+
+    // Operator info
+    in property <string> operator-name: "Ahmed Mohamed";
+    in property <string> operator-name-ar: "أحمد محمد";
+    in property <string> date-time: "2024-01-15 14:30";
+
+    // Items
+    in property <[ReceiptItem]> items: [];
+
+    // Totals
+    in property <string> subtotal: "0.000";
+    in property <string> tax-total: "0.000";
+    in property <string> tax-rate: AppState.tax-rate-label;
+    in property <string> discount-total: "0.000";
+    in property <string> grand-total: "0.000";
+    in property <int> item-count: 0;
+
+    // Payments
+    in property <[ReceiptPayment]> payments: [];
+    in property <string> change-due: "0.000";
+    in property <string> currency: CartState.currency;
+
+    // State
+    in property <bool> print-enabled: true;
+    in property <bool> email-enabled: true;
+    in property <bool> is-printing: false;
+    in property <bool> is-emailing: false;
+
+    // Callbacks
+    callback print-receipt;
+    callback email-receipt;
+    callback new-transaction;
+    callback view-details;
+    callback back-clicked;
+
+    background: Colors.background;
+
+    VerticalLayout {
+        spacing: 0px;
+
+        // ================================================================
+        // SUCCESS HEADER
+        // ================================================================
+        Rectangle {
+            height: 100px;
+            background: Colors.success;
+
+            HorizontalLayout {
+                padding-left: Spacing.lg;
+                padding-right: Spacing.lg;
+                alignment: center;
+
+                VerticalLayout {
+                    alignment: center;
+                    spacing: Spacing.xs;
+
+                    // Success checkmark
+                    Rectangle {
+                        width: 48px;
+                        height: 48px;
+                        border-radius: 24px;
+                        background: white;
+
+                        Text {
+                            text: "\u{2713}";  // Checkmark
+                            font-size: 28px;
+                            font-weight: 700;
+                            color: Colors.success;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    Text {
+                        text: Layout.rtl ? "تمت المعاملة بنجاح" : "Transaction Complete";
+                        font-size: Typography.heading;
+                        font-weight: 600;
+                        color: Colors.text-on-primary;
+                        horizontal-alignment: center;
+                    }
+
+                    Text {
+                        text: transaction-number;
+                        font-size: Typography.caption;
+                        color: rgba(255, 255, 255, 0.85);
+                        horizontal-alignment: center;
+                    }
+                }
+            }
+        }
+
+        // ================================================================
+        // RECEIPT PREVIEW AREA
+        // ================================================================
+        HorizontalLayout {
+            vertical-stretch: 1;
+            padding: Spacing.xl;
+
+            // Center the receipt
+            Rectangle { horizontal-stretch: 1; }
+
+            // Receipt paper container
+            Rectangle {
+                width: 380px;
+                background: white;
+                border-radius: Radius.lg;
+                drop-shadow-blur: 16px;
+                drop-shadow-color: rgba(0, 0, 0, 0.12);
+                drop-shadow-offset-y: 4px;
+
+                Flickable {
+                    VerticalLayout {
+                        padding: Spacing.lg;
+                        spacing: Spacing.sm;
+
+                        // ================================================
+                        // STORE HEADER
+                        // ================================================
+                        VerticalLayout {
+                            spacing: Spacing.xs;
+                            alignment: center;
+
+                            Text {
+                                text: Layout.rtl ? store-name-ar : store-name;
+                                font-size: Typography.subheading;
+                                font-weight: 700;
+                                color: black;
+                                horizontal-alignment: center;
+                            }
+
+                            Text {
+                                text: Layout.rtl ? store-address-ar : store-address;
+                                font-size: Typography.small;
+                                color: #666;
+                                horizontal-alignment: center;
+                            }
+
+                            if store-phone != "": Text {
+                                text: store-phone;
+                                font-size: Typography.small;
+                                color: #666;
+                                horizontal-alignment: center;
+                            }
+
+                            if tax-registration != "": Text {
+                                text: (Layout.rtl ? "رقم ضريبي: " : "Tax Reg: ") + tax-registration;
+                                font-size: Typography.tiny;
+                                color: #888;
+                                horizontal-alignment: center;
+                            }
+                        }
+
+                        // Divider
+                        Rectangle {
+                            height: 1px;
+                            background: #DDD;
+                        }
+
+                        // ================================================
+                        // TRANSACTION INFO
+                        // ================================================
+                        VerticalLayout {
+                            spacing: 4px;
+                            padding-top: Spacing.xs;
+                            padding-bottom: Spacing.xs;
+
+                            HorizontalLayout {
+                                Text {
+                                    text: Layout.rtl ? "رقم الإيصال:" : "Receipt:";
+                                    font-size: Typography.small;
+                                    color: #666;
+                                }
+                                Rectangle { horizontal-stretch: 1; }
+                                Text {
+                                    text: receipt-number;
+                                    font-size: Typography.small;
+                                    font-weight: 600;
+                                    color: black;
+                                }
+                            }
+
+                            HorizontalLayout {
+                                Text {
+                                    text: Layout.rtl ? "التاريخ:" : "Date:";
+                                    font-size: Typography.small;
+                                    color: #666;
+                                }
+                                Rectangle { horizontal-stretch: 1; }
+                                Text {
+                                    text: date-time;
+                                    font-size: Typography.small;
+                                    color: black;
+                                }
+                            }
+
+                            HorizontalLayout {
+                                Text {
+                                    text: Layout.rtl ? "الكاشير:" : "Cashier:";
+                                    font-size: Typography.small;
+                                    color: #666;
+                                }
+                                Rectangle { horizontal-stretch: 1; }
+                                Text {
+                                    text: Layout.rtl ? operator-name-ar : operator-name;
+                                    font-size: Typography.small;
+                                    color: black;
+                                }
+                            }
+
+                            HorizontalLayout {
+                                Text {
+                                    text: Layout.rtl ? "الجهاز:" : "Terminal:";
+                                    font-size: Typography.small;
+                                    color: #666;
+                                }
+                                Rectangle { horizontal-stretch: 1; }
+                                Text {
+                                    text: terminal-id;
+                                    font-size: Typography.small;
+                                    color: black;
+                                }
+                            }
+                        }
+
+                        // Divider
+                        Rectangle {
+                            height: 1px;
+                            background: #DDD;
+                        }
+
+                        // ================================================
+                        // ITEMS LIST
+                        // ================================================
+                        VerticalLayout {
+                            spacing: 6px;
+                            padding-top: Spacing.sm;
+                            padding-bottom: Spacing.sm;
+
+                            // Items header
+                            HorizontalLayout {
+                                Text {
+                                    text: Layout.rtl ? "المنتج" : "Item";
+                                    font-size: Typography.small;
+                                    font-weight: 600;
+                                    color: #666;
+                                    horizontal-stretch: 1;
+                                }
+                                Text {
+                                    text: Layout.rtl ? "الإجمالي" : "Total";
+                                    font-size: Typography.small;
+                                    font-weight: 600;
+                                    color: #666;
+                                    width: 70px;
+                                    horizontal-alignment: right;
+                                }
+                            }
+
+                            // Item rows
+                            for item in items: VerticalLayout {
+                                spacing: 2px;
+
+                                HorizontalLayout {
+                                    Text {
+                                        text: Layout.rtl ? item.name-ar : item.name;
+                                        font-size: Typography.body;
+                                        color: black;
+                                        horizontal-stretch: 1;
+                                        overflow: elide;
+                                    }
+                                    Text {
+                                        text: item.line-total;
+                                        font-size: Typography.body;
+                                        color: black;
+                                        width: 70px;
+                                        horizontal-alignment: right;
+                                    }
+                                }
+
+                                HorizontalLayout {
+                                    Text {
+                                        text: "  " + item.quantity + " x " + item.unit-price + " " + currency;
+                                        font-size: Typography.small;
+                                        color: #888;
+                                        horizontal-stretch: 1;
+                                    }
+                                }
+
+                                if item.has-discount: HorizontalLayout {
+                                    Text {
+                                        text: "  " + (Layout.rtl ? "خصم: " : "Discount: ") + item.discount-label;
+                                        font-size: Typography.small;
+                                        color: Colors.success;
+                                        horizontal-stretch: 1;
+                                    }
+                                }
+                            }
+                        }
+
+                        // Divider
+                        Rectangle {
+                            height: 1px;
+                            background: #DDD;
+                        }
+
+                        // ================================================
+                        // TOTALS SECTION
+                        // ================================================
+                        VerticalLayout {
+                            spacing: 4px;
+                            padding-top: Spacing.sm;
+                            padding-bottom: Spacing.sm;
+
+                            // Item count
+                            HorizontalLayout {
+                                Text {
+                                    text: Layout.rtl ? "عدد المنتجات:" : "Items:";
+                                    font-size: Typography.small;
+                                    color: #666;
+                                    horizontal-stretch: 1;
+                                }
+                                Text {
+                                    text: item-count;
+                                    font-size: Typography.small;
+                                    color: black;
+                                }
+                            }
+
+                            // Subtotal
+                            HorizontalLayout {
+                                Text {
+                                    text: Layout.rtl ? "المجموع الفرعي:" : "Subtotal:";
+                                    font-size: Typography.body;
+                                    color: #666;
+                                    horizontal-stretch: 1;
+                                }
+                                Text {
+                                    text: subtotal + " " + currency;
+                                    font-size: Typography.body;
+                                    color: black;
+                                }
+                            }
+
+                            // Discount (if any)
+                            if discount-total != "0.000" && discount-total != "0": HorizontalLayout {
+                                Text {
+                                    text: Layout.rtl ? "الخصم:" : "Discount:";
+                                    font-size: Typography.body;
+                                    color: Colors.success;
+                                    horizontal-stretch: 1;
+                                }
+                                Text {
+                                    text: "-" + discount-total + " " + currency;
+                                    font-size: Typography.body;
+                                    color: Colors.success;
+                                }
+                            }
+
+                            // Tax
+                            HorizontalLayout {
+                                Text {
+                                    text: (Layout.rtl ? "الضريبة (" : "Tax (") + tax-rate + "):";
+                                    font-size: Typography.body;
+                                    color: #666;
+                                    horizontal-stretch: 1;
+                                }
+                                Text {
+                                    text: tax-total + " " + currency;
+                                    font-size: Typography.body;
+                                    color: black;
+                                }
+                            }
+
+                            // Grand total
+                            Rectangle {
+                                height: 44px;
+                                background: #f5f5f5;
+                                border-radius: Radius.sm;
+
+                                HorizontalLayout {
+                                    padding-left: Spacing.sm;
+                                    padding-right: Spacing.sm;
+
+                                    Text {
+                                        text: Layout.rtl ? "الإجمالي:" : "Total:";
+                                        font-size: Typography.subheading;
+                                        font-weight: 700;
+                                        color: black;
+                                        horizontal-stretch: 1;
+                                        vertical-alignment: center;
+                                    }
+                                    Text {
+                                        text: grand-total + " " + currency;
+                                        font-size: Typography.subheading;
+                                        font-weight: 700;
+                                        color: black;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                        }
+
+                        // Divider
+                        Rectangle {
+                            height: 1px;
+                            background: #DDD;
+                        }
+
+                        // ================================================
+                        // PAYMENTS SECTION
+                        // ================================================
+                        VerticalLayout {
+                            spacing: 4px;
+                            padding-top: Spacing.sm;
+                            padding-bottom: Spacing.sm;
+
+                            Text {
+                                text: Layout.rtl ? "طرق الدفع:" : "Payments:";
+                                font-size: Typography.small;
+                                font-weight: 600;
+                                color: #666;
+                            }
+
+                            for payment in payments: VerticalLayout {
+                                spacing: 2px;
+
+                                HorizontalLayout {
+                                    Text {
+                                        text: "  " + (Layout.rtl ? payment.method-ar : payment.method);
+                                        font-size: Typography.body;
+                                        color: black;
+                                        horizontal-stretch: 1;
+                                    }
+                                    Text {
+                                        text: payment.amount + " " + currency;
+                                        font-size: Typography.body;
+                                        color: black;
+                                    }
+                                }
+
+                                // Card details (if card payment)
+                                if payment.card-last-four != "": HorizontalLayout {
+                                    Text {
+                                        text: "    ****" + payment.card-last-four +
+                                              (payment.auth-code != "" ? " | Auth: " + payment.auth-code : "");
+                                        font-size: Typography.small;
+                                        color: #888;
+                                    }
+                                }
+                            }
+
+                            // Change due (if cash payment)
+                            if change-due != "0.000" && change-due != "0": HorizontalLayout {
+                                padding-top: Spacing.xs;
+
+                                Text {
+                                    text: Layout.rtl ? "الباقي:" : "Change:";
+                                    font-size: Typography.body;
+                                    font-weight: 700;
+                                    color: Colors.success;
+                                    horizontal-stretch: 1;
+                                }
+                                Text {
+                                    text: change-due + " " + currency;
+                                    font-size: Typography.body;
+                                    font-weight: 700;
+                                    color: Colors.success;
+                                }
+                            }
+                        }
+
+                        // ================================================
+                        // FOOTER
+                        // ================================================
+                        Rectangle {
+                            height: 1px;
+                            background: #DDD;
+                        }
+
+                        VerticalLayout {
+                            spacing: Spacing.xs;
+                            padding-top: Spacing.md;
+                            padding-bottom: Spacing.sm;
+
+                            Text {
+                                text: Layout.rtl ? "شكراً لزيارتكم!" : "Thank you for your visit!";
+                                font-size: Typography.body;
+                                font-weight: 600;
+                                color: #666;
+                                horizontal-alignment: center;
+                            }
+
+                            Text {
+                                text: Layout.rtl ? "نتطلع لخدمتكم مرة أخرى" : "We look forward to serving you again";
+                                font-size: Typography.small;
+                                color: #888;
+                                horizontal-alignment: center;
+                            }
+
+                            // Barcode placeholder
+                            Rectangle {
+                                height: 40px;
+                                background: white;
+
+                                HorizontalLayout {
+                                    alignment: center;
+                                    padding-top: Spacing.sm;
+
+                                    // Barcode representation (placeholder)
+                                    for i in 20: Rectangle {
+                                        width: mod(i, 3) == 0 ? 3px : (mod(i, 2) == 0 ? 2px : 1px);
+                                        height: 30px;
+                                        background: black;
+                                    }
+                                }
+                            }
+
+                            Text {
+                                text: receipt-number;
+                                font-size: Typography.tiny;
+                                color: #999;
+                                horizontal-alignment: center;
+                            }
+                        }
+                    }
+                }
+            }
+
+            Rectangle { horizontal-stretch: 1; }
+        }
+
+        // ================================================================
+        // BOTTOM ACTION BAR
+        // ================================================================
+        Rectangle {
+            height: 100px;
+            background: Colors.surface;
+            border-width: 1px;
+            border-color: Colors.border;
+
+            VerticalLayout {
+                padding: Spacing.lg;
+                spacing: Spacing.sm;
+
+                HorizontalLayout {
+                    spacing: Spacing.md;
+                    alignment: center;
+
+                    // Print button
+                    Button {
+                        text: is-printing
+                            ? (Layout.rtl ? "جارٍ الطباعة..." : "Printing...")
+                            : (Layout.rtl ? "طباعة" : "Print");
+                        variant: "secondary";
+                        width: 140px;
+                        disabled: !print-enabled || is-printing;
+                        loading: is-printing;
+                        clicked => { root.print-receipt(); }
+                    }
+
+                    // Email button
+                    Button {
+                        text: is-emailing
+                            ? (Layout.rtl ? "جارٍ الإرسال..." : "Sending...")
+                            : (Layout.rtl ? "إرسال" : "Email");
+                        variant: "secondary";
+                        width: 140px;
+                        disabled: !email-enabled || is-emailing;
+                        loading: is-emailing;
+                        clicked => { root.email-receipt(); }
+                    }
+
+                    // New Transaction button (primary action)
+                    Button {
+                        text: Layout.rtl ? "معاملة جديدة" : "New Transaction";
+                        variant: "primary";
+                        width: 180px;
+                        clicked => { root.new-transaction(); }
+                    }
+                }
+            }
+        }
+
+        // Status bar
+        StatusBar {
+            terminal-code: terminal-id;
+            is-online: true;
+            pending-sync-count: 0;
+        }
+    }
+}

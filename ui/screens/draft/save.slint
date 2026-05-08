@@ -1,0 +1,389 @@
+// ============================================================================
+// E2Manage POS Terminal - Save Draft Screen (Phase 28)
+// ============================================================================
+// Modal dialog for saving current cart as a draft/hold order
+// Supports Arabic RTL layout and localization
+// ============================================================================
+
+import { Colors, Typography, Spacing, Sizes, Radius, Layout, Locale, CartState } from "../../theme.slint";
+import { Button } from "../../components/mod.slint";
+import { LineEdit } from "std-widgets.slint";
+
+// ============================================================================
+// Draft Data Structure
+// ============================================================================
+
+export struct DraftData {
+    id: string,
+    name: string,
+    item-count: int,
+    total-amount: string,
+    customer-name: string,
+    created-at: string,
+    operator-name: string,
+}
+
+// ============================================================================
+// Save Draft Screen Component
+// ============================================================================
+
+export component SaveDraftScreen inherits Rectangle {
+    // Properties
+    in-out property <string> draft-name: "";
+    in property <string> customer-name: "";
+    in property <int> item-count: 0;
+    in property <string> total-amount: "0.000";
+    in property <string> currency: CartState.currency;
+    in property <int> draft-count: 0; // Existing drafts count
+    in property <bool> is-saving: false;
+
+    // Callbacks
+    callback name-changed(string);
+    callback save-draft();
+    callback cancel();
+
+    // Semi-transparent overlay background
+    background: Colors.overlay;
+
+    // Close on background click
+    TouchArea {
+        clicked => { root.cancel(); }
+    }
+
+    // Modal dialog - centered
+    HorizontalLayout {
+        alignment: center;
+
+        VerticalLayout {
+            alignment: center;
+
+            Rectangle {
+                width: 500px;
+                height: 440px;
+                background: Colors.surface;
+                border-radius: Radius.dialog;
+
+                // Prevent click propagation to overlay
+                TouchArea {}
+
+                VerticalLayout {
+                    padding: Spacing.xl;
+                    spacing: Spacing.lg;
+
+                    // =====================================================
+                    // Header with Title and Close Button
+                    // =====================================================
+                    HorizontalLayout {
+                        alignment: space-between;
+                        height: 32px;
+
+                        // Title with hold icon
+                        HorizontalLayout {
+                            spacing: Spacing.sm;
+                            alignment: start;
+
+                            Text {
+                                text: "\u{1F4CB}"; // Clipboard emoji
+                                font-size: Typography.heading;
+                                vertical-alignment: center;
+                            }
+
+                            Text {
+                                text: Locale.current == "ar" ? "حفظ مسودة" : "Save Draft";
+                                font-size: Typography.heading;
+                                font-weight: 600;
+                                color: Colors.text-primary;
+                                vertical-alignment: center;
+                                horizontal-alignment: Layout.rtl ? right : left;
+                            }
+                        }
+
+                        // Close button
+                        Rectangle {
+                            width: 32px;
+                            height: 32px;
+                            border-radius: Radius.full;
+                            background: close-touch.has-hover ? Colors.surface-variant : transparent;
+
+                            close-touch := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { root.cancel(); }
+                            }
+
+                            Text {
+                                text: "\u{2715}"; // X symbol
+                                font-size: Typography.heading;
+                                color: Colors.text-secondary;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+
+                    // =====================================================
+                    // Cart Summary Card
+                    // =====================================================
+                    Rectangle {
+                        background: Colors.background;
+                        border-radius: Radius.md;
+                        height: 90px;
+
+                        HorizontalLayout {
+                            padding: Spacing.lg;
+                            spacing: Spacing.xxl;
+                            alignment: start;
+
+                            // Items count
+                            VerticalLayout {
+                                spacing: Spacing.xs;
+                                alignment: center;
+
+                                Text {
+                                    text: Locale.current == "ar" ? "العناصر" : "Items";
+                                    font-size: Typography.caption;
+                                    color: Colors.text-secondary;
+                                    horizontal-alignment: Layout.rtl ? right : left;
+                                }
+
+                                HorizontalLayout {
+                                    spacing: Spacing.xs;
+                                    alignment: Layout.rtl ? end : start;
+
+                                    Text {
+                                        text: "\u{1F6D2}"; // Shopping cart emoji
+                                        font-size: Typography.body;
+                                    }
+
+                                    Text {
+                                        text: item-count;
+                                        font-size: Typography.title;
+                                        font-weight: 700;
+                                        color: Colors.text-primary;
+                                    }
+                                }
+                            }
+
+                            // Total amount
+                            VerticalLayout {
+                                spacing: Spacing.xs;
+                                alignment: center;
+
+                                Text {
+                                    text: Locale.current == "ar" ? "الإجمالي" : "Total";
+                                    font-size: Typography.caption;
+                                    color: Colors.text-secondary;
+                                    horizontal-alignment: Layout.rtl ? right : left;
+                                }
+
+                                Text {
+                                    text: total-amount + " " + currency;
+                                    font-size: Typography.title;
+                                    font-weight: 700;
+                                    color: Colors.primary;
+                                    horizontal-alignment: Layout.rtl ? right : left;
+                                }
+                            }
+
+                            // Customer (if present)
+                            if customer-name != "": VerticalLayout {
+                                spacing: Spacing.xs;
+                                alignment: center;
+
+                                Text {
+                                    text: Locale.current == "ar" ? "العميل" : "Customer";
+                                    font-size: Typography.caption;
+                                    color: Colors.text-secondary;
+                                    horizontal-alignment: Layout.rtl ? right : left;
+                                }
+
+                                HorizontalLayout {
+                                    spacing: Spacing.xs;
+                                    alignment: Layout.rtl ? end : start;
+
+                                    Text {
+                                        text: "\u{1F464}"; // Person emoji
+                                        font-size: Typography.caption;
+                                    }
+
+                                    Text {
+                                        text: customer-name;
+                                        font-size: Typography.body;
+                                        color: Colors.text-primary;
+                                        horizontal-alignment: Layout.rtl ? right : left;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // =====================================================
+                    // Draft Name Input
+                    // =====================================================
+                    VerticalLayout {
+                        spacing: Spacing.xs;
+
+                        Text {
+                            text: Locale.current == "ar" ? "اسم المسودة (اختياري)" : "Draft Name (optional)";
+                            font-size: Typography.caption;
+                            color: Colors.text-secondary;
+                            horizontal-alignment: Layout.rtl ? right : left;
+                        }
+
+                        Rectangle {
+                            height: Sizes.input-height;
+                            background: Colors.background;
+                            border-radius: Radius.input;
+                            border-width: 1px;
+                            border-color: Colors.border;
+
+                            HorizontalLayout {
+                                padding-left: Spacing.md;
+                                padding-right: Spacing.md;
+                                alignment: start;
+
+                                name-input := LineEdit {
+                                    horizontal-stretch: 1;
+                                    placeholder-text: Locale.current == "ar" ?
+                                                "مثال: طلب أحمد" :
+                                                "e.g., Ahmed's order";
+                                    text <=> root.draft-name;
+                                    font-size: Typography.body;
+                                    horizontal-alignment: Layout.rtl ? right : left;
+
+                                    edited => {
+                                        root.name-changed(self.text);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // =====================================================
+                    // Info Text (existing drafts count)
+                    // =====================================================
+                    if draft-count > 0: HorizontalLayout {
+                        spacing: Spacing.sm;
+                        alignment: Layout.rtl ? end : start;
+
+                        Text {
+                            text: "\u{2139}\u{FE0F}"; // Info emoji
+                            font-size: Typography.caption;
+                        }
+
+                        Text {
+                            text: Locale.current == "ar" ?
+                                  "لديك " + draft-count + " مسودات محفوظة" :
+                                  "You have " + draft-count + " saved drafts";
+                            font-size: Typography.caption;
+                            color: Colors.text-secondary;
+                            horizontal-alignment: Layout.rtl ? right : left;
+                        }
+                    }
+
+                    // =====================================================
+                    // Empty Items Warning
+                    // =====================================================
+                    if item-count == 0: Rectangle {
+                        background: #FFF3E0;
+                        border-radius: Radius.md;
+                        height: 48px;
+
+                        HorizontalLayout {
+                            padding: Spacing.md;
+                            spacing: Spacing.sm;
+                            alignment: Layout.rtl ? end : start;
+
+                            Text {
+                                text: "\u{26A0}\u{FE0F}"; // Warning emoji
+                                font-size: Typography.body;
+                                vertical-alignment: center;
+                            }
+
+                            Text {
+                                text: Locale.current == "ar" ?
+                                      "لا يمكن حفظ سلة فارغة" :
+                                      "Cannot save an empty cart";
+                                font-size: Typography.caption;
+                                color: Colors.warning;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+
+                    // Spacer
+                    Rectangle { vertical-stretch: 1; }
+
+                    // =====================================================
+                    // Action Buttons
+                    // =====================================================
+                    HorizontalLayout {
+                        spacing: Spacing.md;
+
+                        // Cancel button
+                        Rectangle {
+                            horizontal-stretch: 1;
+                            height: Sizes.button-height;
+                            background: cancel-area.has-hover && !is-saving ? Colors.surface-variant : Colors.surface;
+                            border-radius: Radius.button;
+                            border-width: 1px;
+                            border-color: Colors.border;
+
+                            cancel-area := TouchArea {
+                                mouse-cursor: is-saving ? default : pointer;
+                                enabled: !is-saving;
+                                clicked => { root.cancel(); }
+                            }
+
+                            Text {
+                                text: Locale.current == "ar" ? "إلغاء" : "Cancel";
+                                font-size: Typography.body;
+                                font-weight: 500;
+                                color: is-saving ? Colors.disabled : Colors.text-secondary;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+
+                        // Save button
+                        Rectangle {
+                            horizontal-stretch: 1;
+                            height: Sizes.button-height;
+                            background: item-count == 0 || is-saving ? Colors.disabled :
+                                       save-area.has-hover ? Colors.primary-dark : Colors.primary;
+                            border-radius: Radius.button;
+
+                            save-area := TouchArea {
+                                mouse-cursor: item-count == 0 || is-saving ? default : pointer;
+                                enabled: item-count > 0 && !is-saving;
+                                clicked => { root.save-draft(); }
+                            }
+
+                            HorizontalLayout {
+                                alignment: center;
+                                spacing: Spacing.sm;
+
+                                if is-saving: Text {
+                                    text: "\u{23F3}"; // Hourglass emoji
+                                    font-size: Typography.body;
+                                    color: Colors.text-on-primary;
+                                    vertical-alignment: center;
+                                }
+
+                                Text {
+                                    text: is-saving ?
+                                          (Locale.current == "ar" ? "جارٍ الحفظ..." : "Saving...") :
+                                          (Locale.current == "ar" ? "حفظ المسودة" : "Save Draft");
+                                    font-size: Typography.body;
+                                    font-weight: 600;
+                                    color: Colors.text-on-primary;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

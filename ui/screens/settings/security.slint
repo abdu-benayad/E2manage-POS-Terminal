@@ -1,0 +1,519 @@
+// ============================================================================
+// E2Manage POS Terminal - Security Settings Screen
+// ============================================================================
+// PIN management, auto-lock, and permission settings
+// ============================================================================
+
+import { Colors, Typography, Spacing, Sizes, Radius, Layout, Locale } from "../../theme.slint";
+import { Button, StatusBar } from "../../components/mod.slint";
+
+// ============================================================================
+// Security Settings Screen
+// ============================================================================
+
+export component SecuritySettingsScreen inherits Rectangle {
+    // Input properties
+    in property <bool> pin-enabled: true;
+    in property <bool> auto-lock-enabled: true;
+    in property <int> auto-lock-timeout: 5; // minutes, 0 = never
+    in property <bool> require-pin-for-refund: true;
+    in property <bool> require-pin-for-discount: true;
+    in property <bool> require-pin-for-void: true;
+    in property <bool> require-pin-for-cash-drawer: false;
+    in property <bool> is-online: true;
+
+    // Callbacks
+    callback change-pin;
+    callback toggle-auto-lock(bool);
+    callback set-auto-lock-timeout(int);
+    callback toggle-require-pin-refund(bool);
+    callback toggle-require-pin-discount(bool);
+    callback toggle-require-pin-void(bool);
+    callback toggle-require-pin-drawer(bool);
+    callback save-settings;
+    callback back-clicked;
+
+    background: Colors.background;
+
+    // Timeout options
+    property <[int]> timeout-options: [1, 2, 5, 10, 15, 30, 0];
+
+    VerticalLayout {
+        spacing: 0px;
+
+        // Header
+        Rectangle {
+            height: Sizes.header-height;
+            background: Colors.primary;
+
+            HorizontalLayout {
+                padding-left: Spacing.lg;
+                padding-right: Spacing.lg;
+                alignment: space-between;
+
+                HorizontalLayout {
+                    spacing: Spacing.lg;
+
+                    // Back button
+                    Rectangle {
+                        width: 48px;
+                        height: 48px;
+                        border-radius: Radius.md;
+
+                        back-touch := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.back-clicked(); }
+                        }
+
+                        Rectangle {
+                            background: back-touch.pressed ? rgba(255, 255, 255, 0.2) :
+                                       back-touch.has-hover ? rgba(255, 255, 255, 0.1) : transparent;
+                            border-radius: parent.border-radius;
+                        }
+
+                        Text {
+                            text: Layout.rtl ? "→" : "←";
+                            font-size: 24px;
+                            color: Colors.text-on-primary;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    // Icon
+                    Text {
+                        text: "🔒";
+                        font-size: 24px;
+                        vertical-alignment: center;
+                    }
+
+                    // Title
+                    Text {
+                        text: Locale.current == "ar" ? "الأمان" : "Security";
+                        font-size: Typography.heading;
+                        font-weight: 600;
+                        color: Colors.text-on-primary;
+                        vertical-alignment: center;
+                    }
+                }
+
+                // Save button
+                Button {
+                    text: Locale.current == "ar" ? "حفظ" : "Save";
+                    variant: "secondary";
+                    clicked => { root.save-settings(); }
+                }
+            }
+        }
+
+        // Content
+        Flickable {
+            viewport-height: content-layout.preferred-height;
+
+            content-layout := VerticalLayout {
+                padding: Spacing.lg;
+                spacing: Spacing.lg;
+
+                // PIN Settings Card
+                Rectangle {
+                    background: Colors.surface;
+                    border-radius: Radius.lg;
+                    drop-shadow-blur: 4px;
+                    drop-shadow-color: rgba(0, 0, 0, 0.1);
+                    drop-shadow-offset-y: 2px;
+
+                    VerticalLayout {
+                        padding: Spacing.lg;
+                        spacing: Spacing.md;
+
+                        Text {
+                            text: Locale.current == "ar" ? "رمز PIN" : "PIN Code";
+                            font-size: Typography.subheading;
+                            font-weight: 600;
+                            color: Colors.text-primary;
+                        }
+
+                        Rectangle { height: 1px; background: Colors.border; }
+
+                        // Change PIN
+                        Rectangle {
+                            height: 56px;
+                            border-radius: Radius.md;
+                            background: pin-touch.has-hover ? Colors.surface-variant : transparent;
+
+                            pin-touch := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { root.change-pin(); }
+                            }
+
+                            HorizontalLayout {
+                                padding-left: Spacing.md;
+                                padding-right: Spacing.md;
+                                spacing: Spacing.md;
+
+                                Text {
+                                    text: "🔑";
+                                    font-size: 20px;
+                                    vertical-alignment: center;
+                                }
+
+                                VerticalLayout {
+                                    spacing: Spacing.xs;
+                                    horizontal-stretch: 1;
+
+                                    Text {
+                                        text: Locale.current == "ar" ? "تغيير رمز PIN" : "Change PIN";
+                                        font-size: Typography.body;
+                                        font-weight: 500;
+                                        color: Colors.text-primary;
+                                    }
+
+                                    Text {
+                                        text: Locale.current == "ar" ?
+                                            "تغيير رمز الدخول الشخصي" : "Change your personal access code";
+                                        font-size: Typography.caption;
+                                        color: Colors.text-secondary;
+                                    }
+                                }
+
+                                Text {
+                                    text: Layout.rtl ? "←" : "→";
+                                    font-size: 20px;
+                                    color: Colors.text-secondary;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Auto-Lock Card
+                Rectangle {
+                    background: Colors.surface;
+                    border-radius: Radius.lg;
+                    drop-shadow-blur: 4px;
+                    drop-shadow-color: rgba(0, 0, 0, 0.1);
+                    drop-shadow-offset-y: 2px;
+
+                    VerticalLayout {
+                        padding: Spacing.lg;
+                        spacing: Spacing.md;
+
+                        Text {
+                            text: Locale.current == "ar" ? "القفل التلقائي" : "Auto-Lock";
+                            font-size: Typography.subheading;
+                            font-weight: 600;
+                            color: Colors.text-primary;
+                        }
+
+                        Rectangle { height: 1px; background: Colors.border; }
+
+                        // Auto-lock toggle
+                        HorizontalLayout {
+                            spacing: Spacing.md;
+                            height: 48px;
+
+                            VerticalLayout {
+                                spacing: Spacing.xs;
+                                horizontal-stretch: 1;
+
+                                Text {
+                                    text: Locale.current == "ar" ? "تفعيل القفل التلقائي" : "Enable Auto-Lock";
+                                    font-size: Typography.body;
+                                    color: Colors.text-primary;
+                                }
+
+                                Text {
+                                    text: Locale.current == "ar" ?
+                                        "قفل الشاشة بعد فترة من عدم النشاط" : "Lock screen after inactivity";
+                                    font-size: Typography.caption;
+                                    color: Colors.text-secondary;
+                                }
+                            }
+
+                            // Toggle switch
+                            Rectangle {
+                                width: 52px;
+                                height: 28px;
+                                border-radius: 14px;
+                                background: auto-lock-enabled ? Colors.primary : Colors.border;
+
+                                animate background { duration: 200ms; }
+
+                                toggle-touch := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { root.toggle-auto-lock(!auto-lock-enabled); }
+                                }
+
+                                Rectangle {
+                                    x: auto-lock-enabled ? parent.width - self.width - 2px : 2px;
+                                    y: 2px;
+                                    width: 24px;
+                                    height: 24px;
+                                    border-radius: 12px;
+                                    background: white;
+
+                                    animate x { duration: 200ms; }
+                                }
+                            }
+                        }
+
+                        // Timeout selector
+                        if auto-lock-enabled: VerticalLayout {
+                            spacing: Spacing.sm;
+
+                            Text {
+                                text: Locale.current == "ar" ? "مدة الانتظار" : "Timeout";
+                                font-size: Typography.caption;
+                                color: Colors.text-secondary;
+                            }
+
+                            HorizontalLayout {
+                                spacing: Spacing.sm;
+
+                                for timeout in timeout-options: Rectangle {
+                                    width: 60px;
+                                    height: 40px;
+                                    border-radius: Radius.sm;
+                                    background: auto-lock-timeout == timeout ? Colors.primary : Colors.surface-variant;
+                                    border-width: 1px;
+                                    border-color: auto-lock-timeout == timeout ? Colors.primary : Colors.border;
+
+                                    timeout-touch := TouchArea {
+                                        mouse-cursor: pointer;
+                                        clicked => { root.set-auto-lock-timeout(timeout); }
+                                    }
+
+                                    Text {
+                                        text: timeout == 0 ?
+                                            (Locale.current == "ar" ? "أبداً" : "Never") :
+                                            (timeout + (Locale.current == "ar" ? " د" : "m"));
+                                        font-size: Typography.caption;
+                                        font-weight: auto-lock-timeout == timeout ? 600 : 400;
+                                        color: auto-lock-timeout == timeout ? Colors.text-on-primary : Colors.text-primary;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Permissions Card
+                Rectangle {
+                    background: Colors.surface;
+                    border-radius: Radius.lg;
+                    drop-shadow-blur: 4px;
+                    drop-shadow-color: rgba(0, 0, 0, 0.1);
+                    drop-shadow-offset-y: 2px;
+
+                    VerticalLayout {
+                        padding: Spacing.lg;
+                        spacing: Spacing.md;
+
+                        Text {
+                            text: Locale.current == "ar" ? "صلاحيات PIN" : "PIN Permissions";
+                            font-size: Typography.subheading;
+                            font-weight: 600;
+                            color: Colors.text-primary;
+                        }
+
+                        Text {
+                            text: Locale.current == "ar" ?
+                                "تتطلب هذه العمليات إدخال رمز PIN للمدير" :
+                                "These operations require manager PIN";
+                            font-size: Typography.caption;
+                            color: Colors.text-secondary;
+                        }
+
+                        Rectangle { height: 1px; background: Colors.border; }
+
+                        // Refund permission
+                        HorizontalLayout {
+                            spacing: Spacing.md;
+                            height: 48px;
+
+                            Text {
+                                text: "↩️";
+                                font-size: 20px;
+                                vertical-alignment: center;
+                            }
+
+                            Text {
+                                text: Locale.current == "ar" ? "المرتجعات" : "Refunds";
+                                font-size: Typography.body;
+                                color: Colors.text-primary;
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                            }
+
+                            Rectangle {
+                                width: 52px;
+                                height: 28px;
+                                border-radius: 14px;
+                                background: require-pin-for-refund ? Colors.primary : Colors.border;
+
+                                animate background { duration: 200ms; }
+
+                                refund-touch := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { root.toggle-require-pin-refund(!require-pin-for-refund); }
+                                }
+
+                                Rectangle {
+                                    x: require-pin-for-refund ? parent.width - self.width - 2px : 2px;
+                                    y: 2px;
+                                    width: 24px;
+                                    height: 24px;
+                                    border-radius: 12px;
+                                    background: white;
+
+                                    animate x { duration: 200ms; }
+                                }
+                            }
+                        }
+
+                        // Discount permission
+                        HorizontalLayout {
+                            spacing: Spacing.md;
+                            height: 48px;
+
+                            Text {
+                                text: "🏷️";
+                                font-size: 20px;
+                                vertical-alignment: center;
+                            }
+
+                            Text {
+                                text: Locale.current == "ar" ? "الخصومات" : "Discounts";
+                                font-size: Typography.body;
+                                color: Colors.text-primary;
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                            }
+
+                            Rectangle {
+                                width: 52px;
+                                height: 28px;
+                                border-radius: 14px;
+                                background: require-pin-for-discount ? Colors.primary : Colors.border;
+
+                                animate background { duration: 200ms; }
+
+                                discount-touch := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { root.toggle-require-pin-discount(!require-pin-for-discount); }
+                                }
+
+                                Rectangle {
+                                    x: require-pin-for-discount ? parent.width - self.width - 2px : 2px;
+                                    y: 2px;
+                                    width: 24px;
+                                    height: 24px;
+                                    border-radius: 12px;
+                                    background: white;
+
+                                    animate x { duration: 200ms; }
+                                }
+                            }
+                        }
+
+                        // Void permission
+                        HorizontalLayout {
+                            spacing: Spacing.md;
+                            height: 48px;
+
+                            Text {
+                                text: "🚫";
+                                font-size: 20px;
+                                vertical-alignment: center;
+                            }
+
+                            Text {
+                                text: Locale.current == "ar" ? "إلغاء العناصر" : "Void Items";
+                                font-size: Typography.body;
+                                color: Colors.text-primary;
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                            }
+
+                            Rectangle {
+                                width: 52px;
+                                height: 28px;
+                                border-radius: 14px;
+                                background: require-pin-for-void ? Colors.primary : Colors.border;
+
+                                animate background { duration: 200ms; }
+
+                                void-touch := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { root.toggle-require-pin-void(!require-pin-for-void); }
+                                }
+
+                                Rectangle {
+                                    x: require-pin-for-void ? parent.width - self.width - 2px : 2px;
+                                    y: 2px;
+                                    width: 24px;
+                                    height: 24px;
+                                    border-radius: 12px;
+                                    background: white;
+
+                                    animate x { duration: 200ms; }
+                                }
+                            }
+                        }
+
+                        // Cash drawer permission
+                        HorizontalLayout {
+                            spacing: Spacing.md;
+                            height: 48px;
+
+                            Text {
+                                text: "🗃️";
+                                font-size: 20px;
+                                vertical-alignment: center;
+                            }
+
+                            Text {
+                                text: Locale.current == "ar" ? "فتح درج النقد" : "Open Cash Drawer";
+                                font-size: Typography.body;
+                                color: Colors.text-primary;
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                            }
+
+                            Rectangle {
+                                width: 52px;
+                                height: 28px;
+                                border-radius: 14px;
+                                background: require-pin-for-cash-drawer ? Colors.primary : Colors.border;
+
+                                animate background { duration: 200ms; }
+
+                                drawer-touch := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { root.toggle-require-pin-drawer(!require-pin-for-cash-drawer); }
+                                }
+
+                                Rectangle {
+                                    x: require-pin-for-cash-drawer ? parent.width - self.width - 2px : 2px;
+                                    y: 2px;
+                                    width: 24px;
+                                    height: 24px;
+                                    border-radius: 12px;
+                                    background: white;
+
+                                    animate x { duration: 200ms; }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Spacer
+                Rectangle { height: Spacing.lg; }
+            }
+        }
+    }
+}

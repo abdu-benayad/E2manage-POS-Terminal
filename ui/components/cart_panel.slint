@@ -1,0 +1,855 @@
+// ============================================================================
+// E2Manage POS Terminal - Cart Panel Component (Phase 17)
+// ============================================================================
+// Full cart panel with items list, totals, customer selection, and actions
+// Supports RTL/Arabic locale, discounts, and multiple payment flows
+// ============================================================================
+
+import { Colors, Typography, Spacing, Sizes, Radius, Animation, Layout, Locale, AppState, CartState } from "../theme.slint";
+import { Button, SmallButton } from "button.slint";
+import { CartItem, CompactCartItem, CartItemData, CartItemSkeleton } from "cart_item.slint";
+
+// ============================================================================
+// CART PANEL COMPONENT
+// ============================================================================
+
+export component CartPanel inherits Rectangle {
+    // Cart data
+    in property <[CartItemData]> items: [];
+    in property <string> subtotal: "0.000";
+    in property <string> tax-total: "0.000";
+    in property <string> tax-rate: AppState.tax-rate-label;
+    in property <string> discount-total: "0.000";
+    in property <string> grand-total: "0.000";
+    in property <string> currency: CartState.currency;
+    in property <bool> has-discount: false;
+    in property <string> discount-name: "";
+
+    // Customer data
+    in property <string> customer-name: "";
+    in property <string> customer-id: "";
+    in property <bool> has-customer: false;
+    in property <string> customer-balance: "";
+    in property <string> customer-credit-limit: "";
+
+    // State
+    in property <bool> loading: false;
+    in property <bool> processing: false;
+
+    // Responsive
+    in property <bool> compact: false;
+
+    // Item callbacks
+    callback item-increment(string);
+    callback item-decrement(string);
+    callback item-remove(string);
+    callback item-edit(string);
+    callback item-clicked(string);
+
+    // Cart action callbacks
+    callback clear-cart;
+    callback apply-discount;
+    callback remove-discount;
+    callback select-customer;
+    callback remove-customer;
+    callback proceed-to-payment;
+    callback save-draft;
+    callback recall-draft;
+    callback void-cart;
+
+    background: Colors.surface;
+
+    VerticalLayout {
+        spacing: 0px;
+
+        // ============================================================
+        // CART HEADER
+        // ============================================================
+        Rectangle {
+            height: 52px;
+            background: Colors.primary;
+
+            HorizontalLayout {
+                padding-left: Spacing.lg;
+                padding-right: Spacing.md;
+                alignment: space-between;
+
+                // Cart title
+                HorizontalLayout {
+                    spacing: Spacing.sm;
+                    alignment: center;
+
+                    Text {
+                        text: "\u{1F6D2}"; // Shopping cart emoji
+                        font-size: 20px;
+                        vertical-alignment: center;
+                    }
+
+                    Text {
+                        text: Locale.current == "ar" ? "السلة" : "Cart";
+                        font-size: Typography.subheading;
+                        font-weight: 600;
+                        color: Colors.text-on-primary;
+                        vertical-alignment: center;
+                    }
+                }
+
+                // Item count and clear button
+                HorizontalLayout {
+                    spacing: Spacing.sm;
+                    alignment: center;
+
+                    // Item count badge
+                    Rectangle {
+                        width: count-text.preferred-width + Spacing.md;
+                        height: 26px;
+                        background: rgba(255, 255, 255, 0.2);
+                        border-radius: Radius.full;
+
+                        count-text := Text {
+                            text: items.length + (Locale.current == "ar" ? " عنصر" : " items");
+                            font-size: Typography.small;
+                            font-weight: 500;
+                            color: Colors.text-on-primary;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    // Clear cart button
+                    if items.length > 0: Rectangle {
+                        width: 32px;
+                        height: 32px;
+                        border-radius: 16px;
+                        background: clear-touch.pressed ? rgba(255, 255, 255, 0.3) :
+                                    clear-touch.has-hover ? rgba(255, 255, 255, 0.2) : transparent;
+
+                        clear-touch := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.clear-cart(); }
+                        }
+
+                        Text {
+                            text: "\u{1F5D1}"; // Wastebasket emoji
+                            font-size: 16px;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+
+                        animate background { duration: Animation.fast; }
+                    }
+                }
+            }
+        }
+
+        // ============================================================
+        // CUSTOMER SECTION
+        // ============================================================
+        Rectangle {
+            height: has-customer ? 56px : 44px;
+            background: has-customer ? Colors.customer-bar : Colors.background;
+
+            customer-touch := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.select-customer(); }
+            }
+
+            HorizontalLayout {
+                padding-left: Spacing.lg;
+                padding-right: Spacing.md;
+                spacing: Spacing.sm;
+
+                // Customer icon
+                Text {
+                    text: has-customer ? "\u{1F464}" : "\u{2795}"; // Person or plus
+                    font-size: 16px;
+                    vertical-alignment: center;
+                }
+
+                // Customer info
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    spacing: 2px;
+
+                    Text {
+                        text: has-customer ? customer-name :
+                              (Locale.current == "ar" ? "إضافة عميل" : "Add Customer");
+                        font-size: has-customer ? Typography.body : Typography.caption;
+                        font-weight: has-customer ? 500 : 400;
+                        color: has-customer ? Colors.text-primary : Colors.primary;
+                        horizontal-alignment: Layout.rtl ? right : left;
+                    }
+
+                    // Customer balance/credit if available
+                    if has-customer && customer-balance != "": Text {
+                        text: (Locale.current == "ar" ? "الرصيد: " : "Balance: ") + customer-balance + " " + currency;
+                        font-size: Typography.small;
+                        color: Colors.text-secondary;
+                        horizontal-alignment: Layout.rtl ? right : left;
+                    }
+                }
+
+                // Remove customer button
+                if has-customer: Rectangle {
+                    width: 28px;
+                    height: 28px;
+                    border-radius: 14px;
+                    background: remove-cust-touch.has-hover ? Colors.danger : transparent;
+
+                    remove-cust-touch := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.remove-customer(); }
+                    }
+
+                    Text {
+                        text: "×";
+                        font-size: 18px;
+                        color: remove-cust-touch.has-hover ? Colors.text-on-primary : Colors.text-secondary;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+
+            // Bottom border
+            Rectangle {
+                y: parent.height - 1px;
+                width: parent.width;
+                height: 1px;
+                background: Colors.border;
+            }
+        }
+
+        // ============================================================
+        // CART ITEMS LIST
+        // ============================================================
+        Flickable {
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                padding: Spacing.xs;
+                spacing: 0px;
+
+                // Empty cart state — minimal, no visual noise
+                if items.length == 0 && !loading: Rectangle {
+                    vertical-stretch: 1;
+
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: Spacing.sm;
+
+                        Text {
+                            text: "\u{1F6D2}"; // Shopping cart emoji
+                            font-size: 48px;
+                            horizontal-alignment: center;
+                            opacity: 0.5;
+                        }
+
+                        Text {
+                            text: Locale.current == "ar" ?
+                                  "لا توجد عناصر" :
+                                  "No items";
+                            font-size: Typography.body;
+                            color: Colors.text-secondary;
+                            horizontal-alignment: center;
+                        }
+                    }
+                }
+
+                // Loading skeleton
+                if loading: VerticalLayout {
+                    spacing: Spacing.xs;
+
+                    CartItemSkeleton {}
+                    CartItemSkeleton {}
+                    CartItemSkeleton {}
+                }
+
+                // Cart items
+                for item[index] in items: CartItem {
+                    item-id: item.id;
+                    name: item.name;
+                    name-ar: item.name_ar;
+                    sku: item.sku;
+                    quantity: item.quantity;
+                    unit-price: item.unit_price;
+                    line-total: item.line_total;
+                    currency: currency;
+                    has-discount: item.has_discount;
+                    discount-label: item.discount_label;
+                    discount-amount: item.discount_amount;
+                    original-price: item.original_price;
+                    unit: item.unit;
+                    notes: item.notes;
+                    quantity-display: item.quantity_display;
+
+                    increment => { root.item-increment(item.id); }
+                    decrement => { root.item-decrement(item.id); }
+                    remove => { root.item-remove(item.id); }
+                    edit => { root.item-edit(item.id); }
+                    clicked => { root.item-clicked(item.id); }
+                }
+            }
+        }
+
+        // ============================================================
+        // DISCOUNT SECTION (if applied)
+        // ============================================================
+        if has-discount: Rectangle {
+            height: 40px;
+            background: rgba(34, 197, 94, 0.1); // Success color with alpha
+
+            HorizontalLayout {
+                padding-left: Spacing.lg;
+                padding-right: Spacing.md;
+                alignment: space-between;
+
+                HorizontalLayout {
+                    spacing: Spacing.sm;
+
+                    Text {
+                        text: "\u{1F3F7}"; // Label emoji
+                        font-size: 14px;
+                        vertical-alignment: center;
+                    }
+
+                    Text {
+                        text: discount-name != "" ? discount-name :
+                              (Locale.current == "ar" ? "خصم" : "Discount");
+                        font-size: Typography.caption;
+                        color: Colors.success;
+                        vertical-alignment: center;
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: Spacing.sm;
+
+                    Text {
+                        text: "-" + discount-total + " " + currency;
+                        font-size: Typography.caption;
+                        font-weight: 600;
+                        color: Colors.success;
+                        vertical-alignment: center;
+                    }
+
+                    // Remove discount button
+                    Rectangle {
+                        width: 24px;
+                        height: 24px;
+                        border-radius: 12px;
+
+                        TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.remove-discount(); }
+                        }
+
+                        Text {
+                            text: "×";
+                            font-size: 16px;
+                            color: Colors.success;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+            }
+        }
+
+        // ============================================================
+        // SECONDARY ACTIONS BAR — only when cart has items
+        // (Hold moved to product-side quick action bar in Phase 2)
+        // ============================================================
+        if items.length > 0: Rectangle {
+            height: 44px;
+            background: Colors.background;
+
+            HorizontalLayout {
+                padding-left: Spacing.md;
+                padding-right: Spacing.md;
+                spacing: Spacing.xs;
+                alignment: center;
+
+                SmallButton {
+                    text: Locale.current == "ar" ? "خصم" : "Discount";
+                    variant: "secondary";
+                    horizontal-stretch: 1;
+                    clicked => { root.apply-discount(); }
+                }
+
+                SmallButton {
+                    text: Locale.current == "ar" ? "استرجاع" : "Recall";
+                    variant: "ghost";
+                    horizontal-stretch: 1;
+                    clicked => { root.recall-draft(); }
+                }
+            }
+
+            // Bottom border
+            Rectangle {
+                y: parent.height - 1px;
+                width: parent.width;
+                height: 1px;
+                background: Colors.border;
+            }
+        }
+
+        // Recall-only bar when cart is empty
+        if items.length == 0: Rectangle {
+            height: 44px;
+            background: Colors.background;
+
+            HorizontalLayout {
+                padding-left: Spacing.md;
+                padding-right: Spacing.md;
+                alignment: center;
+
+                SmallButton {
+                    text: Locale.current == "ar" ? "استرجاع مسودة" : "Recall Draft";
+                    variant: "ghost";
+                    horizontal-stretch: 1;
+                    clicked => { root.recall-draft(); }
+                }
+            }
+
+            Rectangle {
+                y: parent.height - 1px;
+                width: parent.width;
+                height: 1px;
+                background: Colors.border;
+            }
+        }
+
+        // ============================================================
+        // TOTALS + PAY SECTION
+        // ============================================================
+        // Accounting rules:
+        // - Line totals are NET (after any item discounts)
+        // - Subtotal = sum of line totals (already net)
+        // - VAT calculated on net subtotal
+        // - Total = Subtotal + VAT
+        // ============================================================
+        Rectangle {
+            height: items.length > 0 ? 180px : 80px;
+            background: Colors.surface;
+
+            animate height { duration: Animation.normal; }
+
+            // Top border
+            Rectangle {
+                width: parent.width;
+                height: 1px;
+                background: Colors.border;
+            }
+
+            VerticalLayout {
+                padding: Spacing.md;
+                padding-left: Spacing.lg;
+                padding-right: Spacing.lg;
+                spacing: Spacing.sm;
+
+                // Math section — only show when cart has items
+                if items.length > 0: VerticalLayout {
+                    spacing: Spacing.xs;
+
+                    // Net subtotal row
+                    HorizontalLayout {
+                        Text {
+                            text: Locale.current == "ar" ? "المجموع الصافي" : "Net Subtotal";
+                            font-size: Typography.body;
+                            color: Colors.text-secondary;
+                            horizontal-stretch: 1;
+                            horizontal-alignment: Layout.rtl ? right : left;
+                        }
+                        HorizontalLayout {
+                            spacing: Spacing.xs;
+                            Text {
+                                text: subtotal;
+                                font-size: Typography.body;
+                                color: Colors.text-primary;
+                                horizontal-alignment: right;
+                                min-width: 80px;
+                            }
+                            Text {
+                                text: currency;
+                                font-size: Typography.caption;
+                                color: Colors.text-secondary;
+                                vertical-alignment: center;
+                                min-width: 36px;
+                            }
+                        }
+                    }
+
+                    // VAT row - EXPLICIT base label (audit requirement)
+                    HorizontalLayout {
+                        Text {
+                            text: Locale.current == "ar" ?
+                                  "ض.ق.م على الصافي " + tax-rate :
+                                  "VAT on net " + tax-rate;
+                            font-size: Typography.body;
+                            color: Colors.text-secondary;
+                            horizontal-stretch: 1;
+                            horizontal-alignment: Layout.rtl ? right : left;
+                        }
+                        HorizontalLayout {
+                            spacing: Spacing.xs;
+                            Text {
+                                text: tax-total;
+                                font-size: Typography.body;
+                                color: Colors.text-primary;
+                                horizontal-alignment: right;
+                                min-width: 80px;
+                            }
+                            Text {
+                                text: currency;
+                                font-size: Typography.caption;
+                                color: Colors.text-secondary;
+                                vertical-alignment: center;
+                                min-width: 36px;
+                            }
+                        }
+                    }
+                }
+
+                // Divider — only when totals visible
+                if items.length > 0: Rectangle {
+                    height: 1px;
+                    background: Colors.border;
+                }
+
+                // Grand total — only when cart has items
+                if items.length > 0: HorizontalLayout {
+                    Text {
+                        text: Locale.current == "ar" ? "الإجمالي" : "Total";
+                        font-size: Typography.title;
+                        font-weight: 700;
+                        color: Colors.text-primary;
+                        horizontal-stretch: 1;
+                        horizontal-alignment: Layout.rtl ? right : left;
+                        vertical-alignment: center;
+                    }
+                    HorizontalLayout {
+                        spacing: Spacing.xs;
+                        Text {
+                            text: grand-total;
+                            font-size: 28px;
+                            font-weight: 800;
+                            color: Colors.text-primary;
+                            horizontal-alignment: right;
+                            vertical-alignment: center;
+                        }
+                        Text {
+                            text: currency;
+                            font-size: Typography.subheading;
+                            font-weight: 600;
+                            color: Colors.text-secondary;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+
+                // Spacer — only when totals visible
+                if items.length > 0: Rectangle {
+                    height: Spacing.xs;
+                }
+
+                // PAY BUTTON — dominant element, 64px tall
+                Rectangle {
+                    height: 64px;
+                    border-radius: Radius.button;
+                    background: items.length > 0 && !processing ?
+                        (pay-touch.pressed ? #16A34A :
+                         pay-touch.has-hover ? #4ADE80 :
+                         Colors.success) :
+                        Colors.disabled;
+                    border-width: items.length > 0 ? 2px : 0px;
+                    border-color: items.length > 0 ? rgba(22, 163, 74, 0.3) : transparent;
+
+                    pay-touch := TouchArea {
+                        mouse-cursor: items.length > 0 && !processing ? pointer : default;
+                        clicked => {
+                            if items.length > 0 && !processing {
+                                root.proceed-to-payment();
+                            }
+                        }
+                    }
+
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: Spacing.md;
+
+                        if processing: Text {
+                            text: "\u{23F3}"; // Hourglass
+                            font-size: 22px;
+                            vertical-alignment: center;
+                        }
+
+                        if !processing: Text {
+                            text: "\u{2713}"; // Checkmark
+                            font-size: 26px;
+                            font-weight: 700;
+                            color: Colors.text-on-primary;
+                            vertical-alignment: center;
+                        }
+
+                        Text {
+                            text: processing ?
+                                  (Locale.current == "ar" ? "جارٍ المعالجة..." : "Processing...") :
+                                  (Locale.current == "ar" ? "الدفع" : "Pay");
+                            font-size: Typography.heading;
+                            font-weight: 800;
+                            color: Colors.text-on-primary;
+                            vertical-alignment: center;
+                        }
+
+                        if !processing: Text {
+                            text: grand-total + " " + currency;
+                            font-size: Typography.subheading;
+                            font-weight: 700;
+                            color: rgba(255, 255, 255, 0.95);
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    animate background { duration: Animation.fast; }
+                }
+            }
+        }
+    }
+}
+
+// ============================================================================
+// COMPACT CART PANEL - Smaller variant for split-screen layouts
+// ============================================================================
+
+export component CompactCartPanel inherits Rectangle {
+    in property <[CartItemData]> items: [];
+    in property <string> grand-total: "0.000";
+    in property <string> currency: CartState.currency;
+    in property <int> item-count: 0;
+
+    callback item-remove(string);
+    callback proceed-to-payment;
+    callback expand-cart;
+
+    background: Colors.surface;
+
+    VerticalLayout {
+        spacing: 0px;
+
+        // Header
+        Rectangle {
+            height: 44px;
+            background: Colors.primary;
+
+            TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.expand-cart(); }
+            }
+
+            HorizontalLayout {
+                padding-left: Spacing.md;
+                padding-right: Spacing.md;
+                alignment: space-between;
+
+                Text {
+                    text: (Locale.current == "ar" ? "السلة" : "Cart") + " (" + item-count + ")";
+                    font-size: Typography.caption;
+                    font-weight: 600;
+                    color: Colors.text-on-primary;
+                    vertical-alignment: center;
+                }
+
+                Text {
+                    text: grand-total + " " + currency;
+                    font-size: Typography.body;
+                    font-weight: 700;
+                    color: Colors.text-on-primary;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        // Mini items list
+        Flickable {
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                padding: Spacing.xs;
+                spacing: 0px;
+
+                for item in items: CompactCartItem {
+                    item-id: item.id;
+                    name: item.name;
+                    name-ar: item.name_ar;
+                    quantity: item.quantity;
+                    line-total: item.line_total;
+                    currency: currency;
+
+                    remove => { root.item-remove(item.id); }
+                }
+            }
+        }
+
+        // Pay button
+        Rectangle {
+            height: 48px;
+            background: items.length > 0 ? Colors.primary : Colors.disabled;
+            border-radius: Radius.button;
+
+            TouchArea {
+                mouse-cursor: items.length > 0 ? pointer : default;
+                clicked => {
+                    if items.length > 0 {
+                        root.proceed-to-payment();
+                    }
+                }
+            }
+
+            Text {
+                text: Locale.current == "ar" ? "الدفع" : "Pay";
+                font-size: Typography.body;
+                font-weight: 700;
+                color: Colors.text-on-primary;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
+
+// ============================================================================
+// CART SUMMARY BAR - Minimal bar for bottom of screen
+// ============================================================================
+
+export component CartSummaryBar inherits Rectangle {
+    in property <int> item-count: 0;
+    in property <string> grand-total: "0.000";
+    in property <string> currency: CartState.currency;
+
+    callback view-cart;
+    callback proceed-to-payment;
+
+    height: 60px;
+    background: Colors.surface;
+
+    // Top border
+    Rectangle {
+        width: parent.width;
+        height: 1px;
+        background: Colors.border;
+    }
+
+    HorizontalLayout {
+        padding-left: Spacing.lg;
+        padding-right: Spacing.lg;
+        spacing: Spacing.md;
+        alignment: space-between;
+
+        // Cart info (tappable)
+        Rectangle {
+            horizontal-stretch: 1;
+
+            TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.view-cart(); }
+            }
+
+            HorizontalLayout {
+                spacing: Spacing.md;
+
+                // Cart icon with badge
+                Rectangle {
+                    width: 40px;
+                    height: 40px;
+
+                    Text {
+                        text: "\u{1F6D2}";
+                        font-size: 24px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+
+                    // Item count badge
+                    if item-count > 0: Rectangle {
+                        x: 24px;
+                        y: 0px;
+                        width: 20px;
+                        height: 20px;
+                        background: Colors.danger;
+                        border-radius: 10px;
+
+                        Text {
+                            text: item-count > 99 ? "99+" : item-count;
+                            font-size: Typography.tiny;
+                            font-weight: 700;
+                            color: Colors.text-on-primary;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+
+                // Total
+                VerticalLayout {
+                    alignment: center;
+
+                    Text {
+                        text: Locale.current == "ar" ? "الإجمالي" : "Total";
+                        font-size: Typography.small;
+                        color: Colors.text-secondary;
+                    }
+
+                    Text {
+                        text: grand-total + " " + currency;
+                        font-size: Typography.subheading;
+                        font-weight: 700;
+                        color: Colors.text-primary;
+                    }
+                }
+            }
+        }
+
+        // Pay button
+        Rectangle {
+            width: 140px;
+            height: 44px;
+            border-radius: Radius.button;
+            background: item-count > 0 ?
+                (pay-touch.pressed ? Colors.primary-dark :
+                 pay-touch.has-hover ? Colors.primary-light : Colors.primary) :
+                Colors.disabled;
+
+            pay-touch := TouchArea {
+                mouse-cursor: item-count > 0 ? pointer : default;
+                clicked => {
+                    if item-count > 0 {
+                        root.proceed-to-payment();
+                    }
+                }
+            }
+
+            HorizontalLayout {
+                alignment: center;
+                spacing: Spacing.sm;
+
+                Text {
+                    text: "\u{1F4B3}";
+                    font-size: 16px;
+                    vertical-alignment: center;
+                }
+
+                Text {
+                    text: Locale.current == "ar" ? "الدفع" : "Pay";
+                    font-size: Typography.body;
+                    font-weight: 600;
+                    color: Colors.text-on-primary;
+                    vertical-alignment: center;
+                }
+            }
+
+            animate background { duration: Animation.fast; }
+        }
+    }
+}

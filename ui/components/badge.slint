@@ -1,0 +1,276 @@
+// ============================================================================
+// E2Manage POS Terminal - Badge Components
+// ============================================================================
+// Reusable badge and chip components for status indicators
+// Supports: Badge, Chip, StatusDot, Tag
+// ============================================================================
+
+import { Colors, Typography, Spacing, Sizes, Radius, Animation, Layout, CartState } from "../theme.slint";
+
+// ============================================================================
+// BADGE COMPONENT (small notification/count indicator)
+// ============================================================================
+
+export component Badge inherits Rectangle {
+    in property <string> text: "";
+    in property <int> count: 0;
+    in property <string> variant: "primary"; // primary, success, warning, danger, neutral
+    in property <bool> dot-only: false; // Show just a dot (no text/count)
+
+    // Size based on content
+    width: dot-only ? 8px :
+           text != "" ? 36px :  // Fixed width for text badges
+           count < 10 ? 20px :
+           count < 100 ? 28px : 36px;
+    height: dot-only ? 8px : 20px;
+    border-radius: dot-only ? 4px : Radius.full;
+
+    background: variant == "success" ? Colors.chip-success-bg :
+                variant == "warning" ? Colors.chip-warning-bg :
+                variant == "danger" ? Colors.chip-danger-bg :
+                variant == "neutral" ? Colors.chip-neutral-bg :
+                Colors.primary;
+
+    if !dot-only: Text {
+        text: root.text != "" ? root.text : (count > 99 ? "99+" : count);
+        font-size: Typography.tiny;
+        font-weight: Typography.semi-bold;
+        color: variant == "neutral" ? Colors.text-primary : Colors.text-on-primary;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+// ============================================================================
+// CHIP COMPONENT (larger, tappable badge)
+// ============================================================================
+
+export component Chip inherits Rectangle {
+    in property <string> text: "";
+    in property <string> variant: "neutral"; // neutral, primary, success, warning, danger
+    in property <bool> selected: false;
+    in property <bool> closable: false;
+    in property <bool> disabled: false;
+    in property <string> leading-icon: "";
+
+    callback clicked;
+    callback closed;
+
+    height: 32px;
+    border-radius: Radius.chip;
+    background: selected ? Colors.primary :
+                variant == "success" ? Colors.success :
+                variant == "warning" ? Colors.warning :
+                variant == "danger" ? Colors.danger :
+                variant == "primary" ? Colors.primary-light :
+                Colors.chip-neutral-bg;
+    border-width: selected || variant != "neutral" ? 0px : 1px;
+    border-color: Colors.border;
+
+    states [
+        pressed when touch.pressed && !disabled: {
+            opacity: 0.8;
+        }
+    ]
+
+    HorizontalLayout {
+        padding-left: leading-icon != "" ? Spacing.sm : Spacing.md;
+        padding-right: closable ? Spacing.sm : Spacing.md;
+        spacing: Spacing.xs;
+
+        // Leading icon
+        if leading-icon != "": Text {
+            text: leading-icon;
+            font-size: Typography.small;
+            color: selected || variant != "neutral" ? Colors.text-on-primary : Colors.text-primary;
+            vertical-alignment: center;
+        }
+
+        // Chip text
+        Text {
+            text: root.text;
+            font-size: Typography.caption;
+            font-weight: Typography.medium;
+            color: disabled ? Colors.disabled :
+                   selected || variant != "neutral" ? Colors.text-on-primary : Colors.text-primary;
+            vertical-alignment: center;
+        }
+
+        // Close button
+        if closable: Rectangle {
+            width: 20px;
+            height: 20px;
+            border-radius: 10px;
+            background: close-touch.pressed ? rgba(0,0,0,0.1) : transparent;
+
+            Text {
+                text: "\u{2715}";
+                font-size: Typography.small;
+                color: selected || variant != "neutral" ? Colors.text-on-primary : Colors.text-secondary;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+
+            close-touch := TouchArea {
+                enabled: !disabled;
+                mouse-cursor: pointer;
+                clicked => { root.closed(); }
+            }
+        }
+    }
+
+    touch := TouchArea {
+        enabled: !disabled;
+        mouse-cursor: disabled ? default : pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+// ============================================================================
+// STATUS DOT (simple status indicator)
+// ============================================================================
+
+export component StatusDot inherits Rectangle {
+    in property <string> status: "online"; // online, offline, busy, away
+    in property <bool> pulse: false;
+
+    width: Sizes.status-dot;
+    height: Sizes.status-dot;
+    border-radius: Sizes.status-dot / 2;
+
+    background: status == "online" ? Colors.success :
+                status == "offline" ? Colors.text-secondary :
+                status == "busy" ? Colors.danger :
+                status == "away" ? Colors.warning :
+                Colors.text-secondary;
+
+    // Simple pulse effect (opacity animation)
+    opacity: pulse ? 0.7 : 1.0;
+    animate opacity { duration: Animation.pulse; }
+}
+
+// ============================================================================
+// TAG COMPONENT (label with icon support)
+// ============================================================================
+
+export component Tag inherits Rectangle {
+    in property <string> text: "";
+    in property <string> icon: "";
+    in property <string> variant: "neutral"; // neutral, primary, success, warning, danger, info
+    in property <bool> outlined: false;
+
+    height: 24px;
+    border-radius: Radius.sm;
+
+    background: outlined ? transparent :
+                variant == "success" ? rgba(34, 197, 94, 0.15) :
+                variant == "warning" ? rgba(245, 158, 11, 0.15) :
+                variant == "danger" ? rgba(239, 68, 68, 0.15) :
+                variant == "info" ? rgba(14, 165, 233, 0.15) :
+                variant == "primary" ? rgba(37, 99, 235, 0.15) :
+                Colors.surface-variant;
+
+    border-width: outlined ? 1px : 0px;
+    border-color: variant == "success" ? Colors.success :
+                  variant == "warning" ? Colors.warning :
+                  variant == "danger" ? Colors.danger :
+                  variant == "info" ? Colors.info :
+                  variant == "primary" ? Colors.primary :
+                  Colors.border;
+
+    HorizontalLayout {
+        padding-left: icon != "" ? Spacing.xs : Spacing.sm;
+        padding-right: Spacing.sm;
+        spacing: Spacing.xxs;
+
+        if icon != "": Text {
+            text: icon;
+            font-size: Typography.small;
+            color: variant == "success" ? Colors.success :
+                   variant == "warning" ? Colors.warning :
+                   variant == "danger" ? Colors.danger :
+                   variant == "info" ? Colors.info :
+                   variant == "primary" ? Colors.primary :
+                   Colors.text-secondary;
+            vertical-alignment: center;
+        }
+
+        Text {
+            text: root.text;
+            font-size: Typography.small;
+            font-weight: Typography.medium;
+            color: variant == "success" ? Colors.success :
+                   variant == "warning" ? Colors.warning :
+                   variant == "danger" ? Colors.danger :
+                   variant == "info" ? Colors.info :
+                   variant == "primary" ? Colors.primary :
+                   Colors.text-secondary;
+            vertical-alignment: center;
+        }
+    }
+}
+
+// ============================================================================
+// COUNT BADGE (for notification counts on icons)
+// ============================================================================
+
+export component CountBadge inherits Rectangle {
+    in property <int> count: 0;
+    in property <bool> show-zero: false;
+    in property <string> variant: "danger"; // danger, primary
+
+    visible: count > 0 || show-zero;
+
+    width: count < 10 ? 18px : count < 100 ? 24px : 32px;
+    height: 18px;
+    border-radius: 9px;
+
+    background: variant == "danger" ? Colors.danger : Colors.primary;
+
+    Text {
+        text: count > 99 ? "99+" : count;
+        font-size: Typography.tiny;
+        font-weight: Typography.bold;
+        color: Colors.text-on-primary;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+// ============================================================================
+// PRICE TAG (for displaying prices with currency)
+// ============================================================================
+
+export component PriceTag inherits Rectangle {
+    in property <string> price: "0.000";
+    in property <string> currency: CartState.currency;
+    in property <string> variant: "neutral"; // neutral, sale, discount
+    in property <bool> large: false;
+
+    height: large ? 36px : 28px;
+    border-radius: Radius.sm;
+    background: variant == "sale" ? Colors.danger :
+                variant == "discount" ? Colors.success :
+                Colors.surface-variant;
+
+    HorizontalLayout {
+        padding-left: Spacing.sm;
+        padding-right: Spacing.sm;
+        spacing: Spacing.xxs;
+
+        Text {
+            text: price;
+            font-size: large ? Typography.heading : Typography.body;
+            font-weight: Typography.bold;
+            color: variant == "neutral" ? Colors.text-primary : Colors.text-on-primary;
+            vertical-alignment: center;
+        }
+
+        Text {
+            text: currency;
+            font-size: large ? Typography.caption : Typography.small;
+            color: variant == "neutral" ? Colors.text-secondary : rgba(255,255,255,0.85);
+            vertical-alignment: center;
+        }
+    }
+}

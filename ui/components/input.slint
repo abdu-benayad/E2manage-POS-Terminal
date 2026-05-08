@@ -1,0 +1,380 @@
+// ============================================================================
+// E2Manage POS Terminal - Input Components
+// ============================================================================
+// Reusable input components for text entry and search
+// ============================================================================
+
+import { Colors, Typography, Spacing, Sizes, Radius, Animation, Layout, Locale, CartState } from "../theme.slint";
+import { LineEdit } from "std-widgets.slint";
+
+// ============================================================================
+// TEXT INPUT COMPONENT
+// ============================================================================
+
+export component TextInput inherits Rectangle {
+    in property <string> placeholder: "";
+    in-out property <string> text: "";
+    in property <bool> disabled: false;
+    in property <bool> error: false;
+    in property <InputType> input-type: InputType.text;
+    in property <string> label: "";
+    in property <string> error-message: "";
+    in property <bool> readonly: false;
+
+    callback edited(string);
+    callback accepted(string);
+
+    height: label != "" ? Sizes.input-height + 24px : Sizes.input-height;
+
+    VerticalLayout {
+        spacing: Spacing.xs;
+
+        // Label
+        if label != "": Text {
+            text: label;
+            font-size: Typography.caption;
+            font-weight: Typography.medium;
+            color: error ? Colors.danger : Colors.text-secondary;
+            horizontal-alignment: Layout.rtl ? right : left;
+        }
+
+        // Input container
+        Rectangle {
+            height: Sizes.input-height;
+            border-radius: Radius.input;
+            border-width: focus-scope.has-focus ? 2px : 1px;
+            border-color: error ? Colors.danger :
+                          focus-scope.has-focus ? Colors.primary :
+                          Colors.border;
+            background: disabled ? Colors.surface-variant : Colors.surface;
+
+            focus-scope := FocusScope {
+                x: 0; y: 0;
+                width: 100%;
+                height: 100%;
+            }
+
+            HorizontalLayout {
+                padding-left: Spacing.input-padding-h;
+                padding-right: Spacing.input-padding-h;
+
+                line-edit := LineEdit {
+                    text <=> root.text;
+                    placeholder-text: placeholder;
+                    enabled: !disabled && !readonly;
+                    input-type: root.input-type;
+                    font-size: Typography.body;
+                    horizontal-alignment: Layout.rtl ? right : left;
+
+                    edited => { root.edited(self.text); }
+                    accepted => { root.accepted(self.text); }
+                }
+            }
+        }
+
+        // Error message
+        if error && error-message != "": Text {
+            text: error-message;
+            font-size: Typography.small;
+            color: Colors.danger;
+            horizontal-alignment: Layout.rtl ? right : left;
+        }
+    }
+}
+
+// ============================================================================
+// SEARCH INPUT COMPONENT
+// ============================================================================
+
+export component SearchInput inherits Rectangle {
+    in property <string> placeholder: Layout.rtl ? "بحث..." : "Search...";
+    in-out property <string> text: "";
+    in property <bool> disabled: false;
+    in property <bool> show-clear: true;
+
+    callback search(string);
+    callback cleared();
+
+    height: Sizes.input-height;
+    border-radius: Radius.input;
+    border-width: focus-scope.has-focus ? 2px : 1px;
+    border-color: focus-scope.has-focus ? Colors.primary : Colors.border;
+    background: Colors.surface;
+
+    focus-scope := FocusScope {
+        x: 0; y: 0;
+        width: 100%;
+        height: 100%;
+    }
+
+    HorizontalLayout {
+        padding-left: Spacing.md;
+        padding-right: Spacing.md;
+        spacing: Spacing.sm;
+
+        // Search icon (start position for LTR)
+        if !Layout.rtl: Text {
+            text: "\u{1F50D}"; // Magnifying glass emoji
+            font-size: Typography.body;
+            color: Colors.text-secondary;
+            vertical-alignment: center;
+        }
+
+        // Search input
+        line-edit := LineEdit {
+            text <=> root.text;
+            placeholder-text: placeholder;
+            enabled: !disabled;
+            font-size: Typography.body;
+            horizontal-alignment: Layout.rtl ? right : left;
+
+            accepted => { root.search(self.text); }
+            edited => { root.search(self.text); }
+        }
+
+        // Search icon (end position for RTL)
+        if Layout.rtl: Text {
+            text: "\u{1F50D}"; // Magnifying glass emoji
+            font-size: Typography.body;
+            color: Colors.text-secondary;
+            vertical-alignment: center;
+        }
+
+        // Clear button
+        if show-clear && text != "": Rectangle {
+            width: Sizes.icon-md;
+            height: Sizes.icon-md;
+            border-radius: Sizes.icon-md / 2;
+            background: touch-clear.pressed ? Colors.surface-variant : transparent;
+
+            Text {
+                text: "\u{2715}"; // X symbol
+                font-size: Typography.caption;
+                color: Colors.text-secondary;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+
+            touch-clear := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    root.text = "";
+                    root.cleared();
+                }
+            }
+        }
+    }
+}
+
+// ============================================================================
+// AMOUNT INPUT COMPONENT (for entering monetary values)
+// ============================================================================
+
+export component AmountInput inherits Rectangle {
+    in property <string> label: "";
+    in-out property <string> value: "0.000";
+    in property <string> currency: CartState.currency;
+    in property <bool> disabled: false;
+    in property <bool> error: false;
+    in property <bool> large: false;
+
+    callback value-changed(string);
+
+    height: large ? Sizes.input-large : Sizes.input-height;
+    border-radius: Radius.input;
+    border-width: 1px;
+    border-color: error ? Colors.danger : Colors.border;
+    background: disabled ? Colors.surface-variant : Colors.surface;
+
+    HorizontalLayout {
+        padding-left: Spacing.lg;
+        padding-right: Spacing.lg;
+        spacing: Spacing.md;
+        alignment: Layout.rtl ? start : end;
+
+        // Currency label
+        Text {
+            text: currency;
+            font-size: large ? Typography.subheading : Typography.body;
+            font-weight: Typography.medium;
+            color: Colors.text-secondary;
+            vertical-alignment: center;
+        }
+
+        // Amount value
+        Text {
+            text: value;
+            font-size: large ? Typography.display : Typography.heading;
+            font-weight: Typography.bold;
+            color: error ? Colors.danger : Colors.text-primary;
+            vertical-alignment: center;
+            horizontal-alignment: Layout.rtl ? left : right;
+        }
+    }
+}
+
+// ============================================================================
+// PIN INPUT COMPONENT (for numeric PIN entry)
+// ============================================================================
+
+export component PinInput inherits Rectangle {
+    in property <int> length: 4;
+    in property <int> filled: 0;
+    in property <bool> error: false;
+    in property <bool> show-value: false;
+    in property <string> value: "";
+
+    width: Sizes.pin-container-width;
+    height: Sizes.pin-container-height;
+    border-radius: Radius.lg;
+    background: Colors.surface;
+    border-width: 1px;
+    border-color: error ? Colors.danger : Colors.border;
+
+    HorizontalLayout {
+        alignment: center;
+        spacing: Sizes.pin-dot-gap;
+        padding: Spacing.lg;
+
+        for i in length: Rectangle {
+            width: Sizes.pin-dot-size;
+            height: Sizes.pin-dot-size;
+            border-radius: Sizes.pin-dot-size / 2;
+            background: i < filled ?
+                        (error ? Colors.danger : Colors.primary) :
+                        Colors.border;
+            border-width: i >= filled ? 1px : 0px;
+            border-color: error ? Colors.danger : Colors.border;
+
+            animate background { duration: Animation.fast; }
+        }
+    }
+}
+
+// ============================================================================
+// SELECT INPUT COMPONENT (dropdown placeholder - shows current value)
+// ============================================================================
+
+export component SelectInput inherits Rectangle {
+    in property <string> label: "";
+    in property <string> value: "";
+    in property <string> placeholder: "Select...";
+    in property <bool> disabled: false;
+    in property <bool> error: false;
+
+    callback clicked;
+
+    height: label != "" ? Sizes.input-height + 24px : Sizes.input-height;
+
+    VerticalLayout {
+        spacing: Spacing.xs;
+
+        if label != "": Text {
+            text: label;
+            font-size: Typography.caption;
+            font-weight: Typography.medium;
+            color: error ? Colors.danger : Colors.text-secondary;
+            horizontal-alignment: Layout.rtl ? right : left;
+        }
+
+        Rectangle {
+            height: Sizes.input-height;
+            border-radius: Radius.input;
+            border-width: 1px;
+            border-color: error ? Colors.danger : Colors.border;
+            background: disabled ? Colors.surface-variant : Colors.surface;
+
+            HorizontalLayout {
+                padding-left: Spacing.input-padding-h;
+                padding-right: Spacing.input-padding-h;
+
+                Text {
+                    text: value != "" ? value : placeholder;
+                    font-size: Typography.body;
+                    color: value != "" ? Colors.text-primary : Colors.text-secondary;
+                    vertical-alignment: center;
+                    horizontal-alignment: Layout.rtl ? right : left;
+                    horizontal-stretch: 1;
+                }
+
+                // Dropdown arrow
+                Text {
+                    text: "\u{25BC}"; // Down arrow
+                    font-size: Typography.small;
+                    color: Colors.text-secondary;
+                    vertical-alignment: center;
+                }
+            }
+
+            TouchArea {
+                enabled: !disabled;
+                mouse-cursor: disabled ? default : pointer;
+                clicked => { root.clicked(); }
+            }
+        }
+    }
+}
+
+// ============================================================================
+// TEXTAREA COMPONENT (multi-line input)
+// ============================================================================
+
+export component TextArea inherits Rectangle {
+    in property <string> placeholder: "";
+    in-out property <string> text: "";
+    in property <bool> disabled: false;
+    in property <bool> error: false;
+    in property <string> label: "";
+    in property <int> rows: 3;
+
+    callback edited(string);
+
+    height: label != "" ?
+            (Sizes.input-height * rows / 2) + 24px :
+            (Sizes.input-height * rows / 2);
+
+    VerticalLayout {
+        spacing: Spacing.xs;
+
+        if label != "": Text {
+            text: label;
+            font-size: Typography.caption;
+            font-weight: Typography.medium;
+            color: error ? Colors.danger : Colors.text-secondary;
+            horizontal-alignment: Layout.rtl ? right : left;
+        }
+
+        Rectangle {
+            vertical-stretch: 1;
+            border-radius: Radius.input;
+            border-width: focus-scope.has-focus ? 2px : 1px;
+            border-color: error ? Colors.danger :
+                          focus-scope.has-focus ? Colors.primary :
+                          Colors.border;
+            background: disabled ? Colors.surface-variant : Colors.surface;
+
+            focus-scope := FocusScope {
+                x: 0; y: 0;
+                width: 100%;
+                height: 100%;
+            }
+
+            // Note: Slint's LineEdit is single-line only
+            // For multi-line, we use LineEdit but style it differently
+            // In production, this might need custom implementation
+            HorizontalLayout {
+                padding: Spacing.md;
+
+                LineEdit {
+                    text <=> root.text;
+                    placeholder-text: placeholder;
+                    enabled: !disabled;
+                    font-size: Typography.body;
+                    horizontal-alignment: Layout.rtl ? right : left;
+
+                    edited => { root.edited(self.text); }
+                }
+            }
+        }
+    }
+}

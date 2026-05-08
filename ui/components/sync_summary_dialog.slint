@@ -1,0 +1,362 @@
+// ============================================================================
+// E2Manage POS Terminal - Sync Summary Dialog
+// ============================================================================
+// Shows a summary of sync operation results including:
+// - Products synced
+// - Categories synced
+// - Operators synced
+// - Offline transactions processed
+// ============================================================================
+
+import { Colors, Typography, Spacing, Sizes, Radius, Animation, Layout, Locale } from "../theme.slint";
+import { Button } from "button.slint";
+import { ProgressBar } from "progress_bar.slint";
+
+// ============================================================================
+// SYNC SUMMARY DIALOG
+// ============================================================================
+
+export component SyncSummaryDialog inherits Rectangle {
+    in property <string> title: Locale.current == "ar" ? "نتيجة المزامنة" : "Sync Result";
+    in-out property <bool> open: false;
+
+    // Sync status
+    in property <bool> sync-in-progress: false;
+    in property <float> sync-progress: 0.0;
+    in property <string> sync-status: "";
+
+    // Sync results
+    in property <bool> sync-success: true;
+    in property <string> error-message: "";
+    in property <int> products-synced: 0;
+    in property <int> categories-synced: 0;
+    in property <int> operators-synced: 0;
+    in property <int> offline-synced: 0;
+    in property <int> offline-failed: 0;
+    in property <bool> catalog-not-modified: false;
+    in property <bool> operators-not-modified: false;
+
+    callback dismissed;
+
+    // Full screen overlay
+    if open: Rectangle {
+        width: 100%;
+        height: 100%;
+        background: Colors.overlay;
+
+        // Backdrop touch to close (only if not in progress)
+        TouchArea {
+            clicked => {
+                if !root.sync-in-progress {
+                    root.dismissed();
+                    root.open = false;
+                }
+            }
+        }
+
+        // Dialog box
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: 450px;
+            height: sync-in-progress ? 200px : (sync-success ? 420px : 280px);
+            border-radius: Radius.dialog;
+            background: Colors.surface;
+
+            // Block clicks from propagating to backdrop
+            TouchArea {}
+
+            VerticalLayout {
+                padding: Spacing.xl;
+                spacing: Spacing.lg;
+
+                // Title with icon
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: Spacing.md;
+
+                    // Status icon
+                    Rectangle {
+                        width: 40px;
+                        height: 40px;
+                        border-radius: 20px;
+                        background: sync-in-progress ? Colors.primary :
+                                    sync-success ? Colors.success : Colors.danger;
+
+                        Text {
+                            text: sync-in-progress ? "⟳" :
+                                  sync-success ? "✓" : "✕";
+                            font-size: Typography.title;
+                            font-weight: Typography.bold;
+                            color: Colors.text-on-primary;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    Text {
+                        text: sync-in-progress
+                            ? (Locale.current == "ar" ? "جاري المزامنة..." : "Syncing...")
+                            : sync-success
+                                ? (Locale.current == "ar" ? "اكتملت المزامنة" : "Sync Completed")
+                                : (Locale.current == "ar" ? "فشلت المزامنة" : "Sync Failed");
+                        font-size: Typography.heading;
+                        font-weight: 600;
+                        color: Colors.text-primary;
+                        horizontal-alignment: center;
+                    }
+                }
+
+                // Progress section (shown during sync)
+                if sync-in-progress: VerticalLayout {
+                    spacing: Spacing.md;
+                    alignment: center;
+
+                    ProgressBar {
+                        progress: sync-progress;
+                        height: 8px;
+                    }
+
+                    Text {
+                        text: sync-status;
+                        font-size: Typography.body;
+                        color: Colors.text-secondary;
+                        horizontal-alignment: center;
+                    }
+                }
+
+                // Error message (shown on failure)
+                if !sync-in-progress && !sync-success: Rectangle {
+                    background: #FEE2E2;
+                    border-radius: Radius.md;
+                    height: 60px;
+
+                    HorizontalLayout {
+                        padding: Spacing.md;
+                        alignment: center;
+
+                        Text {
+                            text: error-message;
+                            font-size: Typography.body;
+                            color: Colors.danger;
+                            horizontal-alignment: center;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+
+                // Summary section (shown on success)
+                if !sync-in-progress && sync-success: VerticalLayout {
+                    spacing: Spacing.sm;
+
+                    // Products row
+                    HorizontalLayout {
+                        spacing: Spacing.md;
+                        alignment: stretch;
+
+                        Rectangle {
+                            background: Colors.background;
+                            border-radius: Radius.md;
+                            height: 50px;
+                            horizontal-stretch: 1;
+
+                            HorizontalLayout {
+                                padding-left: Spacing.md;
+                                padding-right: Spacing.md;
+                                alignment: space-between;
+
+                                Text {
+                                    text: Locale.current == "ar" ? "المنتجات" : "Products";
+                                    font-size: Typography.body;
+                                    color: Colors.text-secondary;
+                                    vertical-alignment: center;
+                                }
+
+                                HorizontalLayout {
+                                    spacing: Spacing.xs;
+                                    alignment: end;
+
+                                    Text {
+                                        text: catalog-not-modified ? (Locale.current == "ar" ? "لا تغيير" : "No Change") : products-synced;
+                                        font-size: Typography.body;
+                                        font-weight: Typography.semi-bold;
+                                        color: catalog-not-modified ? Colors.text-muted : Colors.success;
+                                        vertical-alignment: center;
+                                    }
+
+                                    if !catalog-not-modified && products-synced > 0: Text {
+                                        text: "✓";
+                                        font-size: Typography.small;
+                                        color: Colors.success;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Categories row
+                    HorizontalLayout {
+                        spacing: Spacing.md;
+                        alignment: stretch;
+
+                        Rectangle {
+                            background: Colors.background;
+                            border-radius: Radius.md;
+                            height: 50px;
+                            horizontal-stretch: 1;
+
+                            HorizontalLayout {
+                                padding-left: Spacing.md;
+                                padding-right: Spacing.md;
+                                alignment: space-between;
+
+                                Text {
+                                    text: Locale.current == "ar" ? "الفئات" : "Categories";
+                                    font-size: Typography.body;
+                                    color: Colors.text-secondary;
+                                    vertical-alignment: center;
+                                }
+
+                                HorizontalLayout {
+                                    spacing: Spacing.xs;
+                                    alignment: end;
+
+                                    Text {
+                                        text: catalog-not-modified ? (Locale.current == "ar" ? "لا تغيير" : "No Change") : categories-synced;
+                                        font-size: Typography.body;
+                                        font-weight: Typography.semi-bold;
+                                        color: catalog-not-modified ? Colors.text-muted : Colors.success;
+                                        vertical-alignment: center;
+                                    }
+
+                                    if !catalog-not-modified && categories-synced > 0: Text {
+                                        text: "✓";
+                                        font-size: Typography.small;
+                                        color: Colors.success;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Operators row
+                    HorizontalLayout {
+                        spacing: Spacing.md;
+                        alignment: stretch;
+
+                        Rectangle {
+                            background: Colors.background;
+                            border-radius: Radius.md;
+                            height: 50px;
+                            horizontal-stretch: 1;
+
+                            HorizontalLayout {
+                                padding-left: Spacing.md;
+                                padding-right: Spacing.md;
+                                alignment: space-between;
+
+                                Text {
+                                    text: Locale.current == "ar" ? "المشغلين" : "Operators";
+                                    font-size: Typography.body;
+                                    color: Colors.text-secondary;
+                                    vertical-alignment: center;
+                                }
+
+                                HorizontalLayout {
+                                    spacing: Spacing.xs;
+                                    alignment: end;
+
+                                    Text {
+                                        text: operators-not-modified ? (Locale.current == "ar" ? "لا تغيير" : "No Change") : operators-synced;
+                                        font-size: Typography.body;
+                                        font-weight: Typography.semi-bold;
+                                        color: operators-not-modified ? Colors.text-muted : Colors.success;
+                                        vertical-alignment: center;
+                                    }
+
+                                    if !operators-not-modified && operators-synced > 0: Text {
+                                        text: "✓";
+                                        font-size: Typography.small;
+                                        color: Colors.success;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Offline transactions row
+                    HorizontalLayout {
+                        spacing: Spacing.md;
+                        alignment: stretch;
+
+                        Rectangle {
+                            background: Colors.background;
+                            border-radius: Radius.md;
+                            height: 50px;
+                            horizontal-stretch: 1;
+
+                            HorizontalLayout {
+                                padding-left: Spacing.md;
+                                padding-right: Spacing.md;
+                                alignment: space-between;
+
+                                Text {
+                                    text: Locale.current == "ar" ? "المعاملات المعلقة" : "Pending Transactions";
+                                    font-size: Typography.body;
+                                    color: Colors.text-secondary;
+                                    vertical-alignment: center;
+                                }
+
+                                HorizontalLayout {
+                                    spacing: Spacing.xs;
+                                    alignment: end;
+
+                                    if offline-synced > 0 || offline-failed > 0: Text {
+                                        text: offline-synced + " ✓";
+                                        font-size: Typography.body;
+                                        font-weight: Typography.semi-bold;
+                                        color: Colors.success;
+                                        vertical-alignment: center;
+                                    }
+
+                                    if offline-failed > 0: Text {
+                                        text: " / " + offline-failed + " ✕";
+                                        font-size: Typography.body;
+                                        font-weight: Typography.semi-bold;
+                                        color: Colors.danger;
+                                        vertical-alignment: center;
+                                    }
+
+                                    if offline-synced == 0 && offline-failed == 0: Text {
+                                        text: Locale.current == "ar" ? "لا يوجد" : "None";
+                                        font-size: Typography.body;
+                                        color: Colors.text-muted;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Close button (only shown when not in progress)
+                if !sync-in-progress: HorizontalLayout {
+                    alignment: center;
+
+                    Button {
+                        text: Locale.current == "ar" ? "إغلاق" : "Close";
+                        variant: "primary";
+                        min-width: 140px;
+                        clicked => {
+                            root.dismissed();
+                            root.open = false;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

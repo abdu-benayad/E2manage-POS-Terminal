@@ -1,0 +1,993 @@
+// ============================================================================
+// E2Manage POS Terminal - X-Report Screen (Mid-Shift Summary)
+// ============================================================================
+// Non-clearing shift report showing current shift totals
+// Can be printed at any time during the shift
+// RTL (Arabic) support with proper text alignment
+// ============================================================================
+
+import { Colors, Typography, Spacing, Sizes, Radius, Animation, Locale, AppState, Layout, CartState } from "../../theme.slint";
+import { StatusBar, Button } from "../../components/mod.slint";
+
+// ============================================================================
+// X-REPORT SCREEN
+// ============================================================================
+// Usage:
+//   XReportScreen {
+//       shift-number: "12";
+//       operator-name: "Ahmed Mohamed";
+//       terminal-id: "POS-001";
+//       transaction-count: 45;
+//       gross-sales: "2,850.000";
+//       net-sales: "2,600.000";
+//       currency: CartState.currency;
+//       print-report => { /* print */ }
+//       back-clicked => { /* navigate back */ }
+//   }
+// ============================================================================
+
+export component XReportScreen inherits Rectangle {
+    // Shift info
+    in property <string> shift-number: "12";
+    in property <string> operator-name: Layout.rtl ? "أحمد محمد" : "Ahmed Mohamed";
+    in property <string> terminal-id: "POS-001";
+    in property <string> shift-start: "2024-01-15 08:00";
+    in property <string> current-time: "2024-01-15 14:30";
+    in property <string> currency: CartState.currency;
+
+    // Sales summary
+    in property <int> transaction-count: 45;
+    in property <string> gross-sales: "2,850.000";
+    in property <string> discounts: "150.000";
+    in property <string> returns: "100.000";
+    in property <string> net-sales: "2,600.000";
+    in property <string> tax-collected: "130.000";
+    in property <string> tax-rate: AppState.tax-rate-label;
+
+    // Payment breakdown
+    in property <string> cash-total: "1,500.000";
+    in property <string> card-total: "900.000";
+    in property <string> wallet-total: "200.000";
+    in property <string> credit-total: "0.000";
+    in property <int> cash-count: 25;
+    in property <int> card-count: 15;
+    in property <int> wallet-count: 5;
+    in property <int> credit-count: 0;
+
+    // Cash drawer
+    in property <string> opening-float: "500.000";
+    in property <string> cash-received: "1,500.000";
+    in property <string> cash-refunded: "50.000";
+    in property <string> expected-cash: "1,950.000";
+
+    // Returns summary
+    in property <int> return-count: 3;
+    in property <string> return-total: "100.000";
+
+    // Void summary
+    in property <int> void-count: 1;
+    in property <string> void-total: "25.000";
+
+    // State
+    in property <bool> is-printing: false;
+
+    // Callbacks
+    callback print-report;
+    callback back-clicked;
+
+    background: Colors.background;
+
+    VerticalLayout {
+        spacing: 0px;
+
+        // ====================================================================
+        // HEADER
+        // ====================================================================
+        Rectangle {
+            height: 72px;
+            background: @linear-gradient(180deg, Colors.gradient-top 0%, Colors.gradient-bottom 100%);
+
+            HorizontalLayout {
+                padding-left: Spacing.xl;
+                padding-right: Spacing.xl;
+                alignment: space-between;
+
+                // Left - Back button and title
+                HorizontalLayout {
+                    spacing: Spacing.lg;
+                    alignment: start;
+
+                    // Back button
+                    Rectangle {
+                        width: 48px;
+                        height: 48px;
+                        border-radius: Radius.md;
+                        background: back-touch.has-hover ? rgba(255, 255, 255, 0.1) : transparent;
+
+                        back-touch := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.back-clicked(); }
+                        }
+
+                        Text {
+                            text: Layout.rtl ? "→" : "←";
+                            font-size: 24px;
+                            font-weight: Typography.bold;
+                            color: Colors.text-on-primary;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    // Title section
+                    VerticalLayout {
+                        alignment: center;
+
+                        HorizontalLayout {
+                            spacing: Spacing.sm;
+                            alignment: start;
+
+                            // X badge
+                            Rectangle {
+                                width: 32px;
+                                height: 32px;
+                                border-radius: Radius.sm;
+                                background: rgba(255, 255, 255, 0.2);
+
+                                Text {
+                                    text: "X";
+                                    font-size: Typography.heading;
+                                    font-weight: Typography.bold;
+                                    color: Colors.text-on-primary;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            Text {
+                                text: Layout.rtl ? "تقرير X" : "X-Report";
+                                font-size: Typography.heading;
+                                font-weight: Typography.semi-bold;
+                                color: Colors.text-on-primary;
+                                vertical-alignment: center;
+                            }
+                        }
+
+                        Text {
+                            text: Layout.rtl ?
+                                  "الوردية #" + shift-number + " • " + operator-name :
+                                  "Shift #" + shift-number + " • " + operator-name;
+                            font-size: Typography.small;
+                            color: rgba(255, 255, 255, 0.8);
+                        }
+                    }
+                }
+
+                // Right - Time and Print button
+                HorizontalLayout {
+                    alignment: end;
+                    spacing: Spacing.lg;
+
+                    // Current time
+                    VerticalLayout {
+                        alignment: center;
+
+                        HorizontalLayout {
+                            spacing: Spacing.xs;
+
+                            Text {
+                                text: AppState.current-time;
+                                font-size: Typography.body;
+                                color: Colors.text-on-primary;
+                                vertical-alignment: center;
+                            }
+
+                            Rectangle {
+                                width: Sizes.status-dot;
+                                height: Sizes.status-dot;
+                                border-radius: Sizes.status-dot / 2;
+                                background: AppState.is-online ? Colors.success : Colors.warning;
+                            }
+                        }
+                    }
+
+                    // Print button
+                    Rectangle {
+                        width: 120px;
+                        height: 40px;
+                        border-radius: Radius.md;
+                        background: print-touch.has-hover ? rgba(255, 255, 255, 0.3) : rgba(255, 255, 255, 0.2);
+                        opacity: is-printing ? 0.6 : 1.0;
+
+                        print-touch := TouchArea {
+                            mouse-cursor: is-printing ? default : pointer;
+                            enabled: !is-printing;
+                            clicked => { root.print-report(); }
+                        }
+
+                        HorizontalLayout {
+                            alignment: center;
+                            spacing: Spacing.sm;
+
+                            Text {
+                                text: "🖨️";
+                                font-size: Typography.body;
+                                vertical-alignment: center;
+                            }
+
+                            Text {
+                                text: is-printing ?
+                                      (Layout.rtl ? "جارٍ الطباعة..." : "Printing...") :
+                                      (Layout.rtl ? "طباعة" : "Print");
+                                font-size: Typography.caption;
+                                font-weight: Typography.medium;
+                                color: Colors.text-on-primary;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ====================================================================
+        // SCROLLABLE CONTENT
+        // ====================================================================
+        Flickable {
+            vertical-stretch: 1;
+            viewport-height: report-content.preferred-height;
+
+            report-content := VerticalLayout {
+                padding: Spacing.xl;
+                spacing: Spacing.lg;
+
+                // ============================================================
+                // SHIFT INFORMATION CARD
+                // ============================================================
+                Rectangle {
+                    background: Colors.surface;
+                    border-radius: Radius.lg;
+                    border-width: 1px;
+                    border-color: Colors.border;
+
+                    VerticalLayout {
+                        padding: Spacing.lg;
+                        spacing: Spacing.md;
+
+                        // Section header
+                        HorizontalLayout {
+                            spacing: Spacing.sm;
+
+                            Text {
+                                text: "ℹ️";
+                                font-size: Typography.body;
+                                vertical-alignment: center;
+                            }
+
+                            Text {
+                                text: Layout.rtl ? "معلومات الوردية" : "Shift Information";
+                                font-size: Typography.subheading;
+                                font-weight: Typography.semi-bold;
+                                color: Colors.text-primary;
+                                vertical-alignment: center;
+                            }
+                        }
+
+                        Rectangle { height: 1px; background: Colors.border; }
+
+                        // Info grid
+                        HorizontalLayout {
+                            spacing: Spacing.xl;
+
+                            // Terminal
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                spacing: Spacing.xxs;
+
+                                Text {
+                                    text: Layout.rtl ? "الجهاز" : "Terminal";
+                                    font-size: Typography.caption;
+                                    color: Colors.text-secondary;
+                                }
+                                Text {
+                                    text: terminal-id;
+                                    font-size: Typography.body;
+                                    font-weight: Typography.medium;
+                                    color: Colors.text-primary;
+                                }
+                            }
+
+                            // Operator
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                spacing: Spacing.xxs;
+
+                                Text {
+                                    text: Layout.rtl ? "المشغل" : "Operator";
+                                    font-size: Typography.caption;
+                                    color: Colors.text-secondary;
+                                }
+                                Text {
+                                    text: operator-name;
+                                    font-size: Typography.body;
+                                    font-weight: Typography.medium;
+                                    color: Colors.text-primary;
+                                }
+                            }
+
+                            // Start time
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                spacing: Spacing.xxs;
+
+                                Text {
+                                    text: Layout.rtl ? "البداية" : "Started";
+                                    font-size: Typography.caption;
+                                    color: Colors.text-secondary;
+                                }
+                                Text {
+                                    text: shift-start;
+                                    font-size: Typography.body;
+                                    font-weight: Typography.medium;
+                                    color: Colors.text-primary;
+                                }
+                            }
+
+                            // Report time
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                spacing: Spacing.xxs;
+
+                                Text {
+                                    text: Layout.rtl ? "وقت التقرير" : "Report Time";
+                                    font-size: Typography.caption;
+                                    color: Colors.text-secondary;
+                                }
+                                Text {
+                                    text: current-time;
+                                    font-size: Typography.body;
+                                    font-weight: Typography.medium;
+                                    color: Colors.text-primary;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ============================================================
+                // SALES SUMMARY CARD
+                // ============================================================
+                Rectangle {
+                    background: Colors.surface;
+                    border-radius: Radius.lg;
+                    border-width: 1px;
+                    border-color: Colors.border;
+
+                    VerticalLayout {
+                        padding: Spacing.lg;
+                        spacing: Spacing.md;
+
+                        // Section header
+                        HorizontalLayout {
+                            spacing: Spacing.sm;
+
+                            Text {
+                                text: "📊";
+                                font-size: Typography.body;
+                                vertical-alignment: center;
+                            }
+
+                            Text {
+                                text: Layout.rtl ? "ملخص المبيعات" : "Sales Summary";
+                                font-size: Typography.subheading;
+                                font-weight: Typography.semi-bold;
+                                color: Colors.text-primary;
+                                vertical-alignment: center;
+                            }
+                        }
+
+                        Rectangle { height: 1px; background: Colors.border; }
+
+                        // Transaction count
+                        HorizontalLayout {
+                            Text {
+                                text: Layout.rtl ? "عدد المعاملات" : "Transactions";
+                                font-size: Typography.body;
+                                color: Colors.text-secondary;
+                                horizontal-stretch: 1;
+                            }
+                            Rectangle {
+                                width: 48px;
+                                height: 28px;
+                                border-radius: Radius.sm;
+                                background: Colors.primary-light;
+
+                                Text {
+                                    text: transaction-count;
+                                    font-size: Typography.body;
+                                    font-weight: Typography.bold;
+                                    color: Colors.primary-dark;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+
+                        Rectangle { height: 1px; background: Colors.border; }
+
+                        // Gross sales
+                        HorizontalLayout {
+                            Text {
+                                text: Layout.rtl ? "إجمالي المبيعات" : "Gross Sales";
+                                font-size: Typography.body;
+                                color: Colors.text-secondary;
+                                horizontal-stretch: 1;
+                            }
+                            Text {
+                                text: gross-sales + " " + currency;
+                                font-size: Typography.body;
+                                font-weight: Typography.medium;
+                                color: Colors.text-primary;
+                            }
+                        }
+
+                        // Discounts
+                        HorizontalLayout {
+                            Text {
+                                text: Layout.rtl ? "الخصومات" : "Discounts";
+                                font-size: Typography.body;
+                                color: Colors.text-secondary;
+                                horizontal-stretch: 1;
+                            }
+                            Text {
+                                text: "-" + discounts + " " + currency;
+                                font-size: Typography.body;
+                                font-weight: Typography.medium;
+                                color: Colors.success;
+                            }
+                        }
+
+                        // Returns
+                        HorizontalLayout {
+                            Text {
+                                text: Layout.rtl ? "المرتجعات" : "Returns";
+                                font-size: Typography.body;
+                                color: Colors.text-secondary;
+                                horizontal-stretch: 1;
+                            }
+                            Text {
+                                text: "-" + returns + " " + currency;
+                                font-size: Typography.body;
+                                font-weight: Typography.medium;
+                                color: Colors.warning;
+                            }
+                        }
+
+                        Rectangle { height: 1px; background: Colors.border; }
+
+                        // Net sales (highlighted)
+                        HorizontalLayout {
+                            Text {
+                                text: Layout.rtl ? "صافي المبيعات" : "Net Sales";
+                                font-size: Typography.subheading;
+                                font-weight: Typography.bold;
+                                color: Colors.text-primary;
+                                horizontal-stretch: 1;
+                            }
+                            Text {
+                                text: net-sales + " " + currency;
+                                font-size: Typography.subheading;
+                                font-weight: Typography.bold;
+                                color: Colors.primary;
+                            }
+                        }
+
+                        // Tax collected
+                        HorizontalLayout {
+                            Text {
+                                text: Layout.rtl ?
+                                      "الضريبة المحصلة (" + tax-rate + ")" :
+                                      "Tax Collected (" + tax-rate + ")";
+                                font-size: Typography.body;
+                                color: Colors.text-secondary;
+                                horizontal-stretch: 1;
+                            }
+                            Text {
+                                text: tax-collected + " " + currency;
+                                font-size: Typography.body;
+                                font-weight: Typography.medium;
+                                color: Colors.text-primary;
+                            }
+                        }
+                    }
+                }
+
+                // ============================================================
+                // PAYMENT METHODS CARD
+                // ============================================================
+                Rectangle {
+                    background: Colors.surface;
+                    border-radius: Radius.lg;
+                    border-width: 1px;
+                    border-color: Colors.border;
+
+                    VerticalLayout {
+                        padding: Spacing.lg;
+                        spacing: Spacing.md;
+
+                        // Section header
+                        HorizontalLayout {
+                            spacing: Spacing.sm;
+
+                            Text {
+                                text: "💳";
+                                font-size: Typography.body;
+                                vertical-alignment: center;
+                            }
+
+                            Text {
+                                text: Layout.rtl ? "طرق الدفع" : "Payment Methods";
+                                font-size: Typography.subheading;
+                                font-weight: Typography.semi-bold;
+                                color: Colors.text-primary;
+                                vertical-alignment: center;
+                            }
+                        }
+
+                        Rectangle { height: 1px; background: Colors.border; }
+
+                        // Cash
+                        HorizontalLayout {
+                            spacing: Spacing.md;
+
+                            Rectangle {
+                                width: 32px;
+                                height: 32px;
+                                border-radius: Radius.sm;
+                                background: Colors.success;
+
+                                Text {
+                                    text: "💵";
+                                    font-size: Typography.body;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            Text {
+                                text: Layout.rtl ? "نقداً" : "Cash";
+                                font-size: Typography.body;
+                                color: Colors.text-secondary;
+                                horizontal-stretch: 1;
+                                vertical-alignment: center;
+                            }
+
+                            Text {
+                                text: cash-count + "×";
+                                font-size: Typography.caption;
+                                color: Colors.text-secondary;
+                                vertical-alignment: center;
+                            }
+
+                            Text {
+                                text: cash-total + " " + currency;
+                                font-size: Typography.body;
+                                font-weight: Typography.medium;
+                                color: Colors.text-primary;
+                                vertical-alignment: center;
+                            }
+                        }
+
+                        // Card
+                        HorizontalLayout {
+                            spacing: Spacing.md;
+
+                            Rectangle {
+                                width: 32px;
+                                height: 32px;
+                                border-radius: Radius.sm;
+                                background: Colors.primary;
+
+                                Text {
+                                    text: "💳";
+                                    font-size: Typography.body;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            Text {
+                                text: Layout.rtl ? "بطاقة" : "Card";
+                                font-size: Typography.body;
+                                color: Colors.text-secondary;
+                                horizontal-stretch: 1;
+                                vertical-alignment: center;
+                            }
+
+                            Text {
+                                text: card-count + "×";
+                                font-size: Typography.caption;
+                                color: Colors.text-secondary;
+                                vertical-alignment: center;
+                            }
+
+                            Text {
+                                text: card-total + " " + currency;
+                                font-size: Typography.body;
+                                font-weight: Typography.medium;
+                                color: Colors.text-primary;
+                                vertical-alignment: center;
+                            }
+                        }
+
+                        // Wallet
+                        HorizontalLayout {
+                            spacing: Spacing.md;
+
+                            Rectangle {
+                                width: 32px;
+                                height: 32px;
+                                border-radius: Radius.sm;
+                                background: Colors.info;
+
+                                Text {
+                                    text: "📱";
+                                    font-size: Typography.body;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            Text {
+                                text: Layout.rtl ? "محفظة" : "Wallet";
+                                font-size: Typography.body;
+                                color: Colors.text-secondary;
+                                horizontal-stretch: 1;
+                                vertical-alignment: center;
+                            }
+
+                            Text {
+                                text: wallet-count + "×";
+                                font-size: Typography.caption;
+                                color: Colors.text-secondary;
+                                vertical-alignment: center;
+                            }
+
+                            Text {
+                                text: wallet-total + " " + currency;
+                                font-size: Typography.body;
+                                font-weight: Typography.medium;
+                                color: Colors.text-primary;
+                                vertical-alignment: center;
+                            }
+                        }
+
+                        // Credit (if any)
+                        if credit-count > 0: HorizontalLayout {
+                            spacing: Spacing.md;
+
+                            Rectangle {
+                                width: 32px;
+                                height: 32px;
+                                border-radius: Radius.sm;
+                                background: Colors.warning;
+
+                                Text {
+                                    text: "📋";
+                                    font-size: Typography.body;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            Text {
+                                text: Layout.rtl ? "آجل" : "Credit";
+                                font-size: Typography.body;
+                                color: Colors.text-secondary;
+                                horizontal-stretch: 1;
+                                vertical-alignment: center;
+                            }
+
+                            Text {
+                                text: credit-count + "×";
+                                font-size: Typography.caption;
+                                color: Colors.text-secondary;
+                                vertical-alignment: center;
+                            }
+
+                            Text {
+                                text: credit-total + " " + currency;
+                                font-size: Typography.body;
+                                font-weight: Typography.medium;
+                                color: Colors.text-primary;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+
+                // ============================================================
+                // CASH DRAWER CARD
+                // ============================================================
+                Rectangle {
+                    background: Colors.surface;
+                    border-radius: Radius.lg;
+                    border-width: 1px;
+                    border-color: Colors.border;
+
+                    VerticalLayout {
+                        padding: Spacing.lg;
+                        spacing: Spacing.md;
+
+                        // Section header
+                        HorizontalLayout {
+                            spacing: Spacing.sm;
+
+                            Text {
+                                text: "🗃️";
+                                font-size: Typography.body;
+                                vertical-alignment: center;
+                            }
+
+                            Text {
+                                text: Layout.rtl ? "درج النقدية" : "Cash Drawer";
+                                font-size: Typography.subheading;
+                                font-weight: Typography.semi-bold;
+                                color: Colors.text-primary;
+                                vertical-alignment: center;
+                            }
+                        }
+
+                        Rectangle { height: 1px; background: Colors.border; }
+
+                        // Opening float
+                        HorizontalLayout {
+                            Text {
+                                text: Layout.rtl ? "مبلغ الافتتاح" : "Opening Float";
+                                font-size: Typography.body;
+                                color: Colors.text-secondary;
+                                horizontal-stretch: 1;
+                            }
+                            Text {
+                                text: opening-float + " " + currency;
+                                font-size: Typography.body;
+                                font-weight: Typography.medium;
+                                color: Colors.text-primary;
+                            }
+                        }
+
+                        // Cash received
+                        HorizontalLayout {
+                            Text {
+                                text: Layout.rtl ? "النقدية المستلمة" : "Cash Received";
+                                font-size: Typography.body;
+                                color: Colors.text-secondary;
+                                horizontal-stretch: 1;
+                            }
+                            Text {
+                                text: "+" + cash-received + " " + currency;
+                                font-size: Typography.body;
+                                font-weight: Typography.medium;
+                                color: Colors.success;
+                            }
+                        }
+
+                        // Cash refunded
+                        HorizontalLayout {
+                            Text {
+                                text: Layout.rtl ? "المردودات النقدية" : "Cash Refunded";
+                                font-size: Typography.body;
+                                color: Colors.text-secondary;
+                                horizontal-stretch: 1;
+                            }
+                            Text {
+                                text: "-" + cash-refunded + " " + currency;
+                                font-size: Typography.body;
+                                font-weight: Typography.medium;
+                                color: Colors.danger;
+                            }
+                        }
+
+                        Rectangle { height: 1px; background: Colors.border; }
+
+                        // Expected cash (highlighted)
+                        Rectangle {
+                            height: 52px;
+                            border-radius: Radius.md;
+                            background: Colors.primary-light;
+
+                            HorizontalLayout {
+                                padding-left: Spacing.lg;
+                                padding-right: Spacing.lg;
+
+                                Text {
+                                    text: Layout.rtl ? "النقدية المتوقعة في الدرج" : "Expected Cash in Drawer";
+                                    font-size: Typography.body;
+                                    font-weight: Typography.semi-bold;
+                                    color: Colors.primary-dark;
+                                    horizontal-stretch: 1;
+                                    vertical-alignment: center;
+                                }
+
+                                Text {
+                                    text: expected-cash + " " + currency;
+                                    font-size: Typography.heading;
+                                    font-weight: Typography.bold;
+                                    color: Colors.primary-dark;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ============================================================
+                // RETURNS & VOIDS CARD (if any)
+                // ============================================================
+                if return-count > 0 || void-count > 0: Rectangle {
+                    background: Colors.surface;
+                    border-radius: Radius.lg;
+                    border-width: 1px;
+                    border-color: Colors.border;
+
+                    VerticalLayout {
+                        padding: Spacing.lg;
+                        spacing: Spacing.md;
+
+                        // Section header
+                        HorizontalLayout {
+                            spacing: Spacing.sm;
+
+                            Text {
+                                text: "↩️";
+                                font-size: Typography.body;
+                                vertical-alignment: center;
+                            }
+
+                            Text {
+                                text: Layout.rtl ? "المرتجعات والإلغاءات" : "Returns & Voids";
+                                font-size: Typography.subheading;
+                                font-weight: Typography.semi-bold;
+                                color: Colors.text-primary;
+                                vertical-alignment: center;
+                            }
+                        }
+
+                        Rectangle { height: 1px; background: Colors.border; }
+
+                        // Returns
+                        if return-count > 0: HorizontalLayout {
+                            spacing: Spacing.md;
+
+                            Rectangle {
+                                width: 32px;
+                                height: 32px;
+                                border-radius: Radius.sm;
+                                background: Colors.warning;
+
+                                Text {
+                                    text: "↩️";
+                                    font-size: Typography.body;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            Text {
+                                text: Layout.rtl ? "المرتجعات" : "Returns";
+                                font-size: Typography.body;
+                                color: Colors.text-secondary;
+                                horizontal-stretch: 1;
+                                vertical-alignment: center;
+                            }
+
+                            Text {
+                                text: return-count + "×";
+                                font-size: Typography.caption;
+                                color: Colors.text-secondary;
+                                vertical-alignment: center;
+                            }
+
+                            Text {
+                                text: return-total + " " + currency;
+                                font-size: Typography.body;
+                                font-weight: Typography.medium;
+                                color: Colors.warning;
+                                vertical-alignment: center;
+                            }
+                        }
+
+                        // Voids
+                        if void-count > 0: HorizontalLayout {
+                            spacing: Spacing.md;
+
+                            Rectangle {
+                                width: 32px;
+                                height: 32px;
+                                border-radius: Radius.sm;
+                                background: Colors.danger;
+
+                                Text {
+                                    text: "❌";
+                                    font-size: Typography.body;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            Text {
+                                text: Layout.rtl ? "الإلغاءات" : "Voids";
+                                font-size: Typography.body;
+                                color: Colors.text-secondary;
+                                horizontal-stretch: 1;
+                                vertical-alignment: center;
+                            }
+
+                            Text {
+                                text: void-count + "×";
+                                font-size: Typography.caption;
+                                color: Colors.text-secondary;
+                                vertical-alignment: center;
+                            }
+
+                            Text {
+                                text: void-total + " " + currency;
+                                font-size: Typography.body;
+                                font-weight: Typography.medium;
+                                color: Colors.danger;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+
+                // ============================================================
+                // REPORT NOTE
+                // ============================================================
+                Rectangle {
+                    height: 60px;
+                    border-radius: Radius.md;
+                    background: rgba(14, 165, 233, 0.1);
+                    border-width: 1px;
+                    border-color: Colors.info;
+
+                    HorizontalLayout {
+                        padding-left: Spacing.lg;
+                        padding-right: Spacing.lg;
+                        spacing: Spacing.md;
+
+                        Text {
+                            text: "ℹ️";
+                            font-size: Typography.heading;
+                            vertical-alignment: center;
+                        }
+
+                        Text {
+                            text: Layout.rtl ?
+                                  "تقرير X هو تقرير مؤقت ولا يعيد تصفير العدادات. يمكنك طباعته عدة مرات." :
+                                  "X-Report is a non-clearing report. Counters are not reset. You can print it multiple times.";
+                            font-size: Typography.caption;
+                            color: Colors.info;
+                            horizontal-stretch: 1;
+                            vertical-alignment: center;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+
+                // Bottom spacing
+                Rectangle { height: Spacing.xl; }
+            }
+        }
+
+        // ====================================================================
+        // STATUS BAR
+        // ====================================================================
+        StatusBar {
+            terminal-code: AppState.terminal-code;
+            version: AppState.version;
+            is-online: AppState.is-online;
+            pending-sync-count: AppState.pending-sync-count;
+        }
+    }
+}

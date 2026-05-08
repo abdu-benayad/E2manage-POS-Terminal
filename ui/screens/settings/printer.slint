@@ -1,0 +1,776 @@
+// ============================================================================
+// E2Manage POS Terminal - Printer Settings Screen
+// ============================================================================
+// Phase 37: Printer configuration settings screen
+// ============================================================================
+
+import { Colors, Typography, Spacing, Sizes, Radius, Layout, Locale } from "../../theme.slint";
+import { Button, TextInput, StatusBar } from "../../components/mod.slint";
+
+// ============================================================================
+// Printer Device Struct
+// ============================================================================
+
+export struct PrinterDevice {
+    id: string,
+    name: string,
+    connection: string, // usb, network, bluetooth
+    status: string,     // connected, disconnected
+}
+
+// ============================================================================
+// Toggle Switch Component (reusable)
+// ============================================================================
+
+component ToggleSwitch inherits Rectangle {
+    in property <bool> checked: false;
+    callback toggled(bool);
+
+    width: 56px;
+    height: 32px;
+    border-radius: 16px;
+    background: checked ? Colors.primary : Colors.border;
+
+    toggle-touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.toggled(!checked); }
+    }
+
+    // Knob
+    Rectangle {
+        x: checked ? 28px : 4px;
+        y: 4px;
+        width: 24px;
+        height: 24px;
+        border-radius: 12px;
+        background: white;
+
+        animate x { duration: 150ms; }
+    }
+}
+
+// ============================================================================
+// Setting Row Component
+// ============================================================================
+
+component SettingRow inherits Rectangle {
+    in property <string> label;
+    in property <string> label-ar;
+    in property <bool> checked: false;
+    callback toggled(bool);
+
+    height: 56px;
+
+    HorizontalLayout {
+        Text {
+            text: Locale.current == "ar" ? label-ar : label;
+            font-size: Typography.body;
+            color: Colors.text-primary;
+            horizontal-stretch: 1;
+            vertical-alignment: center;
+        }
+
+        ToggleSwitch {
+            checked: root.checked;
+            toggled(value) => { root.toggled(value); }
+        }
+    }
+}
+
+// ============================================================================
+// Printer Settings Screen
+// ============================================================================
+
+export component PrinterSettingsScreen inherits Rectangle {
+    // Input properties
+    in property <[PrinterDevice]> available-printers: [];
+    in property <string> selected-printer-id: "";
+    in property <string> printer-ip: "";
+    in property <int> paper-width: 80; // 58 or 80
+    in property <bool> auto-print: true;
+    in property <bool> print-logo: true;
+    in property <bool> open-drawer: true;
+    in property <bool> testing: false;
+    in property <bool> is-online: true;
+
+    // Callbacks
+    callback printer-selected(string);
+    callback ip-changed(string);
+    callback paper-width-changed(int);
+    callback toggle-auto-print(bool);
+    callback toggle-print-logo(bool);
+    callback toggle-open-drawer(bool);
+    callback test-print;
+    callback scan-printers;
+    callback save-settings;
+    callback back-clicked;
+
+    background: Colors.background;
+
+    VerticalLayout {
+        spacing: 0px;
+
+        // Header
+        Rectangle {
+            height: Sizes.header-height;
+            background: Colors.primary;
+
+            HorizontalLayout {
+                padding-left: Spacing.lg;
+                padding-right: Spacing.lg;
+                alignment: space-between;
+
+                HorizontalLayout {
+                    spacing: Spacing.lg;
+
+                    // Back button
+                    Rectangle {
+                        width: 48px;
+                        height: 48px;
+                        border-radius: Radius.md;
+
+                        back-touch := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.back-clicked(); }
+                        }
+
+                        Rectangle {
+                            background: back-touch.pressed ? rgba(255, 255, 255, 0.2) :
+                                       back-touch.has-hover ? rgba(255, 255, 255, 0.1) : transparent;
+                            border-radius: parent.border-radius;
+                        }
+
+                        Text {
+                            text: Layout.rtl ? "→" : "←";
+                            font-size: 24px;
+                            color: Colors.text-on-primary;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    // Printer icon
+                    Text {
+                        text: "🖨️";
+                        font-size: 24px;
+                        vertical-alignment: center;
+                    }
+
+                    // Title
+                    Text {
+                        text: Locale.current == "ar" ? "إعدادات الطابعة" : "Printer Settings";
+                        font-size: Typography.heading;
+                        font-weight: 600;
+                        color: Colors.text-on-primary;
+                        vertical-alignment: center;
+                    }
+                }
+
+                // Save button
+                Button {
+                    text: Locale.current == "ar" ? "حفظ" : "Save";
+                    variant: "secondary";
+                    clicked => { root.save-settings(); }
+                }
+            }
+        }
+
+        // Content
+        Flickable {
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                padding: Spacing.lg;
+                spacing: Spacing.lg;
+
+                // ================================================================
+                // Available Printers Section
+                // ================================================================
+                Rectangle {
+                    background: Colors.surface;
+                    border-radius: Radius.lg;
+                    drop-shadow-blur: 4px;
+                    drop-shadow-offset-y: 2px;
+                    drop-shadow-color: rgba(0, 0, 0, 0.1);
+
+                    VerticalLayout {
+                        padding: Spacing.lg;
+                        spacing: Spacing.md;
+
+                        // Section header with scan button
+                        HorizontalLayout {
+                            alignment: space-between;
+
+                            Text {
+                                text: Locale.current == "ar" ? "الطابعات المتاحة" : "Available Printers";
+                                font-size: Typography.subheading;
+                                font-weight: 600;
+                                color: Colors.text-primary;
+                                vertical-alignment: center;
+                            }
+
+                            Rectangle {
+                                width: 100px;
+                                height: 40px;
+                                border-radius: Radius.md;
+                                background: scan-touch.pressed ? Colors.primary-dark :
+                                           scan-touch.has-hover ? Colors.primary-light : Colors.primary;
+
+                                scan-touch := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { root.scan-printers(); }
+                                }
+
+                                HorizontalLayout {
+                                    spacing: Spacing.sm;
+                                    padding: Spacing.sm;
+
+                                    Text {
+                                        text: "🔍";
+                                        font-size: 16px;
+                                        vertical-alignment: center;
+                                    }
+
+                                    Text {
+                                        text: Locale.current == "ar" ? "بحث" : "Scan";
+                                        font-size: Typography.caption;
+                                        font-weight: 600;
+                                        color: Colors.text-on-primary;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                        }
+
+                        // No printers message
+                        if available-printers.length == 0: Rectangle {
+                            height: 80px;
+                            background: Colors.background;
+                            border-radius: Radius.md;
+
+                            VerticalLayout {
+                                alignment: center;
+
+                                Text {
+                                    text: "🖨️";
+                                    font-size: 24px;
+                                    horizontal-alignment: center;
+                                }
+
+                                Text {
+                                    text: Locale.current == "ar" ?
+                                          "لم يتم العثور على طابعات" :
+                                          "No printers found";
+                                    font-size: Typography.body;
+                                    color: Colors.text-secondary;
+                                    horizontal-alignment: center;
+                                }
+                            }
+                        }
+
+                        // Printer list
+                        for printer in available-printers: Rectangle {
+                            height: 72px;
+                            border-radius: Radius.md;
+                            background: printer.id == selected-printer-id ?
+                                       Colors.primary-light : Colors.background;
+                            border-width: printer.id == selected-printer-id ? 2px : 1px;
+                            border-color: printer.id == selected-printer-id ?
+                                         Colors.primary : Colors.border;
+
+                            printer-touch := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { root.printer-selected(printer.id); }
+                            }
+
+                            Rectangle {
+                                background: printer-touch.pressed ? rgba(0, 0, 0, 0.05) :
+                                           printer-touch.has-hover && printer.id != selected-printer-id ?
+                                           rgba(0, 0, 0, 0.02) : transparent;
+                                border-radius: parent.border-radius;
+                            }
+
+                            HorizontalLayout {
+                                padding: Spacing.md;
+                                spacing: Spacing.md;
+
+                                // Printer icon
+                                Rectangle {
+                                    width: 48px;
+                                    height: 48px;
+                                    border-radius: Radius.md;
+                                    background: printer.id == selected-printer-id ?
+                                               Colors.primary : Colors.surface-variant;
+
+                                    Text {
+                                        text: "🖨️";
+                                        font-size: 24px;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+                                }
+
+                                // Info
+                                VerticalLayout {
+                                    horizontal-stretch: 1;
+                                    spacing: Spacing.xxs;
+
+                                    Text {
+                                        text: printer.name;
+                                        font-size: Typography.body;
+                                        font-weight: 600;
+                                        color: printer.id == selected-printer-id ?
+                                               Colors.primary-dark : Colors.text-primary;
+                                    }
+
+                                    HorizontalLayout {
+                                        spacing: Spacing.md;
+
+                                        // Connection type badge
+                                        Rectangle {
+                                            width: 64px;
+                                            height: 24px;
+                                            border-radius: 12px;
+                                            background: printer.connection == "usb" ? #E8F5E9 :
+                                                       printer.connection == "network" ? #E3F2FD :
+                                                       #FFF3E0;
+
+                                            Text {
+                                                text: printer.connection == "usb" ? "USB" :
+                                                      printer.connection == "network" ?
+                                                      (Locale.current == "ar" ? "شبكة" : "Network") :
+                                                      "Bluetooth";
+                                                font-size: Typography.small;
+                                                font-weight: 500;
+                                                color: printer.connection == "usb" ? #2E7D32 :
+                                                       printer.connection == "network" ? #1565C0 :
+                                                       #E65100;
+                                                horizontal-alignment: center;
+                                                vertical-alignment: center;
+                                            }
+                                        }
+
+                                        // Status dot
+                                        Rectangle {
+                                            width: 8px;
+                                            height: 8px;
+                                            border-radius: 4px;
+                                            background: printer.status == "connected" ?
+                                                       Colors.success : Colors.danger;
+                                            y: (parent.height - self.height) / 2;
+                                        }
+
+                                        Text {
+                                            text: printer.status == "connected" ?
+                                                  (Locale.current == "ar" ? "متصل" : "Connected") :
+                                                  (Locale.current == "ar" ? "غير متصل" : "Disconnected");
+                                            font-size: Typography.caption;
+                                            color: printer.status == "connected" ?
+                                                   Colors.success : Colors.text-secondary;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+                                }
+
+                                // Selected indicator
+                                if printer.id == selected-printer-id: Rectangle {
+                                    width: 32px;
+                                    height: 32px;
+                                    border-radius: 16px;
+                                    background: Colors.primary;
+
+                                    Text {
+                                        text: "✓";
+                                        font-size: 18px;
+                                        color: white;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                        }
+
+                        // Network printer IP input
+                        Rectangle {
+                            height: 1px;
+                            background: Colors.border;
+                        }
+
+                        VerticalLayout {
+                            spacing: Spacing.sm;
+
+                            Text {
+                                text: Locale.current == "ar" ?
+                                      "أو أدخل عنوان IP للطابعة الشبكية" :
+                                      "Or enter network printer IP";
+                                font-size: Typography.caption;
+                                color: Colors.text-secondary;
+                            }
+
+                            HorizontalLayout {
+                                spacing: Spacing.md;
+
+                                // IP Input using our custom TextInput component
+                                TextInput {
+                                    horizontal-stretch: 1;
+                                    placeholder: "192.168.1.100:9100";
+                                    text: printer-ip;
+
+                                    edited(value) => {
+                                        root.ip-changed(value);
+                                    }
+                                }
+
+                                // Connect button
+                                Rectangle {
+                                    width: 100px;
+                                    height: Sizes.input-height;
+                                    border-radius: Radius.md;
+                                    background: connect-touch.pressed ? Colors.primary-dark :
+                                               connect-touch.has-hover ? Colors.primary-light : Colors.primary;
+
+                                    connect-touch := TouchArea {
+                                        mouse-cursor: pointer;
+                                        clicked => {
+                                            // Treat IP connection as selecting a network printer
+                                            if printer-ip != "" {
+                                                root.printer-selected("network-" + printer-ip);
+                                            }
+                                        }
+                                    }
+
+                                    Text {
+                                        text: Locale.current == "ar" ? "اتصال" : "Connect";
+                                        font-size: Typography.caption;
+                                        font-weight: 600;
+                                        color: Colors.text-on-primary;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ================================================================
+                // Paper Settings Section
+                // ================================================================
+                Rectangle {
+                    background: Colors.surface;
+                    border-radius: Radius.lg;
+                    drop-shadow-blur: 4px;
+                    drop-shadow-offset-y: 2px;
+                    drop-shadow-color: rgba(0, 0, 0, 0.1);
+
+                    VerticalLayout {
+                        padding: Spacing.lg;
+                        spacing: Spacing.md;
+
+                        Text {
+                            text: Locale.current == "ar" ? "إعدادات الورق" : "Paper Settings";
+                            font-size: Typography.subheading;
+                            font-weight: 600;
+                            color: Colors.text-primary;
+                        }
+
+                        Text {
+                            text: Locale.current == "ar" ? "عرض الورق" : "Paper Width";
+                            font-size: Typography.body;
+                            color: Colors.text-secondary;
+                        }
+
+                        HorizontalLayout {
+                            spacing: Spacing.md;
+
+                            // 58mm option
+                            Rectangle {
+                                horizontal-stretch: 1;
+                                height: 56px;
+                                border-radius: Radius.md;
+                                background: paper-width == 58 ?
+                                           Colors.primary : Colors.background;
+                                border-width: 2px;
+                                border-color: paper-width == 58 ?
+                                             Colors.primary : Colors.border;
+
+                                width58-touch := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { root.paper-width-changed(58); }
+                                }
+
+                                Rectangle {
+                                    background: width58-touch.pressed ? rgba(0, 0, 0, 0.1) :
+                                               width58-touch.has-hover && paper-width != 58 ?
+                                               rgba(0, 0, 0, 0.02) : transparent;
+                                    border-radius: parent.border-radius;
+                                }
+
+                                VerticalLayout {
+                                    alignment: center;
+                                    spacing: Spacing.xxs;
+
+                                    Text {
+                                        text: "58mm";
+                                        font-size: Typography.subheading;
+                                        font-weight: 700;
+                                        color: paper-width == 58 ?
+                                               Colors.text-on-primary : Colors.text-primary;
+                                        horizontal-alignment: center;
+                                    }
+
+                                    Text {
+                                        text: Locale.current == "ar" ? "ورق ضيق" : "Narrow";
+                                        font-size: Typography.caption;
+                                        color: paper-width == 58 ?
+                                               Colors.text-muted : Colors.text-secondary;
+                                        horizontal-alignment: center;
+                                    }
+                                }
+                            }
+
+                            // 80mm option
+                            Rectangle {
+                                horizontal-stretch: 1;
+                                height: 56px;
+                                border-radius: Radius.md;
+                                background: paper-width == 80 ?
+                                           Colors.primary : Colors.background;
+                                border-width: 2px;
+                                border-color: paper-width == 80 ?
+                                             Colors.primary : Colors.border;
+
+                                width80-touch := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { root.paper-width-changed(80); }
+                                }
+
+                                Rectangle {
+                                    background: width80-touch.pressed ? rgba(0, 0, 0, 0.1) :
+                                               width80-touch.has-hover && paper-width != 80 ?
+                                               rgba(0, 0, 0, 0.02) : transparent;
+                                    border-radius: parent.border-radius;
+                                }
+
+                                VerticalLayout {
+                                    alignment: center;
+                                    spacing: Spacing.xxs;
+
+                                    Text {
+                                        text: "80mm";
+                                        font-size: Typography.subheading;
+                                        font-weight: 700;
+                                        color: paper-width == 80 ?
+                                               Colors.text-on-primary : Colors.text-primary;
+                                        horizontal-alignment: center;
+                                    }
+
+                                    Text {
+                                        text: Locale.current == "ar" ? "ورق عريض" : "Standard";
+                                        font-size: Typography.caption;
+                                        color: paper-width == 80 ?
+                                               Colors.text-muted : Colors.text-secondary;
+                                        horizontal-alignment: center;
+                                    }
+                                }
+                            }
+                        }
+
+                        // Paper info
+                        Rectangle {
+                            height: 40px;
+                            background: Colors.background;
+                            border-radius: Radius.md;
+
+                            HorizontalLayout {
+                                padding: Spacing.md;
+                                spacing: Spacing.sm;
+
+                                Text {
+                                    text: "ℹ️";
+                                    font-size: 14px;
+                                    vertical-alignment: center;
+                                }
+
+                                Text {
+                                    text: Locale.current == "ar" ?
+                                          "80mm هو الحجم الأكثر شيوعاً" :
+                                          "80mm is the most common size";
+                                    font-size: Typography.caption;
+                                    color: Colors.text-secondary;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ================================================================
+                // Behavior Settings Section
+                // ================================================================
+                Rectangle {
+                    background: Colors.surface;
+                    border-radius: Radius.lg;
+                    drop-shadow-blur: 4px;
+                    drop-shadow-offset-y: 2px;
+                    drop-shadow-color: rgba(0, 0, 0, 0.1);
+
+                    VerticalLayout {
+                        padding: Spacing.lg;
+                        spacing: Spacing.md;
+
+                        Text {
+                            text: Locale.current == "ar" ? "السلوك" : "Behavior";
+                            font-size: Typography.subheading;
+                            font-weight: 600;
+                            color: Colors.text-primary;
+                        }
+
+                        // Auto-print receipts toggle
+                        SettingRow {
+                            label: "Auto-print receipts";
+                            label-ar: "طباعة تلقائية للإيصالات";
+                            checked: auto-print;
+                            toggled(value) => { root.toggle-auto-print(value); }
+                        }
+
+                        Rectangle { height: 1px; background: Colors.border; }
+
+                        // Print logo toggle
+                        SettingRow {
+                            label: "Print store logo";
+                            label-ar: "طباعة شعار المتجر";
+                            checked: print-logo;
+                            toggled(value) => { root.toggle-print-logo(value); }
+                        }
+
+                        Rectangle { height: 1px; background: Colors.border; }
+
+                        // Open cash drawer toggle
+                        SettingRow {
+                            label: "Open cash drawer after sale";
+                            label-ar: "فتح الدرج تلقائياً بعد البيع";
+                            checked: open-drawer;
+                            toggled(value) => { root.toggle-open-drawer(value); }
+                        }
+                    }
+                }
+
+                // ================================================================
+                // Test Print Section
+                // ================================================================
+                Rectangle {
+                    background: Colors.surface;
+                    border-radius: Radius.lg;
+                    drop-shadow-blur: 4px;
+                    drop-shadow-offset-y: 2px;
+                    drop-shadow-color: rgba(0, 0, 0, 0.1);
+
+                    VerticalLayout {
+                        padding: Spacing.lg;
+                        spacing: Spacing.md;
+
+                        Text {
+                            text: Locale.current == "ar" ? "اختبار الطابعة" : "Test Printer";
+                            font-size: Typography.subheading;
+                            font-weight: 600;
+                            color: Colors.text-primary;
+                        }
+
+                        Text {
+                            text: Locale.current == "ar" ?
+                                  "اطبع صفحة اختبار للتأكد من عمل الطابعة" :
+                                  "Print a test page to verify printer is working";
+                            font-size: Typography.body;
+                            color: Colors.text-secondary;
+                        }
+
+                        // Test print button
+                        Rectangle {
+                            height: Sizes.button-height;
+                            border-radius: Radius.md;
+                            background: testing || selected-printer-id == "" ?
+                                       Colors.border :
+                                       (test-touch.pressed ? Colors.primary-dark :
+                                        test-touch.has-hover ? Colors.primary-light : Colors.primary);
+
+                            test-touch := TouchArea {
+                                mouse-cursor: testing || selected-printer-id == "" ? default : pointer;
+                                clicked => {
+                                    if !testing && selected-printer-id != "" {
+                                        root.test-print();
+                                    }
+                                }
+                            }
+
+                            HorizontalLayout {
+                                alignment: center;
+                                spacing: Spacing.md;
+
+                                if testing: Text {
+                                    text: "⏳";
+                                    font-size: 20px;
+                                    vertical-alignment: center;
+                                }
+
+                                if !testing: Text {
+                                    text: "🖨️";
+                                    font-size: 20px;
+                                    vertical-alignment: center;
+                                }
+
+                                Text {
+                                    text: testing ?
+                                          (Locale.current == "ar" ? "جاري الطباعة..." : "Printing...") :
+                                          (Locale.current == "ar" ? "طباعة تجريبية" : "Test Print");
+                                    font-size: Typography.body;
+                                    font-weight: 600;
+                                    color: testing || selected-printer-id == "" ?
+                                           Colors.text-secondary : Colors.text-on-primary;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+
+                        // Warning if no printer selected
+                        if selected-printer-id == "": Rectangle {
+                            height: 40px;
+                            background: #FFF3E0;
+                            border-radius: Radius.md;
+
+                            HorizontalLayout {
+                                padding: Spacing.md;
+                                spacing: Spacing.sm;
+
+                                Text {
+                                    text: "⚠️";
+                                    font-size: 14px;
+                                    vertical-alignment: center;
+                                }
+
+                                Text {
+                                    text: Locale.current == "ar" ?
+                                          "يرجى اختيار طابعة أولاً" :
+                                          "Please select a printer first";
+                                    font-size: Typography.caption;
+                                    color: #E65100;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Bottom padding
+                Rectangle {
+                    height: Spacing.lg;
+                }
+            }
+        }
+
+        // Status bar
+        StatusBar {
+            is-online: root.is-online;
+        }
+    }
+}

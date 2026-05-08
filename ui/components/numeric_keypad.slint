@@ -1,0 +1,377 @@
+// ============================================================================
+// E2Manage POS Terminal - Numeric Keypad Component
+// ============================================================================
+// Keypad component for PIN entry and amount input
+// Supports two modes: "pin" (auto-submit) and "amount" (confirm button)
+// ============================================================================
+
+import { Colors, Typography, Spacing, Sizes, Radius, Animation, Layout, Locale } from "../theme.slint";
+
+// ============================================================================
+// KEYPAD BUTTON COMPONENT (internal)
+// ============================================================================
+
+component KeypadButton inherits Rectangle {
+    in property <string> text: "";
+    in property <string> icon: "";
+    in property <bool> is-action: false;
+    in property <string> action-type: ""; // "backspace", "clear", "confirm", "decimal"
+    in property <bool> disabled: false;
+    in property <color> action-color: Colors.primary;
+    in property <bool> wide: false; // For zero button on some layouts
+
+    callback clicked;
+
+    width: wide ? (Sizes.key-width * 2 + Sizes.key-gap) : Sizes.key-width;
+    height: Sizes.key-height;
+    border-radius: Radius.md;
+    background: disabled ? Colors.surface-variant :
+                is-action ? action-color :
+                touch.pressed ? Colors.surface-variant :
+                touch.has-hover ? Colors.background :
+                Colors.surface;
+    border-width: is-action ? 0px : 1px;
+    border-color: Colors.border;
+
+    animate background { duration: Animation.fast; }
+
+    // Content
+    if text != "": Text {
+        text: root.text;
+        font-size: is-action ? Typography.body : Typography.title;
+        font-weight: is-action ? Typography.semi-bold : Typography.bold;
+        color: disabled ? Colors.disabled :
+               is-action ? Colors.text-on-primary :
+               Colors.text-primary;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    // Icon for action buttons
+    if icon != "": Text {
+        text: root.icon;
+        font-size: Typography.heading;
+        font-weight: Typography.medium;
+        color: disabled ? Colors.disabled :
+               is-action ? Colors.text-on-primary :
+               Colors.text-secondary;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    touch := TouchArea {
+        enabled: !disabled;
+        mouse-cursor: disabled ? default : pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+// ============================================================================
+// NUMERIC KEYPAD COMPONENT
+// ============================================================================
+
+export component NumericKeypad inherits Rectangle {
+    // Properties
+    in property <string> mode: "pin"; // "pin" or "amount"
+    in-out property <string> value: "";
+    in property <int> max-length: 6;
+    in property <string> confirm-label: Layout.rtl ? "تأكيد" : "OK";
+    in property <bool> show-decimal: false; // For amount mode
+    in property <bool> disabled: false;
+
+    // Callbacks
+    callback key-pressed(string);
+    callback confirmed(string);
+    callback cleared;
+    callback backspace;
+
+    // Internal state - has-decimal must be set from Rust since Slint lacks string.contains()
+    in property <bool> has-decimal: false;
+
+    // Size: fits 3 columns x 4 rows with gaps
+    width: (Sizes.key-width * 3) + (Sizes.key-gap * 2);
+    height: (Sizes.key-height * 4) + (Sizes.key-gap * 3);
+
+    VerticalLayout {
+        spacing: Sizes.key-gap;
+        alignment: center;
+
+        // Row 1: 1-2-3
+        HorizontalLayout {
+            spacing: Sizes.key-gap;
+            alignment: center;
+
+            KeypadButton {
+                text: "1";
+                disabled: root.disabled || value.character-count >= max-length;
+                clicked => {
+                    if value.character-count < max-length {
+                        root.value = value + "1";
+                        root.key-pressed("1");
+                    }
+                }
+            }
+            KeypadButton {
+                text: "2";
+                disabled: root.disabled || value.character-count >= max-length;
+                clicked => {
+                    if value.character-count < max-length {
+                        root.value = value + "2";
+                        root.key-pressed("2");
+                    }
+                }
+            }
+            KeypadButton {
+                text: "3";
+                disabled: root.disabled || value.character-count >= max-length;
+                clicked => {
+                    if value.character-count < max-length {
+                        root.value = value + "3";
+                        root.key-pressed("3");
+                    }
+                }
+            }
+        }
+
+        // Row 2: 4-5-6
+        HorizontalLayout {
+            spacing: Sizes.key-gap;
+            alignment: center;
+
+            KeypadButton {
+                text: "4";
+                disabled: root.disabled || value.character-count >= max-length;
+                clicked => {
+                    if value.character-count < max-length {
+                        root.value = value + "4";
+                        root.key-pressed("4");
+                    }
+                }
+            }
+            KeypadButton {
+                text: "5";
+                disabled: root.disabled || value.character-count >= max-length;
+                clicked => {
+                    if value.character-count < max-length {
+                        root.value = value + "5";
+                        root.key-pressed("5");
+                    }
+                }
+            }
+            KeypadButton {
+                text: "6";
+                disabled: root.disabled || value.character-count >= max-length;
+                clicked => {
+                    if value.character-count < max-length {
+                        root.value = value + "6";
+                        root.key-pressed("6");
+                    }
+                }
+            }
+        }
+
+        // Row 3: 7-8-9
+        HorizontalLayout {
+            spacing: Sizes.key-gap;
+            alignment: center;
+
+            KeypadButton {
+                text: "7";
+                disabled: root.disabled || value.character-count >= max-length;
+                clicked => {
+                    if value.character-count < max-length {
+                        root.value = value + "7";
+                        root.key-pressed("7");
+                    }
+                }
+            }
+            KeypadButton {
+                text: "8";
+                disabled: root.disabled || value.character-count >= max-length;
+                clicked => {
+                    if value.character-count < max-length {
+                        root.value = value + "8";
+                        root.key-pressed("8");
+                    }
+                }
+            }
+            KeypadButton {
+                text: "9";
+                disabled: root.disabled || value.character-count >= max-length;
+                clicked => {
+                    if value.character-count < max-length {
+                        root.value = value + "9";
+                        root.key-pressed("9");
+                    }
+                }
+            }
+        }
+
+        // Row 4: Backspace-0-Confirm (or Clear-0-Decimal for amount mode)
+        HorizontalLayout {
+            spacing: Sizes.key-gap;
+            alignment: center;
+
+            // Left button: Backspace
+            KeypadButton {
+                icon: "\u{232B}"; // Backspace symbol (erase to left)
+                is-action: true;
+                action-color: Colors.text-secondary;
+                disabled: root.disabled || value.character-count == 0;
+                clicked => {
+                    root.backspace();
+                    root.key-pressed("backspace");
+                }
+            }
+
+            // Center button: 0
+            KeypadButton {
+                text: "0";
+                disabled: root.disabled || value.character-count >= max-length;
+                clicked => {
+                    if value.character-count < max-length {
+                        root.value = value + "0";
+                        root.key-pressed("0");
+                    }
+                }
+            }
+
+            // Right button: Confirm or Decimal
+            if mode == "amount" && show-decimal: KeypadButton {
+                text: ".";
+                is-action: false;
+                disabled: root.disabled || has-decimal;
+                clicked => {
+                    if !has-decimal {
+                        root.value = value + ".";
+                        root.key-pressed(".");
+                    }
+                }
+            }
+
+            if mode != "amount" || !show-decimal: KeypadButton {
+                text: confirm-label;
+                is-action: true;
+                action-color: Colors.success;
+                disabled: root.disabled || value.character-count == 0;
+                clicked => {
+                    root.confirmed(value);
+                }
+            }
+        }
+    }
+}
+
+// ============================================================================
+// COMPACT NUMERIC KEYPAD (for amount entry with quick amounts)
+// ============================================================================
+
+export component CompactKeypad inherits Rectangle {
+    in-out property <string> value: "";
+    in property <int> max-length: 10;
+    in property <bool> disabled: false;
+
+    callback key-pressed(string);
+    callback backspace;
+    callback clear;
+
+    width: (Sizes.key-width * 3) + (Sizes.key-gap * 2);
+    height: (Sizes.key-height * 4) + (Sizes.key-gap * 3);
+
+    VerticalLayout {
+        spacing: Sizes.key-gap;
+        alignment: center;
+
+        // Row 1: 1-2-3
+        HorizontalLayout {
+            spacing: Sizes.key-gap;
+            alignment: center;
+
+            KeypadButton {
+                text: "1";
+                disabled: root.disabled;
+                clicked => { root.key-pressed("1"); }
+            }
+            KeypadButton {
+                text: "2";
+                disabled: root.disabled;
+                clicked => { root.key-pressed("2"); }
+            }
+            KeypadButton {
+                text: "3";
+                disabled: root.disabled;
+                clicked => { root.key-pressed("3"); }
+            }
+        }
+
+        // Row 2: 4-5-6
+        HorizontalLayout {
+            spacing: Sizes.key-gap;
+            alignment: center;
+
+            KeypadButton {
+                text: "4";
+                disabled: root.disabled;
+                clicked => { root.key-pressed("4"); }
+            }
+            KeypadButton {
+                text: "5";
+                disabled: root.disabled;
+                clicked => { root.key-pressed("5"); }
+            }
+            KeypadButton {
+                text: "6";
+                disabled: root.disabled;
+                clicked => { root.key-pressed("6"); }
+            }
+        }
+
+        // Row 3: 7-8-9
+        HorizontalLayout {
+            spacing: Sizes.key-gap;
+            alignment: center;
+
+            KeypadButton {
+                text: "7";
+                disabled: root.disabled;
+                clicked => { root.key-pressed("7"); }
+            }
+            KeypadButton {
+                text: "8";
+                disabled: root.disabled;
+                clicked => { root.key-pressed("8"); }
+            }
+            KeypadButton {
+                text: "9";
+                disabled: root.disabled;
+                clicked => { root.key-pressed("9"); }
+            }
+        }
+
+        // Row 4: Clear-0-Backspace
+        HorizontalLayout {
+            spacing: Sizes.key-gap;
+            alignment: center;
+
+            KeypadButton {
+                text: "C";
+                is-action: true;
+                action-color: Colors.warning;
+                disabled: root.disabled;
+                clicked => { root.clear(); }
+            }
+            KeypadButton {
+                text: "0";
+                disabled: root.disabled;
+                clicked => { root.key-pressed("0"); }
+            }
+            KeypadButton {
+                icon: "\u{232B}";
+                is-action: true;
+                action-color: Colors.text-secondary;
+                disabled: root.disabled;
+                clicked => { root.backspace(); }
+            }
+        }
+    }
+}

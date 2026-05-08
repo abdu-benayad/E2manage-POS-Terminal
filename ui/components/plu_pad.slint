@@ -1,0 +1,345 @@
+// ============================================================================
+// E2Manage POS Terminal - PLU Pad Component (Phase 3)
+// ============================================================================
+// Overlay panel for PLU (Price Look-Up) code entry
+// Used by cashiers to look up produce/bakery items without barcodes
+// Supports RTL (Arabic) layout and both compact/desktop modes
+// ============================================================================
+
+import { Colors, Typography, Spacing, Sizes, Radius, Animation, Layout, Locale } from "../theme.slint";
+import { Button, SmallButton } from "button.slint";
+import { NumericKeypad } from "numeric_keypad.slint";
+
+// ============================================================================
+// PLU PAD COMPONENT
+// ============================================================================
+
+export component PLUPad inherits Rectangle {
+    // Visibility toggle
+    in-out property <bool> open: false;
+
+    // Current PLU code input
+    in-out property <string> plu-code: "";
+
+    // Result properties (set from Rust after lookup)
+    in property <string> result-name: "";
+    in property <string> result-price: "";
+    in property <string> result-product-id: "";
+    in property <int> result-count: 0;       // 0=none, 1=exact, 2+=multiple
+    in property <bool> searching: false;      // Loading state
+    in property <string> error-message: "";   // "not found" text
+
+    // Callbacks
+    callback lookup(string);                  // Fires on confirm (✓) with PLU code
+    callback add-product(string);             // Fires when user confirms adding a found product
+    callback closed;                          // Fires when user closes the pad
+
+    // Full screen overlay
+    if open: Rectangle {
+        width: 100%;
+        height: 100%;
+        background: Colors.overlay;
+
+        // Backdrop click to close
+        TouchArea {
+            clicked => {
+                root.plu-code = "";
+                root.open = false;
+                root.closed();
+            }
+        }
+
+        // PLU Pad dialog panel
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: 380px;
+            height: root.result-count > 0 || root.error-message != "" ? 520px : 440px;
+            border-radius: Radius.dialog;
+            background: Colors.surface;
+            drop-shadow-blur: 20px;
+            drop-shadow-color: rgba(0, 0, 0, 0.3);
+            drop-shadow-offset-y: 8px;
+
+            // Block clicks from propagating to backdrop
+            TouchArea {}
+
+            VerticalLayout {
+                padding: Spacing.lg;
+                spacing: Spacing.md;
+
+                // Title bar with close button
+                HorizontalLayout {
+                    alignment: space-between;
+
+                    Text {
+                        text: Locale.current == "ar" ? "بحث برمز PLU" : "PLU Lookup";
+                        font-size: Typography.heading;
+                        font-weight: 600;
+                        color: Colors.text-primary;
+                        vertical-alignment: center;
+                    }
+
+                    // Close button
+                    Rectangle {
+                        width: 36px;
+                        height: 36px;
+                        border-radius: 18px;
+                        background: close-touch.has-hover ? Colors.surface-variant : transparent;
+
+                        Text {
+                            text: "\u{2715}";
+                            font-size: Typography.body;
+                            font-weight: 700;
+                            color: Colors.text-secondary;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+
+                        close-touch := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => {
+                                root.plu-code = "";
+                                root.open = false;
+                                root.closed();
+                            }
+                        }
+                    }
+                }
+
+                // Code display area
+                Rectangle {
+                    height: 52px;
+                    border-radius: Radius.md;
+                    border-width: 2px;
+                    border-color: root.plu-code != "" ? Colors.primary : Colors.border;
+                    background: Colors.background;
+
+                    HorizontalLayout {
+                        padding-left: Spacing.lg;
+                        padding-right: Spacing.lg;
+                        alignment: start;
+
+                        Text {
+                            text: Locale.current == "ar" ? "الرمز: " : "Code: ";
+                            font-size: Typography.caption;
+                            color: Colors.text-secondary;
+                            vertical-alignment: center;
+                        }
+
+                        Text {
+                            text: root.plu-code != "" ? root.plu-code : "_ _ _ _ _";
+                            font-size: Typography.title;
+                            font-weight: Typography.bold;
+                            letter-spacing: root.plu-code == "" ? 4px : 2px;
+                            color: root.plu-code != "" ? Colors.text-primary : Colors.disabled;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                        }
+                    }
+                }
+
+                // Numeric keypad
+                HorizontalLayout {
+                    alignment: center;
+
+                    NumericKeypad {
+                        mode: "pin";
+                        value <=> root.plu-code;
+                        max-length: 8;
+                        confirm-label: "\u{2713}";
+                        disabled: root.searching;
+
+                        confirmed(code) => {
+                            if code != "" {
+                                root.lookup(code);
+                            }
+                        }
+
+                        backspace => {
+                            // NumericKeypad fires backspace callback;
+                            // Rust handles trimming the value since Slint can't slice strings
+                        }
+                    }
+                }
+
+                // Result area (shown when we have results or errors)
+                if root.searching: Rectangle {
+                    height: 56px;
+                    border-radius: Radius.md;
+                    background: Colors.background;
+
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: Spacing.sm;
+
+                        // Simple loading dots
+                        Rectangle {
+                            width: 10px;
+                            height: 10px;
+                            border-radius: 5px;
+                            background: Colors.primary;
+                            opacity: 0.4;
+                        }
+                        Rectangle {
+                            width: 10px;
+                            height: 10px;
+                            border-radius: 5px;
+                            background: Colors.primary;
+                            opacity: 0.7;
+                        }
+                        Rectangle {
+                            width: 10px;
+                            height: 10px;
+                            border-radius: 5px;
+                            background: Colors.primary;
+                            opacity: 1.0;
+                        }
+
+                        Text {
+                            text: Locale.current == "ar" ? "جارٍ البحث..." : "Searching...";
+                            font-size: Typography.body;
+                            color: Colors.text-secondary;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+
+                // Single result found — show product info
+                if !root.searching && root.result-count == 1: Rectangle {
+                    height: 56px;
+                    border-radius: Radius.md;
+                    background: rgba(34, 197, 94, 0.1);
+                    border-width: 1px;
+                    border-color: rgba(34, 197, 94, 0.3);
+
+                    HorizontalLayout {
+                        padding-left: Spacing.md;
+                        padding-right: Spacing.md;
+                        alignment: space-between;
+
+                        HorizontalLayout {
+                            spacing: Spacing.sm;
+                            alignment: center;
+
+                            Text {
+                                text: "\u{2713}";
+                                font-size: 18px;
+                                font-weight: 700;
+                                color: Colors.success;
+                                vertical-alignment: center;
+                            }
+
+                            Text {
+                                text: root.result-name;
+                                font-size: Typography.body;
+                                font-weight: 600;
+                                color: Colors.text-primary;
+                                vertical-alignment: center;
+                                overflow: elide;
+                                horizontal-stretch: 1;
+                            }
+                        }
+
+                        Text {
+                            text: root.result-price;
+                            font-size: Typography.body;
+                            font-weight: 700;
+                            color: Colors.success;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+
+                // Multiple results found
+                if !root.searching && root.result-count > 1: Rectangle {
+                    height: 56px;
+                    border-radius: Radius.md;
+                    background: rgba(59, 130, 246, 0.1);
+                    border-width: 1px;
+                    border-color: rgba(59, 130, 246, 0.3);
+
+                    HorizontalLayout {
+                        padding-left: Spacing.md;
+                        padding-right: Spacing.md;
+                        alignment: space-between;
+
+                        HorizontalLayout {
+                            spacing: Spacing.sm;
+                            alignment: center;
+
+                            Text {
+                                text: "i";
+                                font-size: 18px;
+                                font-weight: 700;
+                                color: Colors.primary;
+                                vertical-alignment: center;
+                            }
+
+                            VerticalLayout {
+                                alignment: center;
+
+                                Text {
+                                    text: root.result-name;
+                                    font-size: Typography.body;
+                                    font-weight: 600;
+                                    color: Colors.text-primary;
+                                    overflow: elide;
+                                }
+
+                                Text {
+                                    text: Locale.current == "ar" ?
+                                        root.result-count + " نتائج" :
+                                        root.result-count + " results";
+                                    font-size: Typography.caption;
+                                    color: Colors.text-secondary;
+                                }
+                            }
+                        }
+
+                        SmallButton {
+                            text: Locale.current == "ar" ? "إضافة" : "Add";
+                            variant: "primary";
+                            clicked => {
+                                root.add-product(root.result-product-id);
+                            }
+                        }
+                    }
+                }
+
+                // No results — error message
+                if !root.searching && root.error-message != "": Rectangle {
+                    height: 56px;
+                    border-radius: Radius.md;
+                    background: rgba(239, 68, 68, 0.1);
+                    border-width: 1px;
+                    border-color: rgba(239, 68, 68, 0.3);
+
+                    HorizontalLayout {
+                        padding-left: Spacing.md;
+                        padding-right: Spacing.md;
+                        alignment: center;
+                        spacing: Spacing.sm;
+
+                        Text {
+                            text: "\u{2715}";
+                            font-size: 18px;
+                            font-weight: 700;
+                            color: Colors.danger;
+                            vertical-alignment: center;
+                        }
+
+                        Text {
+                            text: root.error-message;
+                            font-size: Typography.body;
+                            color: Colors.danger;
+                            vertical-alignment: center;
+                            overflow: elide;
+                            horizontal-stretch: 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

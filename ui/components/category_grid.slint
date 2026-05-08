@@ -1,0 +1,442 @@
+// ============================================================================
+// E2Manage POS Terminal - Category Grid Component (Phase 15)
+// ============================================================================
+// Horizontal scrollable category strip/grid for main checkout screen
+// Features: "All" option, scrollable tiles, selection state
+// ============================================================================
+
+import { Colors, Typography, Spacing, Radius, Animation, Layout, Locale } from "../theme.slint";
+import { CategoryTile, AllCategoryTile, CategoryChip, CategoryData } from "category_tile.slint";
+
+// ============================================================================
+// "MORE" OVERFLOW BUTTON for category strip
+// ============================================================================
+
+component MoreCategoryTile inherits Rectangle {
+    in property <int> remaining-count: 0;
+
+    callback clicked;
+
+    horizontal-stretch: 1;
+    min-width: 90px;
+    height: 80px;
+    border-radius: Radius.md;
+    background: touch.pressed ? Colors.surface-variant :
+                touch.has-hover ? Colors.surface : Colors.background;
+    border-width: 1px;
+    border-color: touch.has-hover ? Colors.primary : Colors.border;
+
+    states [
+        pressed when touch.pressed: {
+            opacity: 0.85;
+        }
+    ]
+
+    animate background { duration: Animation.fast; }
+    animate border-color { duration: Animation.fast; }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+
+    VerticalLayout {
+        alignment: center;
+        spacing: Spacing.xs;
+        padding: Spacing.sm;
+
+        // More icon (three dots / ellipsis)
+        Text {
+            text: "\u{2022}\u{2022}\u{2022}";
+            font-size: 20px;
+            color: Colors.primary;
+            horizontal-alignment: center;
+            letter-spacing: 2px;
+        }
+
+        // "More" label
+        Text {
+            text: Locale.current == "ar" ? "المزيد" : "More";
+            font-size: Typography.body;
+            font-weight: 600;
+            color: Colors.primary;
+            horizontal-alignment: center;
+        }
+
+        // Remaining count
+        if remaining-count > 0: Text {
+            text: "+" + remaining-count;
+            font-size: Typography.small;
+            color: Colors.text-secondary;
+            horizontal-alignment: center;
+        }
+    }
+}
+
+// ============================================================================
+// CATEGORY STRIP (Horizontal scrollable with overflow limit)
+// ============================================================================
+
+export component CategoryStrip inherits Rectangle {
+    in property <[CategoryData]> categories: [];
+    in property <string> selected-category-id: "";
+    in property <int> total-product-count: 0;
+
+    callback category-selected(string);
+    callback more-clicked;
+
+    // Maximum visible category tiles (excluding "All" and "More")
+    property <int> max-visible: 5;
+
+    height: 105px;
+    background: Colors.surface;
+    border-radius: Radius.md;
+
+    VerticalLayout {
+        padding: Spacing.sm;
+        spacing: Spacing.xs;
+
+        // Section header
+        HorizontalLayout {
+            padding-left: Spacing.sm;
+            padding-right: Spacing.sm;
+
+            Text {
+                text: Locale.current == "ar" ? "الأصناف" : "Categories";
+                font-size: Typography.caption;
+                font-weight: 600;
+                color: Colors.text-secondary;
+                horizontal-alignment: Layout.rtl ? right : left;
+            }
+        }
+
+        // Category tiles - limited to max-visible
+        Rectangle {
+            horizontal-stretch: 1;
+            clip: true;
+
+            HorizontalLayout {
+                spacing: Spacing.sm;
+                padding-left: Spacing.sm;
+                padding-right: Spacing.sm;
+
+                // "All" tile first
+                AllCategoryTile {
+                    selected: selected-category-id == "";
+                    total-count: total-product-count;
+                    clicked => { root.category-selected(""); }
+                }
+
+                // Visible category tiles (limited to max-visible)
+                for category[index] in categories: CategoryTile {
+                    visible: index < root.max-visible;
+                    category-id: category.id;
+                    name: category.name;
+                    name-ar: category.name-ar;
+                    tile-color: category.color;
+                    product-count: category.product-count;
+                    icon: category.icon;
+                    selected: category.id == selected-category-id;
+
+                    clicked => { root.category-selected(category.id); }
+                }
+
+                // "More" button (only if overflow exists)
+                if categories.length > root.max-visible: MoreCategoryTile {
+                    remaining-count: categories.length - root.max-visible;
+                    clicked => { root.more-clicked(); }
+                }
+            }
+        }
+    }
+}
+
+// ============================================================================
+// CATEGORY CHIP STRIP (Compact horizontal row)
+// ============================================================================
+
+export component CategoryChipStrip inherits Rectangle {
+    in property <[CategoryData]> categories: [];
+    in property <string> selected-category-id: "";
+
+    callback category-selected(string);
+
+    height: 56px;
+    background: Colors.surface;
+
+    HorizontalLayout {
+        padding: Spacing.sm;
+        spacing: 0px;
+
+        // "All" chip
+        CategoryChip {
+            name: Locale.current == "ar" ? "الكل" : "All";
+            chip-color: Colors.text-secondary;
+            selected: selected-category-id == "";
+
+            clicked => { root.category-selected(""); }
+        }
+
+        // Scrollable chips
+        Flickable {
+            horizontal-stretch: 1;
+            viewport-width: categories.length * 100px;
+
+            HorizontalLayout {
+                spacing: Spacing.sm;
+                padding-left: Spacing.sm;
+
+                for category in categories: CategoryChip {
+                    category-id: category.id;
+                    name: category.name;
+                    name-ar: category.name-ar;
+                    chip-color: category.color;
+                    selected: category.id == selected-category-id;
+
+                    clicked => { root.category-selected(category.id); }
+                }
+            }
+        }
+    }
+}
+
+// ============================================================================
+// CATEGORY GRID (Vertical grid layout)
+// ============================================================================
+
+export component CategoryGrid inherits Rectangle {
+    in property <[CategoryData]> categories: [];
+    in property <string> selected-category-id: "";
+    in property <int> columns: 4;
+    in property <int> total-product-count: 0;
+
+    callback category-selected(string);
+
+    background: Colors.surface;
+    border-radius: Radius.md;
+
+    VerticalLayout {
+        padding: Spacing.md;
+        spacing: Spacing.sm;
+
+        // Header
+        HorizontalLayout {
+            Text {
+                text: Locale.current == "ar" ? "الأصناف" : "Categories";
+                font-size: Typography.subheading;
+                font-weight: 600;
+                color: Colors.text-primary;
+                horizontal-alignment: Layout.rtl ? right : left;
+            }
+        }
+
+        // Scrollable grid
+        Flickable {
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                spacing: Spacing.sm;
+
+                // First row with "All" tile
+                HorizontalLayout {
+                    spacing: Spacing.sm;
+
+                    AllCategoryTile {
+                        selected: selected-category-id == "";
+                        total-count: total-product-count;
+                        clicked => { root.category-selected(""); }
+                    }
+
+                    // Fill rest of first row
+                    for category[index] in categories: CategoryTile {
+                        visible: index < (columns - 1);
+                        category-id: category.id;
+                        name: category.name;
+                        name-ar: category.name-ar;
+                        tile-color: category.color;
+                        product-count: category.product-count;
+                        icon: category.icon;
+                        selected: category.id == selected-category-id;
+
+                        clicked => { root.category-selected(category.id); }
+                    }
+                }
+
+                // Additional rows (starting from index columns-1)
+                for category[index] in categories: HorizontalLayout {
+                    visible: index >= (columns - 1);
+                    spacing: Spacing.sm;
+
+                    CategoryTile {
+                        category-id: category.id;
+                        name: category.name;
+                        name-ar: category.name-ar;
+                        tile-color: category.color;
+                        product-count: category.product-count;
+                        icon: category.icon;
+                        selected: category.id == selected-category-id;
+
+                        clicked => { root.category-selected(category.id); }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ============================================================================
+// SIDEBAR CATEGORY LIST (For vertical sidebar layout)
+// ============================================================================
+
+component CategoryListItem inherits Rectangle {
+    in property <string> category-id: "";
+    in property <string> name: "Category";
+    in property <string> name-ar: "";
+    in property <color> indicator-color: Colors.primary;
+    in property <int> product-count: 0;
+    in property <bool> selected: false;
+
+    callback clicked;
+
+    height: 48px;
+    background: selected ? Colors.surface-variant : transparent;
+
+    states [
+        hover when touch.has-hover && !selected: {
+            background: Colors.surface;
+        }
+    ]
+
+    animate background { duration: Animation.fast; }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+
+    HorizontalLayout {
+        spacing: Spacing.md;
+        padding-left: Spacing.md;
+        padding-right: Spacing.md;
+
+        // Color indicator (wrapped for vertical centering in HorizontalLayout)
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 4px;
+                height: 24px;
+                border-radius: 2px;
+                background: indicator-color;
+            }
+        }
+
+        // Name
+        Text {
+            text: Locale.current == "ar" && name-ar != "" ? name-ar : name;
+            font-size: Typography.body;
+            font-weight: selected ? 600 : 400;
+            color: selected ? Colors.primary : Colors.text-primary;
+            horizontal-stretch: 1;
+            vertical-alignment: center;
+            horizontal-alignment: Layout.rtl ? right : left;
+            overflow: elide;
+        }
+
+        // Count badge
+        if product-count > 0: Rectangle {
+            width: count-text.preferred-width + Spacing.md;
+            height: 24px;
+            border-radius: Radius.full;
+            background: selected ? Colors.primary : Colors.surface-variant;
+
+            count-text := Text {
+                text: product-count + "";
+                font-size: Typography.small;
+                font-weight: 500;
+                color: selected ? Colors.text-on-primary : Colors.text-secondary;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
+
+export component CategorySidebar inherits Rectangle {
+    in property <[CategoryData]> categories: [];
+    in property <string> selected-category-id: "";
+    in property <int> total-product-count: 0;
+
+    callback category-selected(string);
+
+    width: 200px;
+    background: Colors.background;
+    border-width: 0px;
+    border-color: transparent;
+
+    VerticalLayout {
+        spacing: 0px;
+
+        // Header
+        Rectangle {
+            height: 48px;
+            background: Colors.surface;
+
+            HorizontalLayout {
+                padding-left: Spacing.md;
+                padding-right: Spacing.md;
+
+                Text {
+                    text: Locale.current == "ar" ? "الأصناف" : "Categories";
+                    font-size: Typography.caption;
+                    font-weight: 600;
+                    color: Colors.text-secondary;
+                    vertical-alignment: center;
+                    horizontal-alignment: Layout.rtl ? right : left;
+                }
+            }
+        }
+
+        // Divider
+        Rectangle {
+            height: 1px;
+            background: Colors.divider;
+        }
+
+        // Scrollable list
+        Flickable {
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                spacing: 0px;
+
+                // "All" item
+                CategoryListItem {
+                    name: Locale.current == "ar" ? "الكل" : "All Products";
+                    indicator-color: Colors.text-secondary;
+                    product-count: total-product-count;
+                    selected: selected-category-id == "";
+
+                    clicked => { root.category-selected(""); }
+                }
+
+                // Divider
+                Rectangle {
+                    height: 1px;
+                    background: Colors.divider;
+                }
+
+                // Category items
+                for category in categories: CategoryListItem {
+                    category-id: category.id;
+                    name: category.name;
+                    name-ar: category.name-ar;
+                    indicator-color: category.color;
+                    product-count: category.product-count;
+                    selected: category.id == selected-category-id;
+
+                    clicked => { root.category-selected(category.id); }
+                }
+            }
+        }
+    }
+}

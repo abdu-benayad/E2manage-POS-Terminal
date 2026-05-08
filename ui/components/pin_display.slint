@@ -1,0 +1,320 @@
+// ============================================================================
+// E2Manage POS Terminal - PIN Display Components
+// ============================================================================
+// Display components for PIN entry and amount display
+// ============================================================================
+
+import { Colors, Typography, Spacing, Sizes, Radius, Animation, Layout, Locale, CartState } from "../theme.slint";
+
+// ============================================================================
+// PIN DISPLAY COMPONENT
+// ============================================================================
+// Shows PIN entry progress as dots (filled/empty states)
+// Supports error state with visual feedback
+
+export component PinDisplay inherits Rectangle {
+    in property <int> length: 4;
+    in property <int> filled: 0;
+    in property <bool> error: false;
+    in property <bool> success: false;
+    in property <string> label: "";
+    in property <string> error-message: "";
+
+    // Calculated height based on whether we have label/error
+    height: (label != "" || (error && error-message != "")) ?
+            Sizes.pin-container-height + 48px :
+            Sizes.pin-container-height;
+
+    VerticalLayout {
+        spacing: Spacing.sm;
+        alignment: center;
+
+        // Label
+        if label != "": Text {
+            text: label;
+            font-size: Typography.body;
+            font-weight: Typography.medium;
+            color: Colors.text-secondary;
+            horizontal-alignment: center;
+        }
+
+        // PIN dots container
+        Rectangle {
+            width: Sizes.pin-container-width;
+            height: Sizes.pin-container-height;
+            border-radius: Radius.lg;
+            background: Colors.surface;
+            border-width: error ? 2px : 1px;
+            border-color: error ? Colors.danger :
+                          success ? Colors.success :
+                          Colors.border;
+
+            animate border-color { duration: Animation.fast; }
+
+            HorizontalLayout {
+                alignment: center;
+                spacing: Sizes.pin-dot-gap;
+                padding: Spacing.lg;
+
+                for i in length: Rectangle {
+                    width: Sizes.pin-dot-size;
+                    height: Sizes.pin-dot-size;
+                    border-radius: Sizes.pin-dot-size / 2;
+                    background: i < filled ?
+                                (error ? Colors.danger :
+                                 success ? Colors.success :
+                                 Colors.primary) :
+                                transparent;
+                    border-width: i >= filled ? 2px : 0px;
+                    border-color: error ? Colors.danger :
+                                  success ? Colors.success :
+                                  Colors.border;
+
+                    animate background { duration: Animation.fast; }
+                    animate border-color { duration: Animation.fast; }
+                }
+            }
+        }
+
+        // Error message
+        if error && error-message != "": Text {
+            text: error-message;
+            font-size: Typography.small;
+            color: Colors.danger;
+            horizontal-alignment: center;
+        }
+    }
+}
+
+// ============================================================================
+// AMOUNT DISPLAY COMPONENT
+// ============================================================================
+// Large display for monetary amounts during payment/cash entry
+
+export component AmountDisplay inherits Rectangle {
+    in property <string> value: "0.000";
+    in property <string> currency: CartState.currency;
+    in property <string> label: "";
+    in property <bool> error: false;
+    in property <bool> highlight: false;
+    in property <bool> large: false;
+
+    height: large ? 80px : 64px;
+    border-radius: Radius.md;
+    border-width: error ? 2px : 1px;
+    border-color: error ? Colors.danger :
+                  highlight ? Colors.primary :
+                  Colors.border;
+    background: Colors.surface;
+
+    animate border-color { duration: Animation.fast; }
+
+    VerticalLayout {
+        spacing: Spacing.xxs;
+
+        // Label (if provided)
+        if label != "": HorizontalLayout {
+            padding-left: Spacing.lg;
+            padding-right: Spacing.lg;
+            padding-top: Spacing.xs;
+
+            Text {
+                text: label;
+                font-size: Typography.small;
+                color: Colors.text-secondary;
+                horizontal-alignment: Layout.rtl ? right : left;
+            }
+        }
+
+        // Amount value
+        HorizontalLayout {
+            padding-left: Spacing.lg;
+            padding-right: Spacing.lg;
+            padding-top: label == "" ? Spacing.md : 0px;
+            padding-bottom: Spacing.md;
+            alignment: end;
+
+            Text {
+                text: value;
+                font-size: large ? Typography.display : Typography.title;
+                font-weight: Typography.bold;
+                color: error ? Colors.danger :
+                       highlight ? Colors.primary :
+                       Colors.text-primary;
+                vertical-alignment: center;
+                horizontal-alignment: right;
+            }
+
+            Text {
+                text: " " + currency;
+                font-size: large ? Typography.heading : Typography.subheading;
+                font-weight: Typography.medium;
+                color: Colors.text-secondary;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
+
+// ============================================================================
+// CHANGE DISPLAY COMPONENT
+// ============================================================================
+// Shows calculated change amount (payment - total)
+
+export component ChangeDisplay inherits Rectangle {
+    in property <string> paid: "0.000";
+    in property <string> total: "0.000";
+    in property <string> change: "0.000";
+    in property <string> currency: CartState.currency;
+    in property <bool> is-sufficient: true; // paid >= total
+
+    height: 100px;
+    border-radius: Radius.lg;
+    background: is-sufficient ? Colors.success.transparentize(0.85) : Colors.warning.transparentize(0.85);
+
+    VerticalLayout {
+        padding: Spacing.lg;
+        spacing: Spacing.sm;
+        alignment: center;
+
+        // Label
+        Text {
+            text: is-sufficient ?
+                  (Layout.rtl ? "المبلغ المتبقي" : "Change Due") :
+                  (Layout.rtl ? "المبلغ المطلوب" : "Amount Needed");
+            font-size: Typography.body;
+            font-weight: Typography.medium;
+            color: is-sufficient ? Colors.success : Colors.warning;
+            horizontal-alignment: center;
+        }
+
+        // Change amount
+        HorizontalLayout {
+            alignment: center;
+
+            Text {
+                text: change;
+                font-size: Typography.display;
+                font-weight: Typography.bold;
+                color: is-sufficient ? Colors.success : Colors.warning;
+            }
+
+            Text {
+                text: " " + currency;
+                font-size: Typography.heading;
+                font-weight: Typography.medium;
+                color: is-sufficient ? Colors.success : Colors.warning;
+            }
+        }
+    }
+}
+
+// ============================================================================
+// TOTAL DISPLAY COMPONENT
+// ============================================================================
+// Compact total display for cart summary
+
+export component TotalDisplay inherits Rectangle {
+    in property <string> subtotal: "0.000";
+    in property <string> tax: "0.000";
+    in property <string> discount: "0.000";
+    in property <string> total: "0.000";
+    in property <string> currency: CartState.currency;
+    in property <bool> show-breakdown: true;
+
+    border-radius: Radius.lg;
+    background: Colors.surface;
+    border-width: 1px;
+    border-color: Colors.border;
+
+    VerticalLayout {
+        padding: Spacing.lg;
+        spacing: Spacing.sm;
+
+        // Breakdown rows
+        if show-breakdown: VerticalLayout {
+            spacing: Spacing.xs;
+
+            // Subtotal row
+            HorizontalLayout {
+                Text {
+                    text: Layout.rtl ? "المجموع الفرعي" : "Subtotal";
+                    font-size: Typography.caption;
+                    color: Colors.text-secondary;
+                    horizontal-stretch: 1;
+                }
+                Text {
+                    text: subtotal + " " + currency;
+                    font-size: Typography.caption;
+                    color: Colors.text-secondary;
+                }
+            }
+
+            // Tax row
+            if tax != "0.000": HorizontalLayout {
+                Text {
+                    text: Layout.rtl ? "الضريبة" : "Tax";
+                    font-size: Typography.caption;
+                    color: Colors.text-secondary;
+                    horizontal-stretch: 1;
+                }
+                Text {
+                    text: "+" + tax + " " + currency;
+                    font-size: Typography.caption;
+                    color: Colors.text-secondary;
+                }
+            }
+
+            // Discount row
+            if discount != "0.000": HorizontalLayout {
+                Text {
+                    text: Layout.rtl ? "الخصم" : "Discount";
+                    font-size: Typography.caption;
+                    color: Colors.success;
+                    horizontal-stretch: 1;
+                }
+                Text {
+                    text: "-" + discount + " " + currency;
+                    font-size: Typography.caption;
+                    color: Colors.success;
+                }
+            }
+
+            // Divider
+            Rectangle {
+                height: 1px;
+                background: Colors.border;
+            }
+        }
+
+        // Total row
+        HorizontalLayout {
+            alignment: space-between;
+
+            Text {
+                text: Layout.rtl ? "الإجمالي" : "Total";
+                font-size: Typography.subheading;
+                font-weight: Typography.semi-bold;
+                color: Colors.text-primary;
+            }
+
+            HorizontalLayout {
+                spacing: Spacing.xs;
+
+                Text {
+                    text: total;
+                    font-size: Typography.heading;
+                    font-weight: Typography.bold;
+                    color: Colors.text-primary;
+                }
+                Text {
+                    text: currency;
+                    font-size: Typography.body;
+                    font-weight: Typography.medium;
+                    color: Colors.text-secondary;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+}

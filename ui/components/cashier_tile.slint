@@ -1,0 +1,325 @@
+// ============================================================================
+// E2Manage POS Terminal - Cashier Tile Component
+// ============================================================================
+// Displays an individual cashier/operator for selection on the login screen
+// Shows avatar with initials, name, and role
+// Supports selection state and hover effects
+// ============================================================================
+
+import { Colors, Typography, Spacing, Sizes, Radius, Animation, Layout, Locale } from "../theme.slint";
+
+// ============================================================================
+// CASHIER TILE COMPONENT
+// ============================================================================
+// Usage:
+//   CashierTile {
+//       name: "Ahmed Mohamed";
+//       role: "Cashier";
+//       avatar-initials: "AM";
+//       avatar-color: #2563EB;
+//       selected: false;
+//       clicked => { /* handle selection */ }
+//   }
+// ============================================================================
+
+export component CashierTile inherits Rectangle {
+    // Cashier display properties
+    in property <string> name: "Cashier";
+    in property <string> role: "Cashier";
+    in property <string> avatar-initials: "C";
+    in property <color> avatar-color: Colors.primary;
+
+    // State properties
+    in property <bool> selected: false;
+    in property <bool> disabled: false;
+
+    // Callback for selection
+    callback clicked;
+
+    // Tile dimensions from design system
+    width: Sizes.cashier-tile-width;
+    height: Sizes.cashier-tile-height;
+    border-radius: Radius.md;
+
+    // Background changes based on state
+    background: selected ? Colors.primary-light :
+                disabled ? Colors.surface-variant :
+                Colors.surface;
+
+    // Border styling
+    border-width: selected ? 3px : 2px;
+    border-color: selected ? Colors.primary : Colors.border;
+
+    // Scale property for press effect
+    property <float> scale: 1.0;
+
+    // Hover and pressed states
+    states [
+        pressed when touch.pressed && !disabled: {
+            background: selected ? Colors.primary : Colors.primary-light;
+            border-color: Colors.primary;
+            border-width: 3px;
+            scale: 0.95;
+        }
+        hovered when touch.has-hover && !disabled && !selected: {
+            background: Colors.surface-variant;
+            border-color: Colors.primary-light;
+            border-width: 2.5px;
+            scale: 1.02;
+        }
+    ]
+
+    animate background { duration: Animation.normal; }
+    animate border-color { duration: Animation.normal; }
+    animate border-width { duration: Animation.fast; }
+    animate scale { duration: Animation.fast; }
+
+    // Content layout
+    VerticalLayout {
+        alignment: center;
+        spacing: Spacing.md;
+        padding: Spacing.lg;
+
+        // Avatar circle with initials
+        HorizontalLayout {
+            alignment: center;
+
+            Rectangle {
+                width: Sizes.avatar-md;
+                height: Sizes.avatar-md;
+                border-radius: Sizes.avatar-md / 2;
+                background: disabled ? Colors.disabled : avatar-color;
+
+                // Selected state - add ring
+                if selected: Rectangle {
+                    width: Sizes.avatar-md + 4px;
+                    height: Sizes.avatar-md + 4px;
+                    x: -2px;
+                    y: -2px;
+                    border-radius: (Sizes.avatar-md + 4px) / 2;
+                    border-width: 2px;
+                    border-color: Colors.text-on-primary;
+                    background: transparent;
+                }
+
+                // Initials text
+                Text {
+                    text: avatar-initials;
+                    font-size: Typography.title;
+                    font-weight: 700;
+                    color: Colors.text-on-primary;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        // Name text (2-line support for long names)
+        Text {
+            text: name;
+            font-size: Typography.subheading;
+            font-weight: 600;
+            color: disabled ? Colors.disabled :
+                   selected ? Colors.primary-dark :
+                   Colors.text-primary;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+
+        // Role with color badge
+        HorizontalLayout {
+            alignment: center;
+            spacing: Spacing.xs;
+
+            // Role color dot
+            Rectangle {
+                width: 8px;
+                height: 8px;
+                border-radius: 4px;
+                background: disabled ? Colors.disabled :
+                    role == "مشرف" || role == "Supervisor" ? Colors.role-supervisor :
+                    role == "مدير" || role == "Admin" ? Colors.role-admin :
+                    Colors.role-cashier;
+            }
+
+            Text {
+                text: role;
+                font-size: Typography.caption;
+                color: disabled ? Colors.disabled :
+                       selected ? Colors.primary :
+                       Colors.text-secondary;
+            }
+        }
+    }
+
+    // Touch area for interaction
+    touch := TouchArea {
+        enabled: !disabled;
+        mouse-cursor: disabled ? default : pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+// ============================================================================
+// FACE LOGIN TILE COMPONENT
+// ============================================================================
+// Special tile for face recognition login option
+// ============================================================================
+
+export component FaceLoginTile inherits Rectangle {
+    in property <bool> disabled: false;
+
+    callback clicked;
+
+    width: Sizes.cashier-tile-width;
+    height: Sizes.cashier-tile-height;
+    border-radius: Radius.md;
+    background: Colors.surface;
+    border-width: 1px;
+    border-color: Colors.border;
+
+    states [
+        pressed when touch.pressed && !disabled: {
+            background: Colors.surface-variant;
+        }
+        hovered when touch.has-hover && !disabled: {
+            border-color: Colors.primary-light;
+        }
+    ]
+
+    animate background { duration: Animation.fast; }
+
+    VerticalLayout {
+        alignment: center;
+        spacing: Spacing.md;
+        padding: Spacing.lg;
+
+        // Camera icon circle
+        HorizontalLayout {
+            alignment: center;
+
+            Rectangle {
+                width: Sizes.avatar-md;
+                height: Sizes.avatar-md;
+                border-radius: Sizes.avatar-md / 2;
+                background: disabled ? Colors.disabled : Colors.info;
+
+                Text {
+                    text: "\u{1F4F7}"; // Camera emoji
+                    font-size: Typography.heading;
+                    color: Colors.text-on-primary;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        // Title
+        Text {
+            text: Locale.current == "ar" ? "تسجيل بالوجه" : "Face Login";
+            font-size: Typography.subheading;
+            font-weight: 600;
+            color: disabled ? Colors.disabled : Colors.text-primary;
+            horizontal-alignment: center;
+        }
+
+        // Subtitle
+        Text {
+            text: Locale.current == "ar" ? "استخدم الكاميرا" : "Use camera";
+            font-size: Typography.caption;
+            color: disabled ? Colors.disabled : Colors.text-secondary;
+            horizontal-alignment: center;
+        }
+    }
+
+    touch := TouchArea {
+        enabled: !disabled;
+        mouse-cursor: disabled ? default : pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+// ============================================================================
+// MORE CASHIERS TILE COMPONENT
+// ============================================================================
+// Special tile to indicate more cashiers are available (scroll/pagination)
+// ============================================================================
+
+export component MoreCashiersTile inherits Rectangle {
+    in property <int> additional-count: 0;
+
+    callback clicked;
+
+    width: Sizes.cashier-tile-width;
+    height: Sizes.cashier-tile-height;
+    border-radius: Radius.md;
+    background: Colors.surface;
+    border-width: 1px;
+    border-color: Colors.border;
+
+    states [
+        pressed when touch.pressed: {
+            background: Colors.surface-variant;
+        }
+        hovered when touch.has-hover: {
+            border-color: Colors.primary-light;
+        }
+    ]
+
+    animate background { duration: Animation.fast; }
+
+    VerticalLayout {
+        alignment: center;
+        spacing: Spacing.md;
+        padding: Spacing.lg;
+
+        // Ellipsis icon circle
+        HorizontalLayout {
+            alignment: center;
+
+            Rectangle {
+                width: Sizes.avatar-md;
+                height: Sizes.avatar-md;
+                border-radius: Sizes.avatar-md / 2;
+                background: Colors.surface-variant;
+                border-width: 2px;
+                border-color: Colors.border;
+
+                Text {
+                    text: "...";
+                    font-size: Typography.heading;
+                    font-weight: 700;
+                    color: Colors.text-secondary;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        // Title
+        Text {
+            text: Locale.current == "ar" ? "المزيد من الكاشير" : "More cashiers";
+            font-size: Typography.subheading;
+            font-weight: 600;
+            color: Colors.text-primary;
+            horizontal-alignment: center;
+        }
+
+        // Subtitle with count
+        Text {
+            text: additional-count > 0 ?
+                  (Locale.current == "ar" ?
+                   "+" + additional-count + " آخرين" :
+                   "+" + additional-count + " more") :
+                  (Locale.current == "ar" ? "اسحب للعرض" : "Scroll to view");
+            font-size: Typography.caption;
+            color: Colors.text-secondary;
+            horizontal-alignment: center;
+        }
+    }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}

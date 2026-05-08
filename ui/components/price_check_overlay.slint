@@ -1,0 +1,401 @@
+// ============================================================================
+// E2Manage POS Terminal - Price Check Overlay Component (Phase 3)
+// ============================================================================
+// Overlay for checking product price and stock WITHOUT adding to cart
+// Used by cashiers when customers ask "how much is this?"
+// Supports RTL (Arabic) layout
+// ============================================================================
+
+import { Colors, Typography, Spacing, Sizes, Radius, Animation, Layout, Locale } from "../theme.slint";
+import { Button } from "button.slint";
+import { StatusDot } from "badge.slint";
+
+// ============================================================================
+// PRICE CHECK OVERLAY COMPONENT
+// ============================================================================
+
+export component PriceCheckOverlay inherits Rectangle {
+    // Visibility toggle
+    in-out property <bool> open: false;
+
+    // Product info (set from Rust after lookup)
+    in property <string> product-name: "";
+    in property <string> product-price: "";
+    in property <string> product-barcode: "";
+    in property <string> product-sku: "";
+    in property <string> product-category: "";
+    in property <string> product-unit: "";
+    in property <string> tax-info: "";
+    in property <int> product-stock: 0;
+    in property <bool> in-stock: false;
+    in property <bool> low-stock: false;
+
+    // State
+    in property <bool> searching: false;
+    in property <string> error-message: "";
+
+    // Callbacks
+    callback dismissed;
+
+    // Full screen overlay
+    if open: Rectangle {
+        width: 100%;
+        height: 100%;
+        background: Colors.overlay;
+
+        // Backdrop click to close
+        TouchArea {
+            clicked => {
+                root.open = false;
+                root.dismissed();
+            }
+        }
+
+        // Price Check dialog panel
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: 420px;
+            height: root.searching ? 200px :
+                    root.error-message != "" ? 200px : 480px;
+            border-radius: Radius.dialog;
+            background: Colors.surface;
+            drop-shadow-blur: 20px;
+            drop-shadow-color: rgba(0, 0, 0, 0.3);
+            drop-shadow-offset-y: 8px;
+
+            // Block clicks from propagating to backdrop
+            TouchArea {}
+
+            VerticalLayout {
+                padding: Spacing.lg;
+                spacing: Spacing.md;
+
+                // Title bar with close button
+                HorizontalLayout {
+                    alignment: space-between;
+
+                    Text {
+                        text: Locale.current == "ar" ? "فحص السعر" :
+                              Locale.current == "fr" ? "Vérification prix" :
+                              "Price Check";
+                        font-size: Typography.heading;
+                        font-weight: 600;
+                        color: Colors.text-primary;
+                        vertical-alignment: center;
+                    }
+
+                    // Close button
+                    Rectangle {
+                        width: 36px;
+                        height: 36px;
+                        border-radius: 18px;
+                        background: close-touch.has-hover ? Colors.surface-variant : transparent;
+
+                        Text {
+                            text: "\u{2715}";
+                            font-size: Typography.body;
+                            font-weight: 700;
+                            color: Colors.text-secondary;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+
+                        close-touch := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => {
+                                root.open = false;
+                                root.dismissed();
+                            }
+                        }
+                    }
+                }
+
+                // Loading state
+                if root.searching: Rectangle {
+                    height: 56px;
+                    border-radius: Radius.md;
+                    background: Colors.background;
+
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: Spacing.sm;
+
+                        Rectangle {
+                            width: 10px;
+                            height: 10px;
+                            border-radius: 5px;
+                            background: Colors.primary;
+                            opacity: 0.4;
+                        }
+                        Rectangle {
+                            width: 10px;
+                            height: 10px;
+                            border-radius: 5px;
+                            background: Colors.primary;
+                            opacity: 0.7;
+                        }
+                        Rectangle {
+                            width: 10px;
+                            height: 10px;
+                            border-radius: 5px;
+                            background: Colors.primary;
+                            opacity: 1.0;
+                        }
+
+                        Text {
+                            text: Locale.current == "ar" ? "جارٍ البحث..." :
+                                  Locale.current == "fr" ? "Recherche..." :
+                                  "Searching...";
+                            font-size: Typography.body;
+                            color: Colors.text-secondary;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+
+                // Error state
+                if !root.searching && root.error-message != "": Rectangle {
+                    height: 56px;
+                    border-radius: Radius.md;
+                    background: rgba(239, 68, 68, 0.1);
+                    border-width: 1px;
+                    border-color: rgba(239, 68, 68, 0.3);
+
+                    HorizontalLayout {
+                        padding-left: Spacing.md;
+                        padding-right: Spacing.md;
+                        alignment: center;
+                        spacing: Spacing.sm;
+
+                        Text {
+                            text: "\u{2715}";
+                            font-size: 18px;
+                            font-weight: 700;
+                            color: Colors.danger;
+                            vertical-alignment: center;
+                        }
+
+                        Text {
+                            text: root.error-message;
+                            font-size: Typography.body;
+                            color: Colors.danger;
+                            vertical-alignment: center;
+                            overflow: elide;
+                            horizontal-stretch: 1;
+                        }
+                    }
+                }
+
+                // Result card — product info
+                if !root.searching && root.error-message == "" && root.product-name != "": VerticalLayout {
+                    spacing: Spacing.sm;
+
+                    // Product name
+                    Text {
+                        text: root.product-name;
+                        font-size: Typography.title;
+                        font-weight: 700;
+                        color: Colors.text-primary;
+                        horizontal-alignment: center;
+                        overflow: elide;
+                    }
+
+                    // Price hero display
+                    Rectangle {
+                        height: 56px;
+                        border-radius: Radius.md;
+                        background: rgba(34, 197, 94, 0.1);
+                        border-width: 1px;
+                        border-color: rgba(34, 197, 94, 0.3);
+
+                        Text {
+                            text: root.product-price;
+                            font-size: 32px;
+                            font-weight: 700;
+                            color: Colors.success;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    // Info rows
+                    Rectangle {
+                        border-radius: Radius.md;
+                        background: Colors.background;
+                        border-width: 1px;
+                        border-color: Colors.border;
+
+                        VerticalLayout {
+                            padding: Spacing.md;
+                            spacing: Spacing.sm;
+
+                            // Barcode row
+                            if root.product-barcode != "": HorizontalLayout {
+                                alignment: space-between;
+                                Text {
+                                    text: Locale.current == "ar" ? "الباركود" :
+                                          Locale.current == "fr" ? "Code-barres" :
+                                          "Barcode";
+                                    font-size: Typography.caption;
+                                    color: Colors.text-secondary;
+                                    vertical-alignment: center;
+                                }
+                                Text {
+                                    text: root.product-barcode;
+                                    font-size: Typography.caption;
+                                    font-weight: 600;
+                                    color: Colors.text-primary;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            // SKU row
+                            if root.product-sku != "": HorizontalLayout {
+                                alignment: space-between;
+                                Text {
+                                    text: Locale.current == "ar" ? "رمز المنتج" :
+                                          Locale.current == "fr" ? "Référence" :
+                                          "SKU";
+                                    font-size: Typography.caption;
+                                    color: Colors.text-secondary;
+                                    vertical-alignment: center;
+                                }
+                                Text {
+                                    text: root.product-sku;
+                                    font-size: Typography.caption;
+                                    font-weight: 600;
+                                    color: Colors.text-primary;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            // Category row
+                            if root.product-category != "": HorizontalLayout {
+                                alignment: space-between;
+                                Text {
+                                    text: Locale.current == "ar" ? "الفئة" :
+                                          Locale.current == "fr" ? "Catégorie" :
+                                          "Category";
+                                    font-size: Typography.caption;
+                                    color: Colors.text-secondary;
+                                    vertical-alignment: center;
+                                }
+                                Text {
+                                    text: root.product-category;
+                                    font-size: Typography.caption;
+                                    font-weight: 600;
+                                    color: Colors.text-primary;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            // Stock row
+                            HorizontalLayout {
+                                alignment: space-between;
+                                Text {
+                                    text: Locale.current == "ar" ? "المخزون" :
+                                          Locale.current == "fr" ? "Stock" :
+                                          "Stock";
+                                    font-size: Typography.caption;
+                                    color: Colors.text-secondary;
+                                    vertical-alignment: center;
+                                }
+                                HorizontalLayout {
+                                    spacing: Spacing.xs;
+                                    alignment: end;
+
+                                    StatusDot {
+                                        status: root.in-stock ?
+                                            (root.low-stock ? "away" : "online") :
+                                            "busy";
+                                    }
+
+                                    Text {
+                                        text: root.in-stock ?
+                                            (root.low-stock ?
+                                                (Locale.current == "ar" ? "مخزون منخفض" :
+                                                 Locale.current == "fr" ? "Stock faible" :
+                                                 "Low Stock") :
+                                                (Locale.current == "ar" ? "متوفر" :
+                                                 Locale.current == "fr" ? "En stock" :
+                                                 "In Stock")) :
+                                            (Locale.current == "ar" ? "غير متوفر" :
+                                             Locale.current == "fr" ? "Rupture" :
+                                             "Out of Stock");
+                                        font-size: Typography.caption;
+                                        font-weight: 600;
+                                        color: root.in-stock ?
+                                            (root.low-stock ? Colors.warning : Colors.success) :
+                                            Colors.danger;
+                                        vertical-alignment: center;
+                                    }
+
+                                    Text {
+                                        text: "(" + root.product-stock + ")";
+                                        font-size: Typography.caption;
+                                        color: Colors.text-secondary;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+
+                            // Unit row
+                            HorizontalLayout {
+                                alignment: space-between;
+                                Text {
+                                    text: Locale.current == "ar" ? "الوحدة" :
+                                          Locale.current == "fr" ? "Unité" :
+                                          "Unit";
+                                    font-size: Typography.caption;
+                                    color: Colors.text-secondary;
+                                    vertical-alignment: center;
+                                }
+                                Text {
+                                    text: root.product-unit;
+                                    font-size: Typography.caption;
+                                    font-weight: 600;
+                                    color: Colors.text-primary;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            // Tax row
+                            HorizontalLayout {
+                                alignment: space-between;
+                                Text {
+                                    text: Locale.current == "ar" ? "الضريبة" :
+                                          Locale.current == "fr" ? "Taxe" :
+                                          "Tax";
+                                    font-size: Typography.caption;
+                                    color: Colors.text-secondary;
+                                    vertical-alignment: center;
+                                }
+                                Text {
+                                    text: root.tax-info;
+                                    font-size: Typography.caption;
+                                    font-weight: 600;
+                                    color: Colors.text-primary;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+
+                    // Done button
+                    Button {
+                        text: Locale.current == "ar" ? "تم" :
+                              Locale.current == "fr" ? "Terminé" :
+                              "Done";
+                        variant: "primary";
+                        full-width: true;
+                        clicked => {
+                            root.open = false;
+                            root.dismissed();
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

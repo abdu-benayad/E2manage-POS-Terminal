@@ -1,0 +1,494 @@
+// ============================================================================
+// E2Manage POS Terminal - Dialog Components
+// ============================================================================
+// Modal dialog components for confirmations, alerts, and custom content
+// Supports: Alert, Confirm, Custom content dialogs
+// ============================================================================
+
+import { Colors, Typography, Spacing, Sizes, Radius, Animation, Layout, Locale } from "../theme.slint";
+import { Button, SmallButton } from "button.slint";
+
+// ============================================================================
+// BASE DIALOG COMPONENT
+// ============================================================================
+
+export component Dialog inherits Rectangle {
+    in property <string> title: "Dialog";
+    in property <string> message: "";
+    in property <string> confirm-text: Locale.confirm;
+    in property <string> cancel-text: Locale.cancel;
+    in property <bool> show-cancel: true;
+    in-out property <bool> open: false;
+    in property <string> variant: "default"; // default, danger, success, warning
+    in property <bool> close-on-backdrop: true;
+
+    callback confirmed;
+    callback cancelled;
+
+    // Full screen overlay
+    if open: Rectangle {
+        width: 100%;
+        height: 100%;
+        background: Colors.overlay;
+
+        // Backdrop touch to close
+        TouchArea {
+            clicked => {
+                if close-on-backdrop && show-cancel {
+                    root.cancelled();
+                    root.open = false;
+                }
+            }
+        }
+
+        // Dialog box
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: 400px;
+            height: message != "" ? 220px : 180px;
+            border-radius: Radius.dialog;
+            background: Colors.surface;
+
+            // Block clicks from propagating to backdrop
+            TouchArea {}
+
+            VerticalLayout {
+                padding: Spacing.xl;
+                spacing: Spacing.lg;
+
+                // Title with optional icon
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: Spacing.sm;
+
+                    // Status icon
+                    if variant != "default": Rectangle {
+                        width: 32px;
+                        height: 32px;
+                        border-radius: 16px;
+                        background: variant == "danger" ? Colors.danger :
+                                    variant == "success" ? Colors.success :
+                                    variant == "warning" ? Colors.warning :
+                                    Colors.primary;
+
+                        Text {
+                            text: variant == "danger" ? "!" :
+                                  variant == "success" ? "\u{2713}" :
+                                  variant == "warning" ? "!" :
+                                  "i";
+                            font-size: Typography.heading;
+                            font-weight: Typography.bold;
+                            color: Colors.text-on-primary;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    Text {
+                        text: title;
+                        font-size: Typography.heading;
+                        font-weight: 600;
+                        color: Colors.text-primary;
+                        horizontal-alignment: center;
+                    }
+                }
+
+                // Message content
+                if message != "": Text {
+                    text: message;
+                    font-size: Typography.body;
+                    color: Colors.text-secondary;
+                    horizontal-alignment: center;
+                    wrap: word-wrap;
+                }
+
+                // Action buttons
+                HorizontalLayout {
+                    spacing: Spacing.md;
+                    alignment: center;
+
+                    if show-cancel: Button {
+                        text: cancel-text;
+                        variant: "secondary";
+                        min-width: 120px;
+                        clicked => {
+                            root.cancelled();
+                            root.open = false;
+                        }
+                    }
+
+                    Button {
+                        text: confirm-text;
+                        variant: root.variant == "danger" ? "danger" :
+                                 root.variant == "warning" ? "warning" : "primary";
+                        min-width: 120px;
+                        clicked => {
+                            root.confirmed();
+                            root.open = false;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ============================================================================
+// ALERT DIALOG (Simple notification with single button)
+// ============================================================================
+
+export component AlertDialog inherits Rectangle {
+    in property <string> title: "Alert";
+    in property <string> message: "";
+    in property <string> button-text: Locale.done;
+    in-out property <bool> open: false;
+    in property <string> variant: "default"; // default, success, warning, danger
+
+    callback dismissed;
+
+    if open: Rectangle {
+        width: 100%;
+        height: 100%;
+        background: Colors.overlay;
+
+        TouchArea {
+            clicked => {
+                root.dismissed();
+                root.open = false;
+            }
+        }
+
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: 360px;
+            height: message != "" ? 200px : 160px;
+            border-radius: Radius.dialog;
+            background: Colors.surface;
+
+            TouchArea {}
+
+            VerticalLayout {
+                padding: Spacing.xl;
+                spacing: Spacing.lg;
+                alignment: center;
+
+                // Icon
+                Rectangle {
+                    width: 48px;
+                    height: 48px;
+                    border-radius: 24px;
+                    background: variant == "success" ? Colors.success :
+                                variant == "warning" ? Colors.warning :
+                                variant == "danger" ? Colors.danger :
+                                Colors.primary;
+
+                    Text {
+                        text: variant == "success" ? "\u{2713}" :
+                              variant == "warning" ? "!" :
+                              variant == "danger" ? "\u{2715}" :
+                              "i";
+                        font-size: Typography.title;
+                        font-weight: Typography.bold;
+                        color: Colors.text-on-primary;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+
+                Text {
+                    text: title;
+                    font-size: Typography.heading;
+                    font-weight: 600;
+                    color: Colors.text-primary;
+                    horizontal-alignment: center;
+                }
+
+                if message != "": Text {
+                    text: message;
+                    font-size: Typography.body;
+                    color: Colors.text-secondary;
+                    horizontal-alignment: center;
+                    wrap: word-wrap;
+                }
+
+                Button {
+                    text: button-text;
+                    variant: "primary";
+                    min-width: 140px;
+                    clicked => {
+                        root.dismissed();
+                        root.open = false;
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ============================================================================
+// LOADING DIALOG (Shows loading spinner)
+// ============================================================================
+
+export component LoadingDialog inherits Rectangle {
+    in property <string> message: Locale.loading;
+    in-out property <bool> open: false;
+    in property <bool> can-cancel: false;
+
+    callback cancelled;
+
+    if open: Rectangle {
+        width: 100%;
+        height: 100%;
+        background: Colors.overlay;
+
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: 280px;
+            height: can-cancel ? 180px : 140px;
+            border-radius: Radius.dialog;
+            background: Colors.surface;
+
+            VerticalLayout {
+                padding: Spacing.xl;
+                spacing: Spacing.lg;
+                alignment: center;
+
+                // Simple loading animation (rotating dots pattern)
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: Spacing.sm;
+
+                    // Dot 1
+                    Rectangle {
+                        width: 12px;
+                        height: 12px;
+                        border-radius: 6px;
+                        background: Colors.primary;
+                        opacity: 0.3;
+                    }
+                    // Dot 2
+                    Rectangle {
+                        width: 12px;
+                        height: 12px;
+                        border-radius: 6px;
+                        background: Colors.primary;
+                        opacity: 0.6;
+                    }
+                    // Dot 3
+                    Rectangle {
+                        width: 12px;
+                        height: 12px;
+                        border-radius: 6px;
+                        background: Colors.primary;
+                        opacity: 1.0;
+                    }
+                }
+
+                Text {
+                    text: message;
+                    font-size: Typography.body;
+                    color: Colors.text-secondary;
+                    horizontal-alignment: center;
+                }
+
+                if can-cancel: SmallButton {
+                    text: Locale.cancel;
+                    variant: "secondary";
+                    clicked => {
+                        root.cancelled();
+                        root.open = false;
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ============================================================================
+// INPUT DIALOG (Dialog with text input)
+// ============================================================================
+
+export component InputDialog inherits Rectangle {
+    in property <string> title: "Input";
+    in property <string> message: "";
+    in property <string> placeholder: "";
+    in property <string> confirm-text: Locale.confirm;
+    in property <string> cancel-text: Locale.cancel;
+    in-out property <bool> open: false;
+    in-out property <string> value: "";
+
+    callback confirmed(string);
+    callback cancelled;
+
+    if open: Rectangle {
+        width: 100%;
+        height: 100%;
+        background: Colors.overlay;
+
+        TouchArea {
+            clicked => {
+                root.cancelled();
+                root.open = false;
+            }
+        }
+
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: 400px;
+            height: 260px;
+            border-radius: Radius.dialog;
+            background: Colors.surface;
+
+            TouchArea {}
+
+            VerticalLayout {
+                padding: Spacing.xl;
+                spacing: Spacing.lg;
+
+                Text {
+                    text: title;
+                    font-size: Typography.heading;
+                    font-weight: 600;
+                    color: Colors.text-primary;
+                    horizontal-alignment: center;
+                }
+
+                if message != "": Text {
+                    text: message;
+                    font-size: Typography.body;
+                    color: Colors.text-secondary;
+                    horizontal-alignment: center;
+                    wrap: word-wrap;
+                }
+
+                // Input field
+                Rectangle {
+                    height: Sizes.input-height;
+                    border-radius: Radius.input;
+                    border-width: 1px;
+                    border-color: Colors.border;
+                    background: Colors.surface;
+
+                    HorizontalLayout {
+                        padding-left: Spacing.lg;
+                        padding-right: Spacing.lg;
+
+                        input := TextInput {
+                            text <=> root.value;
+                            font-size: Typography.body;
+                            color: Colors.text-primary;
+                            horizontal-alignment: Layout.rtl ? right : left;
+                        }
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: Spacing.md;
+                    alignment: center;
+
+                    Button {
+                        text: cancel-text;
+                        variant: "secondary";
+                        min-width: 120px;
+                        clicked => {
+                            root.cancelled();
+                            root.open = false;
+                        }
+                    }
+
+                    Button {
+                        text: confirm-text;
+                        variant: "primary";
+                        min-width: 120px;
+                        clicked => {
+                            root.confirmed(root.value);
+                            root.open = false;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ============================================================================
+// ACTION SHEET (Bottom sheet with action options)
+// ============================================================================
+
+export component ActionSheet inherits Rectangle {
+    in property <string> title: "";
+    in-out property <bool> open: false;
+
+    callback cancelled;
+
+    if open: Rectangle {
+        width: 100%;
+        height: 100%;
+        background: Colors.overlay;
+
+        TouchArea {
+            clicked => {
+                root.cancelled();
+                root.open = false;
+            }
+        }
+
+        // Bottom sheet
+        Rectangle {
+            x: 0;
+            y: parent.height - self.height;
+            width: parent.width;
+            height: 300px; // Adjust based on content
+            border-top-left-radius: Radius.xxl;
+            border-top-right-radius: Radius.xxl;
+            background: Colors.surface;
+
+            TouchArea {}
+
+            VerticalLayout {
+                padding: Spacing.lg;
+                spacing: Spacing.sm;
+
+                // Handle indicator
+                HorizontalLayout {
+                    alignment: center;
+                    padding-bottom: Spacing.sm;
+
+                    Rectangle {
+                        width: 40px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Colors.border;
+                    }
+                }
+
+                // Title
+                if title != "": Text {
+                    text: title;
+                    font-size: Typography.heading;
+                    font-weight: 600;
+                    color: Colors.text-primary;
+                    horizontal-alignment: center;
+                }
+
+                // Placeholder for actions - @children not supported in conditional
+                // In actual use, use a separate container pattern
+
+                // Cancel button
+                Button {
+                    text: Locale.cancel;
+                    variant: "secondary";
+                    full-width: true;
+                    clicked => {
+                        root.cancelled();
+                        root.open = false;
+                    }
+                }
+            }
+        }
+    }
+}

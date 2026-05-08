@@ -1,0 +1,958 @@
+// ============================================================================
+// E2Manage POS Terminal - Main Checkout Screen (Phase 14 + Phase 1 + Phase 2)
+// ============================================================================
+// Two-panel layout: Products (60%) + Cart (40%)
+// Implements Screen 2.1 from wireframes
+// Phase 1: Simplified header, category overflow, no SKU, improved PAY button,
+//          infrequent actions moved to hamburger side menu
+// Phase 2: 60/40 split, last scanned display, colored tiles, action bar
+// ============================================================================
+
+import { Colors, Typography, Spacing, Sizes, Radius, Animation, Layout, Locale, AppState, CartState, Responsive } from "../../theme.slint";
+import { Button, SmallButton, SearchInput } from "../../components/mod.slint";
+import { Header, StatusBar } from "../../components/mod.slint";
+import { SideMenu } from "../../components/mod.slint";
+import { CategoryStrip, CategoryData } from "../../components/mod.slint";
+import { ProductGrid, ProductData } from "../../components/mod.slint";
+import { CartPanel, CartItemData } from "../../components/mod.slint";
+import { PLUPad } from "../../components/mod.slint";
+import { QuantityPad } from "../../components/mod.slint";
+import { PriceCheckOverlay } from "../../components/mod.slint";
+import { WeightPad } from "../../components/mod.slint";
+
+
+// ============================================================================
+// MAIN CHECKOUT SCREEN
+// ============================================================================
+
+export component MainCheckoutScreen inherits Rectangle {
+    // Operator and shift info (from AppState)
+    in property <string> operator-name: AppState.current-user;
+    in property <string> shift-number: AppState.current-shift;
+
+    // Cart data (from CartState)
+    in property <[CartItemData]> cart-items: [];
+    in property <int> cart-item-count: CartState.item-count;
+    in property <string> cart-subtotal: CartState.subtotal;
+    in property <string> cart-tax: CartState.tax;
+    in property <string> cart-tax-rate: AppState.tax-rate-label;
+    in property <string> cart-discount: "0.000";
+    in property <string> cart-total: CartState.total;
+    in property <string> currency: CartState.currency;
+    in property <bool> cart-has-discount: false;
+    in property <string> cart-discount-name: "";
+    in property <bool> cart-loading: false;
+    in property <bool> cart-processing: false;
+
+    // Customer data
+    in property <string> customer-name: "";
+    in property <string> customer-id: "";
+    in property <bool> has-customer: false;
+    in property <string> customer-balance: "";
+
+    // Categories data (Phase 15)
+    in property <[CategoryData]> categories: [];
+    in property <string> selected-category-id: "";
+    in property <int> total-product-count: 0;
+
+    // Products data (Phase 16)
+    in property <[ProductData]> products: [];
+    in property <bool> products-loading: false;
+    in property <string> products-search-query: "";
+
+    // Last scanned item display (Phase 2)
+    in property <string> last-scanned-name: "";
+    in property <string> last-scanned-price: "";
+    in property <bool> show-last-scanned: false;
+
+    // Void last item feedback (Phase 3)
+    in property <string> void-item-name: "";
+    in property <string> void-item-price: "";
+    in property <bool> show-void-feedback: false;
+
+    // Product/search callbacks
+    callback search-product(string);
+    callback category-selected(string);
+    callback product-selected(string);
+    callback more-categories-clicked;
+
+    // Cart item callbacks
+    callback cart-item-increment(string);
+    callback cart-item-decrement(string);
+    callback cart-item-remove(string);
+    callback cart-item-edit(string);
+    callback cart-item-clicked(string);
+
+    // Cart action callbacks
+    callback clear-cart;
+    callback apply-discount;
+    callback remove-discount;
+    callback select-customer;
+    callback remove-customer;
+    callback pay-clicked;
+    callback hold-clicked;
+    callback recall-clicked;
+    callback void-clicked;
+
+    // PLU Pad state (Phase 3)
+    in-out property <bool> plu-pad-open: false;
+    in-out property <string> plu-code: "";
+    in property <string> plu-result-name: "";
+    in property <string> plu-result-price: "";
+    in property <string> plu-result-product-id: "";
+    in property <int> plu-result-count: 0;
+    in property <bool> plu-searching: false;
+    in property <string> plu-error-message: "";
+
+    // PLU callbacks (Phase 3)
+    callback plu-lookup(string);
+    callback plu-add-product(string);
+
+    // Quantity Pad state (Phase 3 — Quick Quantity Entry)
+    in-out property <bool> qty-pad-open: false;
+    in-out property <string> qty-pad-value: "";
+    in-out property <string> qty-pad-item-id: "";
+    in property <string> qty-pad-item-name: "";
+    in property <string> qty-pad-item-price: "";
+    in property <int> qty-pad-current-qty: 1;
+    in property <string> qty-pad-error: "";
+
+    callback quantity-confirmed(string, string); // (item_id, new_quantity)
+
+    // Price Check Mode state (Phase 3 — Price Check)
+    in-out property <bool> price-check-mode: false;
+    in-out property <bool> price-check-open: false;
+    in property <string> price-check-name: "";
+    in property <string> price-check-price: "";
+    in property <string> price-check-barcode: "";
+    in property <string> price-check-sku: "";
+    in property <string> price-check-category: "";
+    in property <string> price-check-unit: "";
+    in property <string> price-check-tax-info: "";
+    in property <string> price-check-error: "";
+    in property <int> price-check-stock: 0;
+    in property <bool> price-check-in-stock: false;
+    in property <bool> price-check-low-stock: false;
+    in property <bool> price-check-searching: false;
+
+    callback price-check-toggle;
+    callback price-check-lookup(string);
+    callback price-check-dismiss;
+
+    // Weight Pad state (Phase 3 — Scale/Weight Display)
+    in-out property <bool> weight-pad-open: false;
+    in property <string> weight-pad-product-name: "";
+    in property <string> weight-pad-price-per-unit: "";
+    in property <string> weight-pad-product-unit: "";
+    in property <string> weight-pad-weight-display: "0.000";
+    in property <bool> weight-pad-weight-stable: false;
+    in property <string> weight-pad-computed-total: "0.000";
+    in property <bool> weight-pad-scale-connected: false;
+    in-out property <string> weight-pad-manual-value: "";
+    in property <bool> weight-pad-manual-mode: false;
+    in property <string> weight-pad-error: "";
+    callback weight-confirmed(string);
+    callback weight-tare-requested;
+
+    // Quick action callbacks (Phase 2 — product-side bottom bar)
+    callback void-last-item;
+    callback quantity-multiply;
+
+    // Navigation callbacks
+    callback menu-clicked;
+    callback settings-clicked;
+    callback drafts-clicked;
+    callback transfer-clicked;
+    callback returns-clicked;
+    callback end-shift-clicked;
+
+    // Side menu state
+    in-out property <bool> menu-open: false;
+
+    background: Colors.background;
+
+    VerticalLayout {
+        width: root.width;
+        height: root.height;
+        spacing: 0px;
+
+        // ============================================================
+        // HEADER (subdued - Pay button should dominate, not header)
+        // ============================================================
+        Header {
+            terminal-code: AppState.terminal-code;
+            operator-name: operator-name;
+            shift-number: shift-number;
+            is-online: AppState.is-online;
+            current-time: AppState.current-time;
+            subdued: true;  // Muted color, reduced height - Pay is the hero
+            compact: Responsive.is-compact;
+
+            menu-clicked => {
+                root.menu-open = !root.menu-open;
+                root.menu-clicked();
+            }
+            settings-clicked => { root.settings-clicked(); }
+        }
+
+        // ============================================================
+        // MAIN CONTENT WRAPPER - Fills available space
+        // ============================================================
+        Rectangle {
+            vertical-stretch: 1;
+            horizontal-stretch: 1;
+
+            // ============================================================
+            // NORMAL MODE (Side-by-side: 60% / 40%)
+            // ============================================================
+            if !Responsive.is-compact: HorizontalLayout {
+                width: parent.width;
+                height: parent.height;
+                spacing: 0px;
+
+            // LEFT PANEL - Products (60%)
+            Rectangle {
+                horizontal-stretch: 60;
+                preferred-width: 0px;
+                min-width: 400px;
+                background: Colors.background;
+
+                VerticalLayout {
+                    padding: Spacing.lg;
+                    spacing: Spacing.lg;
+
+                    // Search bar
+                    SearchInput {
+                        placeholder: Locale.current == "ar" ?
+                            "امسح الباركود أو ابحث عن منتج..." :
+                            "Scan barcode or search product...";
+                        search(query) => { root.search-product(query); }
+                    }
+
+                    // Price check mode indicator banner (Phase 3)
+                    if root.price-check-mode: Rectangle {
+                        height: 48px;
+                        background: rgba(245, 158, 11, 0.15);
+                        border-radius: Radius.md;
+                        border-width: 1px;
+                        border-color: rgba(245, 158, 11, 0.4);
+
+                        HorizontalLayout {
+                            padding-left: Spacing.md;
+                            padding-right: Spacing.md;
+                            spacing: Spacing.sm;
+                            alignment: space-between;
+
+                            HorizontalLayout {
+                                spacing: Spacing.sm;
+                                alignment: center;
+                                horizontal-stretch: 1;
+
+                                Text {
+                                    text: "\u{1F50D}";
+                                    font-size: 16px;
+                                    vertical-alignment: center;
+                                }
+
+                                Text {
+                                    text: Locale.current == "ar" ? "وضع فحص السعر — المسح لن يضيف إلى السلة" :
+                                          Locale.current == "fr" ? "Mode vérification — le scan n'ajoute pas au panier" :
+                                          "Price Check Mode — scanning will NOT add to cart";
+                                    font-size: Typography.caption;
+                                    font-weight: 600;
+                                    color: Colors.warning;
+                                    vertical-alignment: center;
+                                    overflow: elide;
+                                    horizontal-stretch: 1;
+                                }
+                            }
+
+                            SmallButton {
+                                text: Locale.current == "ar" ? "إنهاء" :
+                                      Locale.current == "fr" ? "Quitter" :
+                                      "Exit";
+                                variant: "warning";
+                                clicked => { root.price-check-toggle(); }
+                            }
+                        }
+                    }
+
+                    // Last scanned item feedback (Phase 2)
+                    if root.show-last-scanned: Rectangle {
+                        height: 48px;
+                        background: rgba(34, 197, 94, 0.1);
+                        border-radius: Radius.md;
+                        border-width: 1px;
+                        border-color: rgba(34, 197, 94, 0.3);
+
+                        HorizontalLayout {
+                            padding-left: Spacing.md;
+                            padding-right: Spacing.md;
+                            spacing: Spacing.sm;
+                            alignment: space-between;
+
+                            HorizontalLayout {
+                                spacing: Spacing.sm;
+                                alignment: center;
+
+                                Text {
+                                    text: "\u{2713}";
+                                    font-size: 18px;
+                                    font-weight: 700;
+                                    color: Colors.success;
+                                    vertical-alignment: center;
+                                }
+
+                                Text {
+                                    text: Locale.current == "ar" ? "تمت الإضافة:" : "Added:";
+                                    font-size: Typography.caption;
+                                    color: Colors.success;
+                                    vertical-alignment: center;
+                                }
+
+                                Text {
+                                    text: root.last-scanned-name;
+                                    font-size: Typography.body;
+                                    font-weight: 600;
+                                    color: Colors.text-primary;
+                                    vertical-alignment: center;
+                                    overflow: elide;
+                                    horizontal-stretch: 1;
+                                }
+                            }
+
+                            Text {
+                                text: root.last-scanned-price + " " + root.currency;
+                                font-size: Typography.body;
+                                font-weight: 700;
+                                color: Colors.success;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+
+                    // Void last item feedback (Phase 3 — red bar)
+                    if root.show-void-feedback: Rectangle {
+                        height: 48px;
+                        background: rgba(239, 68, 68, 0.1);
+                        border-radius: Radius.md;
+                        border-width: 1px;
+                        border-color: rgba(239, 68, 68, 0.3);
+
+                        HorizontalLayout {
+                            padding-left: Spacing.md;
+                            padding-right: Spacing.md;
+                            spacing: Spacing.sm;
+                            alignment: space-between;
+
+                            HorizontalLayout {
+                                spacing: Spacing.sm;
+                                alignment: center;
+
+                                Text {
+                                    text: "\u{2717}";
+                                    font-size: 18px;
+                                    font-weight: 700;
+                                    color: Colors.danger;
+                                    vertical-alignment: center;
+                                }
+
+                                Text {
+                                    text: Locale.current == "ar" ? "تم الحذف:" : Locale.current == "fr" ? "Annulé:" : "Voided:";
+                                    font-size: Typography.caption;
+                                    color: Colors.danger;
+                                    vertical-alignment: center;
+                                }
+
+                                Text {
+                                    text: root.void-item-name;
+                                    font-size: Typography.body;
+                                    font-weight: 600;
+                                    color: Colors.text-primary;
+                                    vertical-alignment: center;
+                                    overflow: elide;
+                                    horizontal-stretch: 1;
+                                }
+                            }
+
+                            Text {
+                                text: root.void-item-price + " " + root.currency;
+                                font-size: Typography.body;
+                                font-weight: 700;
+                                color: Colors.danger;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+
+                    // Categories strip (Phase 15 + overflow limit)
+                    CategoryStrip {
+                        categories: root.categories;
+                        selected-category-id: root.selected-category-id;
+                        total-product-count: root.total-product-count;
+
+                        category-selected(id) => { root.category-selected(id); }
+                        more-clicked => { root.more-categories-clicked(); }
+                    }
+
+                    // Product Grid (Phase 16)
+                    Rectangle {
+                        vertical-stretch: 1;
+                        background: Colors.surface;
+                        border-radius: Radius.md;
+                        border-width: 1px;
+                        border-color: Colors.border;
+                        clip: true;
+
+                        ProductGrid {
+                            products: root.products;
+                            currency: root.currency;
+                            loading: root.products-loading;
+                            search-query: root.products-search-query;
+                            section-title: Locale.current == "ar" ? "المنتجات" : "PRODUCTS";
+
+                            product-selected(id) => {
+                                if root.price-check-mode {
+                                    root.price-check-lookup(id);
+                                } else {
+                                    root.product-selected(id);
+                                }
+                            }
+                            search-changed(query) => { root.search-product(query); }
+                        }
+                    }
+
+                    // Quick Action Bar (Phase 2 — below product grid)
+                    Rectangle {
+                        height: 48px;
+                        background: Colors.surface;
+                        border-width: 1px;
+                        border-color: Colors.border;
+                        border-radius: Radius.md;
+
+                        HorizontalLayout {
+                            padding-left: Spacing.md;
+                            padding-right: Spacing.md;
+                            spacing: Spacing.sm;
+                            alignment: center;
+
+                            SmallButton {
+                                text: "PLU";
+                                variant: "primary";
+                                horizontal-stretch: 1;
+                                disabled: root.price-check-mode;
+                                clicked => { root.plu-pad-open = true; }
+                            }
+
+                            SmallButton {
+                                text: Locale.current == "ar" ? "فحص سعر" :
+                                      Locale.current == "fr" ? "Prix" :
+                                      "Price";
+                                variant: root.price-check-mode ? "warning" : "secondary";
+                                horizontal-stretch: 1;
+                                clicked => { root.price-check-toggle(); }
+                            }
+
+                            SmallButton {
+                                text: Locale.current == "ar" ? "×الكمية" : "x Qty";
+                                variant: "secondary";
+                                horizontal-stretch: 1;
+                                clicked => { root.quantity-multiply(); }
+                            }
+
+                            SmallButton {
+                                text: Locale.current == "ar" ? "حذف آخر" : Locale.current == "fr" ? "Annuler" : "Void Last";
+                                variant: "danger";
+                                horizontal-stretch: 1;
+                                disabled: root.cart-item-count <= 0;
+                                clicked => { root.void-last-item(); }
+                            }
+
+                            SmallButton {
+                                text: Locale.current == "ar" ? "تعليق" : "Hold";
+                                variant: "secondary";
+                                horizontal-stretch: 1;
+                                clicked => { root.hold-clicked(); }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Vertical divider
+            Rectangle {
+                width: 1px;
+                background: Colors.border;
+            }
+
+            // RIGHT PANEL - Cart (40%)
+            CartPanel {
+                horizontal-stretch: 40;
+                preferred-width: 0px;
+                min-width: 320px;
+
+                // Cart data
+                items: root.cart-items;
+                subtotal: root.cart-subtotal;
+                tax-total: root.cart-tax;
+                tax-rate: root.cart-tax-rate;
+                discount-total: root.cart-discount;
+                grand-total: root.cart-total;
+                currency: root.currency;
+                has-discount: root.cart-has-discount;
+                discount-name: root.cart-discount-name;
+
+                // Customer data
+                customer-name: root.customer-name;
+                customer-id: root.customer-id;
+                has-customer: root.has-customer;
+                customer-balance: root.customer-balance;
+
+                // State
+                loading: root.cart-loading;
+                processing: root.cart-processing;
+
+                // Item callbacks
+                item-increment(id) => { root.cart-item-increment(id); }
+                item-decrement(id) => { root.cart-item-decrement(id); }
+                item-remove(id) => { root.cart-item-remove(id); }
+                item-edit(id) => { root.cart-item-edit(id); }
+                item-clicked(id) => { root.cart-item-clicked(id); }
+
+                // Cart action callbacks
+                clear-cart => { root.clear-cart(); }
+                apply-discount => { root.apply-discount(); }
+                remove-discount => { root.remove-discount(); }
+                select-customer => { root.select-customer(); }
+                remove-customer => { root.remove-customer(); }
+                proceed-to-payment => { root.pay-clicked(); }
+                save-draft => { root.hold-clicked(); }
+                recall-draft => { root.recall-clicked(); }
+                void-cart => { root.void-clicked(); }
+            }
+            }
+
+            // ============================================================
+            // COMPACT MODE (Stacked: Products top, Cart bottom)
+            // ============================================================
+            if Responsive.is-compact: VerticalLayout {
+                width: parent.width;
+                height: parent.height;
+                spacing: 0px;
+
+            // TOP SECTION - Products (60%)
+            Rectangle {
+                vertical-stretch: 60;
+                background: Colors.background;
+
+                VerticalLayout {
+                    padding: Spacing.md;
+                    spacing: Spacing.sm;
+
+                    // Search bar
+                    SearchInput {
+                        placeholder: Locale.current == "ar" ?
+                            "امسح الباركود أو ابحث عن منتج..." :
+                            "Scan barcode or search product...";
+                        search(query) => { root.search-product(query); }
+                    }
+
+                    // Price check mode indicator banner (Phase 3 — compact)
+                    if root.price-check-mode: Rectangle {
+                        height: 40px;
+                        background: rgba(245, 158, 11, 0.15);
+                        border-radius: Radius.sm;
+                        border-width: 1px;
+                        border-color: rgba(245, 158, 11, 0.4);
+
+                        HorizontalLayout {
+                            padding-left: Spacing.sm;
+                            padding-right: Spacing.sm;
+                            spacing: Spacing.xs;
+                            alignment: space-between;
+
+                            HorizontalLayout {
+                                spacing: Spacing.xs;
+                                alignment: center;
+                                horizontal-stretch: 1;
+
+                                Text {
+                                    text: "\u{1F50D}";
+                                    font-size: 14px;
+                                    vertical-alignment: center;
+                                }
+
+                                Text {
+                                    text: Locale.current == "ar" ? "وضع فحص السعر" :
+                                          Locale.current == "fr" ? "Mode vérification" :
+                                          "Price Check Mode";
+                                    font-size: Typography.small;
+                                    font-weight: 600;
+                                    color: Colors.warning;
+                                    vertical-alignment: center;
+                                    overflow: elide;
+                                    horizontal-stretch: 1;
+                                }
+                            }
+
+                            SmallButton {
+                                text: Locale.current == "ar" ? "إنهاء" :
+                                      Locale.current == "fr" ? "Quitter" :
+                                      "Exit";
+                                variant: "warning";
+                                clicked => { root.price-check-toggle(); }
+                            }
+                        }
+                    }
+
+                    // Last scanned item feedback (Phase 2 — compact)
+                    if root.show-last-scanned: Rectangle {
+                        height: 40px;
+                        background: rgba(34, 197, 94, 0.1);
+                        border-radius: Radius.sm;
+                        border-width: 1px;
+                        border-color: rgba(34, 197, 94, 0.3);
+
+                        HorizontalLayout {
+                            padding-left: Spacing.sm;
+                            padding-right: Spacing.sm;
+                            spacing: Spacing.xs;
+                            alignment: space-between;
+
+                            HorizontalLayout {
+                                spacing: Spacing.xs;
+                                alignment: center;
+
+                                Text {
+                                    text: "\u{2713}";
+                                    font-size: 14px;
+                                    font-weight: 700;
+                                    color: Colors.success;
+                                    vertical-alignment: center;
+                                }
+
+                                Text {
+                                    text: root.last-scanned-name;
+                                    font-size: Typography.caption;
+                                    font-weight: 600;
+                                    color: Colors.text-primary;
+                                    vertical-alignment: center;
+                                    overflow: elide;
+                                    horizontal-stretch: 1;
+                                }
+                            }
+
+                            Text {
+                                text: root.last-scanned-price + " " + root.currency;
+                                font-size: Typography.caption;
+                                font-weight: 700;
+                                color: Colors.success;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+
+                    // Void last item feedback (Phase 3 — compact red bar)
+                    if root.show-void-feedback: Rectangle {
+                        height: 40px;
+                        background: rgba(239, 68, 68, 0.1);
+                        border-radius: Radius.sm;
+                        border-width: 1px;
+                        border-color: rgba(239, 68, 68, 0.3);
+
+                        HorizontalLayout {
+                            padding-left: Spacing.sm;
+                            padding-right: Spacing.sm;
+                            spacing: Spacing.xs;
+                            alignment: space-between;
+
+                            HorizontalLayout {
+                                spacing: Spacing.xs;
+                                alignment: center;
+
+                                Text {
+                                    text: "\u{2717}";
+                                    font-size: 14px;
+                                    font-weight: 700;
+                                    color: Colors.danger;
+                                    vertical-alignment: center;
+                                }
+
+                                Text {
+                                    text: root.void-item-name;
+                                    font-size: Typography.caption;
+                                    font-weight: 600;
+                                    color: Colors.text-primary;
+                                    vertical-alignment: center;
+                                    overflow: elide;
+                                    horizontal-stretch: 1;
+                                }
+                            }
+
+                            Text {
+                                text: root.void-item-price + " " + root.currency;
+                                font-size: Typography.caption;
+                                font-weight: 700;
+                                color: Colors.danger;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+
+                    // Categories strip (Phase 15 + overflow limit)
+                    CategoryStrip {
+                        categories: root.categories;
+                        selected-category-id: root.selected-category-id;
+                        total-product-count: root.total-product-count;
+
+                        category-selected(id) => { root.category-selected(id); }
+                        more-clicked => { root.more-categories-clicked(); }
+                    }
+
+                    // Product Grid (Phase 16)
+                    Rectangle {
+                        vertical-stretch: 1;
+                        background: Colors.surface;
+                        border-radius: Radius.md;
+                        border-width: 1px;
+                        border-color: Colors.border;
+                        clip: true;
+
+                        ProductGrid {
+                            products: root.products;
+                            currency: root.currency;
+                            loading: root.products-loading;
+                            search-query: root.products-search-query;
+                            section-title: Locale.current == "ar" ? "المنتجات" : "PRODUCTS";
+                            compact: true;
+
+                            product-selected(id) => {
+                                if root.price-check-mode {
+                                    root.price-check-lookup(id);
+                                } else {
+                                    root.product-selected(id);
+                                }
+                            }
+                            search-changed(query) => { root.search-product(query); }
+                        }
+                    }
+
+                    // Quick Action Bar (Phase 2 — compact)
+                    Rectangle {
+                        height: 40px;
+                        background: Colors.surface;
+                        border-width: 1px;
+                        border-color: Colors.border;
+                        border-radius: Radius.sm;
+
+                        HorizontalLayout {
+                            padding-left: Spacing.sm;
+                            padding-right: Spacing.sm;
+                            spacing: Spacing.xs;
+                            alignment: center;
+
+                            SmallButton {
+                                text: "PLU";
+                                variant: "primary";
+                                horizontal-stretch: 1;
+                                disabled: root.price-check-mode;
+                                clicked => { root.plu-pad-open = true; }
+                            }
+
+                            SmallButton {
+                                text: Locale.current == "ar" ? "فحص سعر" :
+                                      Locale.current == "fr" ? "Prix" :
+                                      "Price";
+                                variant: root.price-check-mode ? "warning" : "secondary";
+                                horizontal-stretch: 1;
+                                clicked => { root.price-check-toggle(); }
+                            }
+
+                            SmallButton {
+                                text: Locale.current == "ar" ? "×كمية" : "xQty";
+                                variant: "secondary";
+                                horizontal-stretch: 1;
+                                clicked => { root.quantity-multiply(); }
+                            }
+
+                            SmallButton {
+                                text: Locale.current == "ar" ? "حذف" : Locale.current == "fr" ? "Annuler" : "Void";
+                                variant: "danger";
+                                horizontal-stretch: 1;
+                                disabled: root.cart-item-count <= 0;
+                                clicked => { root.void-last-item(); }
+                            }
+
+                            SmallButton {
+                                text: Locale.current == "ar" ? "تعليق" : "Hold";
+                                variant: "secondary";
+                                horizontal-stretch: 1;
+                                clicked => { root.hold-clicked(); }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Horizontal divider
+            Rectangle {
+                height: 1px;
+                background: Colors.border;
+            }
+
+            // BOTTOM SECTION - Cart (40%)
+            CartPanel {
+                vertical-stretch: 40;
+                compact: true;
+
+                // Cart data
+                items: root.cart-items;
+                subtotal: root.cart-subtotal;
+                tax-total: root.cart-tax;
+                tax-rate: root.cart-tax-rate;
+                discount-total: root.cart-discount;
+                grand-total: root.cart-total;
+                currency: root.currency;
+                has-discount: root.cart-has-discount;
+                discount-name: root.cart-discount-name;
+
+                // Customer data
+                customer-name: root.customer-name;
+                customer-id: root.customer-id;
+                has-customer: root.has-customer;
+                customer-balance: root.customer-balance;
+
+                // State
+                loading: root.cart-loading;
+                processing: root.cart-processing;
+
+                // Item callbacks
+                item-increment(id) => { root.cart-item-increment(id); }
+                item-decrement(id) => { root.cart-item-decrement(id); }
+                item-remove(id) => { root.cart-item-remove(id); }
+                item-edit(id) => { root.cart-item-edit(id); }
+                item-clicked(id) => { root.cart-item-clicked(id); }
+
+                // Cart action callbacks
+                clear-cart => { root.clear-cart(); }
+                apply-discount => { root.apply-discount(); }
+                remove-discount => { root.remove-discount(); }
+                select-customer => { root.select-customer(); }
+                remove-customer => { root.remove-customer(); }
+                proceed-to-payment => { root.pay-clicked(); }
+                save-draft => { root.hold-clicked(); }
+                recall-draft => { root.recall-clicked(); }
+                void-cart => { root.void-clicked(); }
+            }
+            }  // End compact VerticalLayout
+        }  // End wrapper Rectangle
+
+        // ============================================================
+        // STATUS BAR
+        // ============================================================
+        StatusBar {
+            compact: Responsive.is-compact;
+        }
+    }
+
+    // ============================================================
+    // SIDE MENU OVERLAY (on top of everything)
+    // ============================================================
+    SideMenu {
+        visible-menu: root.menu-open;
+        operator-name: root.operator-name;
+        shift-number: root.shift-number;
+
+        close-menu => { root.menu-open = false; }
+        drafts-clicked => { root.drafts-clicked(); }
+        transfer-clicked => { root.transfer-clicked(); }
+        returns-clicked => { root.returns-clicked(); }
+        end-shift-clicked => { root.end-shift-clicked(); }
+        settings-clicked => { root.settings-clicked(); }
+    }
+
+    // ============================================================
+    // PLU PAD OVERLAY (Phase 3 — on top of everything)
+    // ============================================================
+    PLUPad {
+        open <=> root.plu-pad-open;
+        plu-code <=> root.plu-code;
+        result-name: root.plu-result-name;
+        result-price: root.plu-result-price;
+        result-product-id: root.plu-result-product-id;
+        result-count: root.plu-result-count;
+        searching: root.plu-searching;
+        error-message: root.plu-error-message;
+
+        lookup(code) => { root.plu-lookup(code); }
+        add-product(id) => { root.plu-add-product(id); }
+        closed => {
+            root.plu-pad-open = false;
+        }
+    }
+
+    // ============================================================
+    // QUANTITY PAD OVERLAY (Phase 3 — Quick Quantity Entry)
+    // ============================================================
+    QuantityPad {
+        open <=> root.qty-pad-open;
+        qty-value <=> root.qty-pad-value;
+        item-id <=> root.qty-pad-item-id;
+        item-name: root.qty-pad-item-name;
+        item-price: root.qty-pad-item-price;
+        current-qty: root.qty-pad-current-qty;
+        error-message: root.qty-pad-error;
+
+        confirmed(item-id, qty) => { root.quantity-confirmed(item-id, qty); }
+        closed => {
+            root.qty-pad-open = false;
+        }
+    }
+
+    // ============================================================
+    // PRICE CHECK OVERLAY (Phase 3 — Price Check Mode)
+    // ============================================================
+    PriceCheckOverlay {
+        open: root.price-check-open;
+        product-name: root.price-check-name;
+        product-price: root.price-check-price;
+        product-barcode: root.price-check-barcode;
+        product-sku: root.price-check-sku;
+        product-category: root.price-check-category;
+        product-stock: root.price-check-stock;
+        product-unit: root.price-check-unit;
+        in-stock: root.price-check-in-stock;
+        low-stock: root.price-check-low-stock;
+        tax-info: root.price-check-tax-info;
+        searching: root.price-check-searching;
+        error-message: root.price-check-error;
+
+        dismissed => {
+            root.price-check-open = false;
+            root.price-check-dismiss();
+        }
+    }
+
+    // ============================================================
+    // WEIGHT PAD OVERLAY (Phase 3 — Scale/Weight Display)
+    // ============================================================
+    WeightPad {
+        open <=> root.weight-pad-open;
+        product-name: root.weight-pad-product-name;
+        price-per-unit: root.weight-pad-price-per-unit;
+        product-unit: root.weight-pad-product-unit;
+        weight-display: root.weight-pad-weight-display;
+        weight-stable: root.weight-pad-weight-stable;
+        computed-total: root.weight-pad-computed-total;
+        scale-connected: root.weight-pad-scale-connected;
+        manual-mode: root.weight-pad-manual-mode;
+        manual-weight-value <=> root.weight-pad-manual-value;
+        error-message: root.weight-pad-error;
+
+        confirmed(weight) => { root.weight-confirmed(weight); }
+        tare-requested => { root.weight-tare-requested(); }
+        closed => {
+            root.weight-pad-open = false;
+        }
+    }
+}

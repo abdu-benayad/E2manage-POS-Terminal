@@ -1,0 +1,558 @@
+// ============================================================================
+// E2Manage POS Terminal - QR/Wallet Payment Screen (Phase 24)
+// ============================================================================
+// QR code payment screen for mobile wallet payments (Sadad, MobiCash, etc.)
+// Features: QR display, timer countdown, status transitions, refresh on expire
+// ============================================================================
+
+import { Colors, Typography, Spacing, Sizes, Radius, Animation, Layout, Locale, CartState } from "../../theme.slint";
+import { Button, SmallButton } from "../../components/mod.slint";
+import { CompactStatusBar } from "../../components/mod.slint";
+
+// ============================================================================
+// SUPPORTED WALLET DATA
+// ============================================================================
+
+export struct WalletProvider {
+    id: string,
+    name: string,
+    name-ar: string,
+    icon: string,
+    color: color,
+}
+
+// ============================================================================
+// QR PAYMENT SCREEN
+// ============================================================================
+
+export component QrPaymentScreen inherits Rectangle {
+    // Payment info
+    in property <string> total-amount: "25.500";
+    in property <string> currency: CartState.currency;
+    in property <int> item-count: 3;
+
+    // QR code state
+    // status: waiting, scanning, verifying, approved, expired, error
+    in property <string> status: "waiting";
+    in property <image> qr-code-image;
+    in property <string> payment-link: "";
+    in property <int> expires-in: 300; // seconds remaining
+    in property <int> initial-timeout: 300; // for progress calculation
+
+    // Payment result
+    in property <string> wallet-type: "";      // sadad, mobicash, etc.
+    in property <string> transaction-id: "";
+    in property <string> error-message: "";
+
+    // Supported wallets
+    in property <[WalletProvider]> wallets: [
+        { id: "sadad", name: "Sadad", name-ar: "سداد", icon: "\u{1F4F1}", color: #22C55E },
+        { id: "mobicash", name: "MobiCash", name-ar: "موبي كاش", icon: "\u{1F4B0}", color: #3B82F6 },
+    ];
+
+    // Callbacks
+    callback back-clicked;
+    callback cancel-payment;
+    callback refresh-qr;
+    callback payment-completed;
+
+    background: Colors.background;
+
+    VerticalLayout {
+        spacing: 0px;
+
+        // ================================================================
+        // HEADER
+        // ================================================================
+        Rectangle {
+            height: Sizes.header-height;
+            background: Colors.primary;
+
+            HorizontalLayout {
+                padding-left: Spacing.lg;
+                padding-right: Spacing.lg;
+                alignment: space-between;
+
+                // Left: Back button + Title
+                HorizontalLayout {
+                    spacing: Spacing.md;
+                    alignment: start;
+
+                    // Back button
+                    Rectangle {
+                        width: 48px;
+                        height: 48px;
+                        border-radius: Radius.md;
+
+                        back-touch := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.back-clicked(); }
+                        }
+
+                        Rectangle {
+                            background: back-touch.has-hover ? Colors.primary-dark.transparentize(0.3) : transparent;
+                            border-radius: Radius.md;
+
+                            Text {
+                                text: Layout.rtl ? "\u{2192}" : "\u{2190}";  // RTL-aware arrow
+                                font-size: 24px;
+                                color: Colors.text-on-primary;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+
+                    // Wallet icon
+                    Text {
+                        text: "\u{1F4F2}";  // Mobile with arrow emoji
+                        font-size: 24px;
+                        vertical-alignment: center;
+                    }
+
+                    // Title
+                    Text {
+                        text: Locale.current == "ar" ? "الدفع عبر المحفظة" : "Wallet Payment";
+                        font-size: Typography.heading;
+                        font-weight: 600;
+                        color: Colors.text-on-primary;
+                        vertical-alignment: center;
+                    }
+                }
+
+                // Right: Amount badge
+                Rectangle {
+                    width: amount-badge-layout.preferred-width + Spacing.lg * 2;
+                    height: 40px;
+                    background: Colors.primary-dark.transparentize(0.3);
+                    border-radius: Radius.full;
+
+                    amount-badge-layout := HorizontalLayout {
+                        padding-left: Spacing.lg;
+                        padding-right: Spacing.lg;
+                        alignment: center;
+                        spacing: Spacing.xs;
+
+                        Text {
+                            text: root.total-amount;
+                            font-size: Typography.body;
+                            font-weight: 700;
+                            color: Colors.text-on-primary;
+                            vertical-alignment: center;
+                        }
+
+                        Text {
+                            text: root.currency;
+                            font-size: Typography.small;
+                            color: Colors.text-on-primary.transparentize(0.3);
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+            }
+        }
+
+        // ================================================================
+        // MAIN CONTENT
+        // ================================================================
+        Rectangle {
+            vertical-stretch: 1;
+            background: Colors.surface;
+
+            VerticalLayout {
+                alignment: center;
+                spacing: Spacing.xl;
+                padding: Spacing.xxl;
+
+                // --------------------------------------------------------
+                // AMOUNT DISPLAY
+                // --------------------------------------------------------
+                VerticalLayout {
+                    spacing: Spacing.xs;
+                    alignment: center;
+
+                    Text {
+                        text: Locale.current == "ar" ? "المبلغ المطلوب" : "Amount Due";
+                        font-size: Typography.caption;
+                        color: Colors.text-secondary;
+                        horizontal-alignment: center;
+                    }
+
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: Spacing.sm;
+
+                        Text {
+                            text: root.total-amount;
+                            font-size: Typography.display;
+                            font-weight: 700;
+                            color: Colors.text-primary;
+                        }
+
+                        Text {
+                            text: root.currency;
+                            font-size: Typography.heading;
+                            font-weight: 500;
+                            color: Colors.text-secondary;
+                            vertical-alignment: bottom;
+                        }
+                    }
+                }
+
+                // --------------------------------------------------------
+                // QR CODE / STATUS DISPLAY
+                // --------------------------------------------------------
+                Rectangle {
+                    width: 280px;
+                    height: 280px;
+                    background: Colors.background;
+                    border-radius: Radius.lg;
+                    border-width: 1px;
+                    border-color: status == "error" ? Colors.danger :
+                                  status == "expired" ? Colors.warning :
+                                  status == "approved" ? Colors.success :
+                                  Colors.border;
+
+                    // Waiting / Scanning - Show QR Code
+                    if status == "waiting" || status == "scanning": VerticalLayout {
+                        alignment: center;
+                        spacing: Spacing.md;
+                        padding: Spacing.md;
+
+                        // QR Code placeholder (in production, use actual QR image)
+                        Rectangle {
+                            width: 240px;
+                            height: 240px;
+                            background: Colors.background;
+                            border-radius: Radius.md;
+
+                            // Placeholder QR pattern (demo)
+                            VerticalLayout {
+                                alignment: center;
+                                spacing: Spacing.xs;
+
+                                // Simulated QR code pattern
+                                for row in [0, 1, 2, 3, 4, 5, 6, 7]: HorizontalLayout {
+                                    alignment: center;
+                                    spacing: 2px;
+
+                                    for col in [0, 1, 2, 3, 4, 5, 6, 7]: Rectangle {
+                                        width: 24px;
+                                        height: 24px;
+                                        background: mod(row + col, 2) == 0 ? Colors.text-primary : Colors.background;
+                                        border-radius: 2px;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Verifying - Show spinner
+                    if status == "verifying": VerticalLayout {
+                        alignment: center;
+                        spacing: Spacing.md;
+
+                        // Hourglass spinner
+                        Text {
+                            text: "\u{231B}";  // Hourglass emoji
+                            font-size: 64px;
+                            horizontal-alignment: center;
+                            animate opacity { duration: 800ms; easing: ease-in-out; iteration-count: -1; }
+                        }
+
+                        Text {
+                            text: Locale.current == "ar" ? "جاري التحقق..." : "Verifying payment...";
+                            font-size: Typography.body;
+                            color: Colors.warning;
+                            horizontal-alignment: center;
+                        }
+
+                        Text {
+                            text: Locale.current == "ar" ? "يرجى الانتظار" : "Please wait";
+                            font-size: Typography.small;
+                            color: Colors.text-secondary;
+                            horizontal-alignment: center;
+                        }
+                    }
+
+                    // Approved - Show success
+                    if status == "approved": VerticalLayout {
+                        alignment: center;
+                        spacing: Spacing.md;
+
+                        // Success circle
+                        Rectangle {
+                            width: 100px;
+                            height: 100px;
+                            border-radius: 50px;
+                            background: Colors.success;
+
+                            Text {
+                                text: "\u{2713}";  // Checkmark
+                                font-size: 48px;
+                                color: Colors.text-on-primary;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+
+                        Text {
+                            text: Locale.current == "ar" ? "تم الدفع بنجاح" : "Payment Successful";
+                            font-size: Typography.subheading;
+                            font-weight: 600;
+                            color: Colors.success;
+                            horizontal-alignment: center;
+                        }
+
+                        // Wallet info
+                        if root.wallet-type != "": Text {
+                            text: Locale.current == "ar" ?
+                                  "عبر " + root.wallet-type :
+                                  "via " + root.wallet-type;
+                            font-size: Typography.caption;
+                            color: Colors.text-secondary;
+                            horizontal-alignment: center;
+                        }
+                    }
+
+                    // Expired - Show timeout
+                    if status == "expired": VerticalLayout {
+                        alignment: center;
+                        spacing: Spacing.md;
+
+                        Text {
+                            text: "\u{23F1}";  // Stopwatch emoji
+                            font-size: 64px;
+                            horizontal-alignment: center;
+                        }
+
+                        Text {
+                            text: Locale.current == "ar" ? "انتهت صلاحية الرمز" : "QR Code Expired";
+                            font-size: Typography.subheading;
+                            font-weight: 600;
+                            color: Colors.danger;
+                            horizontal-alignment: center;
+                        }
+
+                        Text {
+                            text: Locale.current == "ar" ?
+                                  "اضغط تجديد للحصول على رمز جديد" :
+                                  "Press Refresh to get a new code";
+                            font-size: Typography.caption;
+                            color: Colors.text-secondary;
+                            horizontal-alignment: center;
+                        }
+                    }
+
+                    // Error - Show error message
+                    if status == "error": VerticalLayout {
+                        alignment: center;
+                        spacing: Spacing.md;
+                        padding: Spacing.lg;
+
+                        Text {
+                            text: "\u{26A0}";  // Warning emoji
+                            font-size: 64px;
+                            horizontal-alignment: center;
+                        }
+
+                        Text {
+                            text: Locale.current == "ar" ? "فشل الدفع" : "Payment Failed";
+                            font-size: Typography.subheading;
+                            font-weight: 600;
+                            color: Colors.danger;
+                            horizontal-alignment: center;
+                        }
+
+                        Text {
+                            text: root.error-message != "" ? root.error-message :
+                                  (Locale.current == "ar" ? "حدث خطأ أثناء معالجة الدفع" : "An error occurred while processing payment");
+                            font-size: Typography.caption;
+                            color: Colors.text-secondary;
+                            horizontal-alignment: center;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+
+                // --------------------------------------------------------
+                // TIMER / PROGRESS (when waiting or scanning)
+                // --------------------------------------------------------
+                if status == "waiting" || status == "scanning": VerticalLayout {
+                    alignment: center;
+                    spacing: Spacing.sm;
+
+                    // Timer countdown
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: Spacing.sm;
+
+                        Text {
+                            text: Locale.current == "ar" ? "ينتهي خلال:" : "Expires in:";
+                            font-size: Typography.caption;
+                            color: Colors.text-secondary;
+                        }
+
+                        Text {
+                            text: Math.floor(expires-in / 60) + ":" +
+                                  (Math.mod(expires-in, 60) < 10 ? "0" : "") +
+                                  Math.mod(expires-in, 60);
+                            font-size: Typography.body;
+                            font-weight: 600;
+                            color: expires-in < 60 ? Colors.danger :
+                                   expires-in < 120 ? Colors.warning :
+                                   Colors.text-primary;
+                        }
+                    }
+
+                    // Progress bar
+                    Rectangle {
+                        width: 200px;
+                        height: 4px;
+                        background: Colors.border;
+                        border-radius: 2px;
+
+                        Rectangle {
+                            width: parent.width * (expires-in / initial-timeout);
+                            height: parent.height;
+                            background: expires-in < 60 ? Colors.danger :
+                                       expires-in < 120 ? Colors.warning :
+                                       Colors.primary;
+                            border-radius: 2px;
+
+                            animate width { duration: 1000ms; }
+                        }
+                    }
+                }
+
+                // --------------------------------------------------------
+                // INSTRUCTIONS (when waiting)
+                // --------------------------------------------------------
+                if status == "waiting": VerticalLayout {
+                    spacing: Spacing.md;
+                    alignment: center;
+
+                    Text {
+                        text: Locale.current == "ar" ?
+                              "امسح رمز QR باستخدام تطبيق المحفظة" :
+                              "Scan QR code with your wallet app";
+                        font-size: Typography.body;
+                        color: Colors.text-secondary;
+                        horizontal-alignment: center;
+                    }
+
+                    // Supported wallets
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: Spacing.lg;
+
+                        for wallet in root.wallets: HorizontalLayout {
+                            spacing: Spacing.xs;
+
+                            // Wallet icon
+                            Rectangle {
+                                width: 28px;
+                                height: 28px;
+                                border-radius: Radius.md;
+                                background: wallet.color.transparentize(0.8);
+
+                                Text {
+                                    text: wallet.icon;
+                                    font-size: 16px;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            Text {
+                                text: Locale.current == "ar" ? wallet.name-ar : wallet.name;
+                                font-size: Typography.small;
+                                color: Colors.text-secondary;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+
+                // --------------------------------------------------------
+                // TRANSACTION INFO (when approved)
+                // --------------------------------------------------------
+                if status == "approved" && transaction-id != "": VerticalLayout {
+                    spacing: Spacing.xs;
+                    alignment: center;
+
+                    Text {
+                        text: Locale.current == "ar" ? "رقم المعاملة" : "Transaction ID";
+                        font-size: Typography.small;
+                        color: Colors.text-secondary;
+                        horizontal-alignment: center;
+                    }
+
+                    Text {
+                        text: root.transaction-id;
+                        font-size: Typography.caption;
+                        font-weight: 600;
+                        color: Colors.text-secondary;
+                        horizontal-alignment: center;
+                    }
+                }
+            }
+        }
+
+        // ================================================================
+        // BOTTOM ACTION BAR
+        // ================================================================
+        Rectangle {
+            height: 80px;
+            background: Colors.surface;
+            border-width: 1px;
+            border-color: Colors.border;
+
+            HorizontalLayout {
+                padding: Spacing.lg;
+                spacing: Spacing.lg;
+                alignment: center;
+
+                // Cancel button (always visible except when approved)
+                if status != "approved": Button {
+                    text: Locale.current == "ar" ? "إلغاء" : "Cancel";
+                    variant: "secondary";
+                    width: 180px;
+                    clicked => { root.cancel-payment(); }
+                }
+
+                // Refresh button (when expired)
+                if status == "expired": Button {
+                    text: Locale.current == "ar" ? "تجديد الرمز" : "Refresh QR";
+                    variant: "primary";
+                    width: 180px;
+                    clicked => { root.refresh-qr(); }
+                }
+
+                // Retry button (when error)
+                if status == "error": Button {
+                    text: Locale.current == "ar" ? "إعادة المحاولة" : "Retry";
+                    variant: "primary";
+                    width: 180px;
+                    clicked => { root.refresh-qr(); }
+                }
+
+                // Complete button (when approved)
+                if status == "approved": Button {
+                    text: Locale.current == "ar" ? "إنهاء المعاملة" : "Complete";
+                    variant: "primary";
+                    width: 220px;
+                    clicked => { root.payment-completed(); }
+                }
+            }
+        }
+
+        // ================================================================
+        // STATUS BAR
+        // ================================================================
+        CompactStatusBar {
+            is-online: true;
+            pending-sync-count: 0;
+        }
+    }
+}

@@ -1,0 +1,592 @@
+// ============================================================================
+// E2Manage POS Terminal - Product Search Screen (Phase 19)
+// ============================================================================
+// Full-screen product search with keyboard and barcode scanner support
+// Implements Screen 2.2 from wireframes
+// ============================================================================
+
+import { Colors, Typography, Spacing, Sizes, Radius, Animation, Layout, Locale, CartState } from "../../theme.slint";
+import { Button, SmallButton, SearchInput, Badge } from "../../components/mod.slint";
+import { CompactStatusBar } from "../../components/mod.slint";
+
+// ============================================================================
+// PRODUCT SEARCH RESULT STRUCT
+// ============================================================================
+
+export struct ProductSearchResult {
+    id: string,
+    name: string,
+    name_ar: string,
+    sku: string,
+    barcode: string,
+    price: string,
+    stock: int,
+    unit: string,
+    category: string,
+    category_ar: string,
+    has_image: bool,
+    image_url: string,
+    low_stock: bool,
+    out_of_stock: bool,
+    // Product type awareness (Phase 3 Track H)
+    product_type: string,   // "PHYSICAL_GOOD", "SERVICE", "FEE", etc.
+    is_service: bool,       // true for non-inventory products
+}
+
+// ============================================================================
+// RECENT SEARCH ITEM STRUCT
+// ============================================================================
+
+export struct RecentSearchItem {
+    query: string,
+    timestamp: string,
+}
+
+// ============================================================================
+// SEARCH RESULT ROW COMPONENT
+// ============================================================================
+
+component SearchResultRow inherits Rectangle {
+    in property <ProductSearchResult> product;
+    in property <string> currency: CartState.currency;
+
+    callback clicked;
+    callback add-clicked;
+
+    // Services are never out of stock
+    property <bool> effectively-out-of-stock: product.out-of-stock && !product.is-service;
+
+    height: 80px;
+    background: touch.pressed ? Colors.surface-variant :
+                touch.has-hover ? Colors.surface : Colors.background;
+    border-radius: Radius.md;
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+
+    HorizontalLayout {
+        padding: Spacing.md;
+        spacing: Spacing.md;
+        alignment: center;
+
+        // Product image placeholder
+        Rectangle {
+            width: 64px;
+            height: 64px;
+            border-radius: Radius.sm;
+            background: product.is-service ? Colors.info : Colors.surface-variant;
+
+            if effectively-out-of-stock: Rectangle {
+                background: rgba(0, 0, 0, 0.4);
+                border-radius: Radius.sm;
+            }
+
+            Text {
+                // Service/fee: gear/dollar icon; Physical: package emoji
+                text: product.has-image ? "" :
+                      product.product-type == "FEE" ? "\u{1F4B2}" :        // Dollar sign
+                      product.product-type == "LABOR" ? "\u{1F477}" :      // Construction worker
+                      product.product-type == "DIGITAL" ? "\u{1F4BE}" :    // Floppy disk
+                      product.product-type == "SUBSCRIPTION" ? "\u{1F504}" : // Arrows cycle
+                      product.is-service ? "\u{2699}\u{FE0F}" :            // Gear for services
+                      "\u{1F4E6}";                                          // Package for physical
+                font-size: 28px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                opacity: effectively-out-of-stock ? 0.5 : 1;
+            }
+        }
+
+        // Product info
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: 2px;
+            alignment: center;
+
+            // Product name
+            Text {
+                text: Layout.rtl && product.name_ar != "" ? product.name_ar : product.name;
+                font-size: Typography.body;
+                font-weight: 600;
+                color: effectively-out-of-stock ? Colors.text-secondary : Colors.text-primary;
+                overflow: elide;
+                horizontal-alignment: Layout.rtl ? right : left;
+            }
+
+            // SKU and barcode row
+            HorizontalLayout {
+                spacing: Spacing.md;
+
+                Text {
+                    text: "SKU: " + product.sku;
+                    font-size: Typography.caption;
+                    color: Colors.text-secondary;
+                }
+
+                if product.barcode != "": Text {
+                    text: "\u{1F4F7} " + product.barcode;  // Camera emoji for barcode
+                    font-size: Typography.caption;
+                    color: Colors.disabled;
+                }
+            }
+
+            // Price and stock row
+            HorizontalLayout {
+                spacing: Spacing.md;
+                alignment: Layout.rtl ? end : start;
+
+                // Price
+                Text {
+                    text: product.price + " " + currency;
+                    font-size: Typography.body;
+                    font-weight: 700;
+                    color: Colors.primary;
+                }
+
+                // Stock status — services show "Available" instead of stock count
+                if product.is-service: Rectangle {
+                    background: Colors.info;
+                    border-radius: Radius.chip;
+                    height: 20px;
+                    width: stock-text-svc.preferred-width + Spacing.md;
+
+                    stock-text-svc := Text {
+                        text: Locale.current == "ar" ? "متاح دائماً" : "Available";
+                        font-size: Typography.small;
+                        color: Colors.text-on-primary;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+
+                if !product.is-service && product.out-of-stock: Rectangle {
+                    background: Colors.danger;
+                    border-radius: Radius.chip;
+                    height: 20px;
+                    width: stock-text-oos.preferred-width + Spacing.md;
+
+                    stock-text-oos := Text {
+                        text: Locale.current == "ar" ? "نفذت الكمية" : "Out of Stock";
+                        font-size: Typography.small;
+                        color: Colors.text-on-primary;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+
+                if !product.is-service && !product.out-of-stock && product.low-stock: Rectangle {
+                    background: Colors.warning;
+                    border-radius: Radius.chip;
+                    height: 20px;
+                    width: stock-text-low.preferred-width + Spacing.md;
+
+                    stock-text-low := Text {
+                        text: product.stock + (Locale.current == "ar" ? " متبقي" : " left");
+                        font-size: Typography.small;
+                        color: Colors.text-primary;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+
+                if !product.is-service && !product.out-of-stock && !product.low-stock: Text {
+                    text: product.stock + (Locale.current == "ar" ? " متوفر" : " in stock");
+                    font-size: Typography.caption;
+                    color: Colors.success;
+                }
+            }
+        }
+
+        // Add to cart button
+        Rectangle {
+            width: 48px;
+            height: 48px;
+            border-radius: 24px;
+            background: effectively-out-of-stock ? Colors.disabled :
+                        add-touch.pressed ? Colors.primary-dark :
+                        add-touch.has-hover ? Colors.primary-light : Colors.primary;
+
+            add-touch := TouchArea {
+                mouse-cursor: effectively-out-of-stock ? default : pointer;
+                clicked => {
+                    if !effectively-out-of-stock { root.add-clicked(); }
+                }
+            }
+
+            Text {
+                text: "+";
+                font-size: 24px;
+                font-weight: 700;
+                color: Colors.text-on-primary;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+
+            animate background { duration: Animation.fast; }
+        }
+    }
+
+    animate background { duration: Animation.fast; }
+}
+
+// ============================================================================
+// RECENT SEARCH CHIP COMPONENT
+// ============================================================================
+
+component RecentSearchChip inherits Rectangle {
+    in property <string> query;
+
+    callback clicked;
+
+    height: 36px;
+    width: chip-text.preferred-width + Spacing.xl + 24px;
+    border-radius: Radius.chip;
+    background: touch.pressed ? Colors.surface-variant :
+                touch.has-hover ? Colors.border : Colors.surface;
+    border-width: 1px;
+    border-color: Colors.border;
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+
+    HorizontalLayout {
+        padding-left: Spacing.md;
+        padding-right: Spacing.md;
+        spacing: Spacing.xs;
+        alignment: center;
+
+        Text {
+            text: "\u{1F50D}";  // Magnifying glass
+            font-size: 14px;
+        }
+
+        chip-text := Text {
+            text: query;
+            font-size: Typography.caption;
+            color: Colors.text-primary;
+        }
+    }
+
+    animate background { duration: Animation.fast; }
+}
+
+// ============================================================================
+// PRODUCT SEARCH SCREEN
+// ============================================================================
+
+export component ProductSearchScreen inherits Rectangle {
+    // Search state
+    in property <string> search-query: "";
+    in property <[ProductSearchResult]> results: [];
+    in property <bool> loading: false;
+    in property <string> currency: CartState.currency;
+    in property <bool> has-query: search-query != "";
+    in property <bool> has-results: results.length > 0;
+
+    // Recent searches
+    in property <[RecentSearchItem]> recent-searches: [];
+    in property <bool> has-recent-searches: recent-searches.length > 0;
+
+    // Callbacks
+    callback search-changed(string);
+    callback product-selected(string);
+    callback product-add-to-cart(string);
+    callback barcode-scanned(string);
+    callback recent-search-clicked(string);
+    callback clear-recent-searches;
+    callback back-clicked;
+
+    background: Colors.background;
+
+    VerticalLayout {
+        spacing: 0px;
+
+        // ====================================================================
+        // HEADER WITH SEARCH
+        // ====================================================================
+        Rectangle {
+            height: Sizes.header-height;
+            background: Colors.primary;
+
+            HorizontalLayout {
+                padding-left: Spacing.md;
+                padding-right: Spacing.md;
+                spacing: Spacing.md;
+                alignment: center;
+
+                // Back button
+                Rectangle {
+                    width: 48px;
+                    height: 48px;
+                    border-radius: 24px;
+                    background: back-touch.pressed ? rgba(255,255,255,0.3) :
+                                back-touch.has-hover ? rgba(255,255,255,0.2) : transparent;
+
+                    back-touch := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.back-clicked(); }
+                    }
+
+                    Text {
+                        text: Layout.rtl ? "\u{2192}" : "\u{2190}";  // Arrow based on RTL
+                        font-size: 24px;
+                        color: Colors.text-on-primary;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+
+                    animate background { duration: Animation.fast; }
+                }
+
+                // Search input (expanded)
+                Rectangle {
+                    horizontal-stretch: 1;
+                    height: 44px;
+
+                    search-input := SearchInput {
+                        placeholder: Locale.current == "ar" ?
+                                    "بحث بالاسم، الباركود، أو SKU..." :
+                                    "Search by name, barcode, or SKU...";
+                        text: search-query;
+
+                        search(query) => { root.search-changed(query); }
+                    }
+                }
+
+                // Barcode scanner button
+                Rectangle {
+                    width: 48px;
+                    height: 48px;
+                    border-radius: Radius.md;
+                    background: scanner-touch.pressed ? rgba(255,255,255,0.3) :
+                                scanner-touch.has-hover ? rgba(255,255,255,0.2) : rgba(255,255,255,0.15);
+
+                    scanner-touch := TouchArea {
+                        mouse-cursor: pointer;
+                        // Trigger barcode scanner - handled in Rust
+                        clicked => { debug("Barcode scanner requested"); }
+                    }
+
+                    Text {
+                        text: "\u{1F4F7}";  // Camera emoji for scanner
+                        font-size: 20px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+
+                    animate background { duration: Animation.fast; }
+                }
+            }
+        }
+
+        // ====================================================================
+        // RESULTS AREA
+        // ====================================================================
+        Rectangle {
+            vertical-stretch: 1;
+            background: Colors.background;
+
+            // Loading state
+            if loading: VerticalLayout {
+                alignment: center;
+                spacing: Spacing.md;
+
+                // Loading spinner placeholder
+                Text {
+                    text: "\u{23F3}";  // Hourglass emoji
+                    font-size: 48px;
+                    horizontal-alignment: center;
+                }
+
+                Text {
+                    text: Locale.current == "ar" ? "جاري البحث..." : "Searching...";
+                    font-size: Typography.body;
+                    color: Colors.text-secondary;
+                    horizontal-alignment: center;
+                }
+            }
+
+            // Empty state - no search query
+            if !loading && !has-query: VerticalLayout {
+                alignment: center;
+                spacing: Spacing.lg;
+                padding: Spacing.xxl;
+
+                Text {
+                    text: "\u{1F50D}";  // Magnifying glass
+                    font-size: 72px;
+                    horizontal-alignment: center;
+                }
+
+                Text {
+                    text: Locale.current == "ar" ?
+                          "أدخل اسم المنتج أو امسح الباركود" :
+                          "Enter product name or scan barcode";
+                    font-size: Typography.subheading;
+                    color: Colors.text-secondary;
+                    horizontal-alignment: center;
+                }
+
+                Text {
+                    text: Locale.current == "ar" ?
+                          "يمكنك البحث بالاسم، SKU، أو الباركود" :
+                          "You can search by name, SKU, or barcode";
+                    font-size: Typography.caption;
+                    color: Colors.disabled;
+                    horizontal-alignment: center;
+                }
+
+                // Recent searches section
+                if has-recent-searches: VerticalLayout {
+                    spacing: Spacing.md;
+                    padding-top: Spacing.xl;
+
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: Spacing.md;
+
+                        Text {
+                            text: Locale.current == "ar" ? "عمليات البحث الأخيرة" : "Recent Searches";
+                            font-size: Typography.caption;
+                            font-weight: 600;
+                            color: Colors.text-secondary;
+                        }
+
+                        // Clear recent button
+                        Rectangle {
+                            width: clear-text.preferred-width + Spacing.md;
+                            height: 24px;
+                            border-radius: Radius.sm;
+                            background: clear-touch.has-hover ? Colors.surface-variant : transparent;
+
+                            clear-touch := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { root.clear-recent-searches(); }
+                            }
+
+                            clear-text := Text {
+                                text: Locale.current == "ar" ? "مسح" : "Clear";
+                                font-size: Typography.small;
+                                color: Colors.primary;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+
+                    // Recent search chips
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: Spacing.sm;
+
+                        for recent[i] in recent-searches: RecentSearchChip {
+                            query: recent.query;
+                            clicked => { root.recent-search-clicked(recent.query); }
+                        }
+                    }
+                }
+            }
+
+            // No results state
+            if !loading && has-query && !has-results: VerticalLayout {
+                alignment: center;
+                spacing: Spacing.lg;
+                padding: Spacing.xxl;
+
+                Text {
+                    text: "\u{1F615}";  // Confused face emoji
+                    font-size: 72px;
+                    horizontal-alignment: center;
+                }
+
+                Text {
+                    text: Locale.current == "ar" ?
+                          "لا توجد نتائج لـ \"" + search-query + "\"" :
+                          "No results for \"" + search-query + "\"";
+                    font-size: Typography.subheading;
+                    color: Colors.text-secondary;
+                    horizontal-alignment: center;
+                }
+
+                Text {
+                    text: Locale.current == "ar" ?
+                          "حاول البحث بكلمات مختلفة أو امسح الباركود" :
+                          "Try different keywords or scan a barcode";
+                    font-size: Typography.caption;
+                    color: Colors.disabled;
+                    horizontal-alignment: center;
+                }
+
+                // Scan barcode suggestion button
+                Button {
+                    text: Locale.current == "ar" ? "\u{1F4F7} مسح الباركود" : "\u{1F4F7} Scan Barcode";
+                    variant: "secondary";
+                    clicked => { debug("Scan barcode from no results"); }
+                }
+            }
+
+            // Results list
+            if !loading && has-results: VerticalLayout {
+                padding: Spacing.md;
+                spacing: 0px;
+
+                // Results count header
+                HorizontalLayout {
+                    padding-bottom: Spacing.sm;
+                    spacing: Spacing.sm;
+
+                    Text {
+                        text: Locale.current == "ar" ?
+                              results.length + " نتيجة" :
+                              results.length + " results";
+                        font-size: Typography.caption;
+                        font-weight: 600;
+                        color: Colors.text-secondary;
+                    }
+
+                    if has-query: Rectangle {
+                        horizontal-stretch: 1;
+                    }
+
+                    if has-query: Text {
+                        text: "\"" + search-query + "\"";
+                        font-size: Typography.caption;
+                        color: Colors.disabled;
+                        overflow: elide;
+                    }
+                }
+
+                // Scrollable results
+                Flickable {
+                    vertical-stretch: 1;
+
+                    VerticalLayout {
+                        spacing: Spacing.xs;
+
+                        for result[i] in results: SearchResultRow {
+                            product: result;
+                            currency: root.currency;
+
+                            clicked => { root.product-selected(result.id); }
+                            add-clicked => { root.product-add-to-cart(result.id); }
+                        }
+
+                        // Bottom padding
+                        Rectangle {
+                            height: Spacing.xxl;
+                        }
+                    }
+                }
+            }
+        }
+
+        // ====================================================================
+        // STATUS BAR
+        // ====================================================================
+        CompactStatusBar { }
+    }
+}

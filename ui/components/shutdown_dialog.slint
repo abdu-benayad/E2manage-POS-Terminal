@@ -1,0 +1,207 @@
+// ============================================================================
+// E2Manage POS Terminal - Shutdown Dialog
+// ============================================================================
+// Dialog for app/system shutdown options:
+// - Close App
+// - Restart App
+// - Restart Machine
+// - Shutdown Machine
+// ============================================================================
+
+import { Colors, Typography, Spacing, Radius, Layout } from "../theme.slint";
+
+// Shutdown option button
+component ShutdownOption inherits Rectangle {
+    in property <string> icon;
+    in property <string> label;
+    in property <string> sublabel;
+    in property <color> icon-color: Colors.text-primary;
+
+    callback clicked;
+
+    width: 100%;
+    height: 72px;
+    border-radius: Radius.md;
+    background: touch.has-hover ? Colors.surface-variant : Colors.surface;
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+
+    HorizontalLayout {
+        padding-left: Spacing.lg;
+        padding-right: Spacing.lg;
+        spacing: Spacing.lg;
+        alignment: start;
+
+        // Icon circle
+        Rectangle {
+            width: 48px;
+            height: 48px;
+            border-radius: 24px;
+            background: icon-color.transparentize(0.85);
+
+            Text {
+                text: icon;
+                font-size: 24px;
+                color: icon-color;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+
+        // Labels
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+
+            Text {
+                text: label;
+                font-size: Typography.body;
+                font-weight: 600;
+                color: Colors.text-primary;
+                horizontal-alignment: left;
+            }
+
+            Text {
+                text: sublabel;
+                font-size: Typography.small;
+                color: Colors.text-secondary;
+                horizontal-alignment: left;
+            }
+        }
+    }
+}
+
+export component ShutdownDialog inherits Rectangle {
+    in-out property <bool> open: false;
+
+    callback close-app;
+    callback restart-app;
+    callback restart-machine;
+    callback shutdown-machine;
+    callback cancelled;
+
+    // Full screen overlay
+    if open: Rectangle {
+        width: 100%;
+        height: 100%;
+        background: Colors.overlay;
+
+        // Backdrop touch to close
+        TouchArea {
+            clicked => {
+                root.cancelled();
+                root.open = false;
+            }
+        }
+
+        // Dialog box
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: 380px;
+            height: 420px;
+            border-radius: Radius.dialog;
+            background: Colors.surface;
+
+            // Block clicks from propagating to backdrop
+            TouchArea {}
+
+            VerticalLayout {
+                padding: Spacing.xl;
+                spacing: Spacing.md;
+
+                // Header
+                Text {
+                    text: Layout.rtl ? "إغلاق النظام" : "Exit Options";
+                    font-size: Typography.heading;
+                    font-weight: 700;
+                    color: Colors.text-primary;
+                    horizontal-alignment: center;
+                }
+
+                Text {
+                    text: Layout.rtl ? "اختر الإجراء المطلوب" : "Choose an action";
+                    font-size: Typography.body;
+                    color: Colors.text-secondary;
+                    horizontal-alignment: center;
+                }
+
+                // Spacer
+                Rectangle { height: Spacing.md; }
+
+                // Options
+                ShutdownOption {
+                    icon: "✕";
+                    label: Layout.rtl ? "إغلاق التطبيق" : "Close App";
+                    sublabel: Layout.rtl ? "إغلاق نقطة البيع فقط" : "Exit POS application only";
+                    icon-color: Colors.text-secondary;
+                    clicked => {
+                        root.open = false;
+                        root.close-app();
+                    }
+                }
+
+                ShutdownOption {
+                    icon: "↻";
+                    label: Layout.rtl ? "إعادة تشغيل التطبيق" : "Restart App";
+                    sublabel: Layout.rtl ? "إعادة تشغيل نقطة البيع" : "Restart POS application";
+                    icon-color: Colors.primary;
+                    clicked => {
+                        root.open = false;
+                        root.restart-app();
+                    }
+                }
+
+                ShutdownOption {
+                    icon: "⟳";
+                    label: Layout.rtl ? "إعادة تشغيل الجهاز" : "Restart Machine";
+                    sublabel: Layout.rtl ? "إعادة تشغيل الكمبيوتر" : "Reboot the computer";
+                    icon-color: Colors.warning;
+                    clicked => {
+                        root.open = false;
+                        root.restart-machine();
+                    }
+                }
+
+                ShutdownOption {
+                    icon: "⏻";
+                    label: Layout.rtl ? "إيقاف الجهاز" : "Shutdown Machine";
+                    sublabel: Layout.rtl ? "إيقاف تشغيل الكمبيوتر" : "Power off the computer";
+                    icon-color: Colors.danger;
+                    clicked => {
+                        root.open = false;
+                        root.shutdown-machine();
+                    }
+                }
+
+                // Cancel button
+                Rectangle { height: Spacing.sm; }
+
+                Rectangle {
+                    height: 44px;
+                    border-radius: Radius.md;
+                    background: cancel-touch.has-hover ? Colors.surface-variant : transparent;
+                    border-width: 1px;
+                    border-color: Colors.border;
+
+                    cancel-touch := TouchArea {
+                        clicked => {
+                            root.cancelled();
+                            root.open = false;
+                        }
+                    }
+
+                    Text {
+                        text: Layout.rtl ? "إلغاء" : "Cancel";
+                        font-size: Typography.body;
+                        color: Colors.text-secondary;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+    }
+}

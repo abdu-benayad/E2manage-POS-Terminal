@@ -1,0 +1,57 @@
+// ============================================================================
+// E2Manage POS Terminal - Screens Module
+// ============================================================================
+// Central export point for all screen components
+// Import screens from here in main.slint
+// ============================================================================
+
+// Auth Screens (Phase 6-8)
+export { SplashScreen } from "auth/splash.slint";
+export { SetupScreen } from "auth/setup.slint";                          // Terminal pairing/setup
+export { LoginSelectScreen, Operator } from "auth/login_select.slint";  // Phase 7
+export { PinEntryScreen } from "auth/pin_entry.slint";                  // Phase 8
+
+// Shift Screens (Phase 9, 33-35)
+export { StartShiftScreen } from "shift/start.slint";            // Phase 9
+export { EndShiftScreen, Denomination, ShiftSummary } from "shift/end.slint";  // Phase 33
+
+// Checkout Screens (Phase 14, 19)
+export { MainCheckoutScreen } from "checkout/main.slint";       // Phase 14
+export { ProductSearchScreen, ProductSearchResult, RecentSearchItem } from "checkout/search.slint";  // Phase 19
+
+// Payment Screens (Phase 20-24)
+export { PaymentMethodsScreen } from "payment/methods.slint"; // Phase 20
+export { CashPaymentScreen } from "payment/cash.slint";       // Phase 21
+export { CardPaymentScreen } from "payment/card.slint";       // Phase 22
+export { SplitPaymentScreen, SplitPaymentEntry } from "payment/split.slint"; // Phase 23
+export { QrPaymentScreen, WalletProvider } from "payment/qr.slint";          // Phase 24
+
+// Receipt Screens (Phase 26)
+export { ReceiptScreen, ReceiptItem, ReceiptPayment } from "receipt/complete.slint";  // Phase 26
+
+// Draft Screens (Phase 28-29)
+export { SaveDraftScreen, DraftData } from "draft/save.slint";           // Phase 28
+export { RecallDraftScreen, DraftItem } from "draft/recall.slint";       // Phase 29
+
+// Return Screens (Phase 30-32)
+export { ReturnEntryScreen, ReturnEntryData } from "return/entry.slint";       // Phase 30
+export { ReturnItemsScreen, ReturnableItem, ReturnReason } from "return/items.slint";  // Phase 31
+export { RefundScreen } from "return/refund.slint";                            // Phase 32
+
+// Report Screens (Phase 34-35)
+export { XReportScreen } from "reports/x_report.slint";       // Phase 34
+export { ZReportScreen } from "reports/z_report.slint";       // Phase 35
+
+// Settings Screens (Phase 36-42)
+export { SettingsHomeScreen, SettingItem } from "settings/home.slint";     // Phase 36
+export { PrinterSettingsScreen, PrinterDevice } from "settings/printer.slint"; // Phase 37
+export { DisplaySettingsScreen, LanguageOption, ThemeOption, FontScaleOption } from "settings/display.slint"; // Phase 38
+export { AboutSettingsScreen } from "settings/about.slint";                // Phase 39
+export { SecuritySettingsScreen } from "settings/security.slint";          // Phase 40
+export { SyncSettingsScreen } from "settings/sync.slint";                  // Phase 41
+export { PaymentSettingsScreen, PaymentMethodConfig } from "settings/payment.slint"; // Phase 42
+export { SettingsRouter } from "settings/router.slint";                    // Settings Router (consolidates all settings)
+
+// Conflicts Screen (Phase 3 - P1 Reliability)
+export { ConflictsScreen, ConflictTransaction } from "conflicts/conflicts-screen.slint";
+export { ConflictItem } from "conflicts/conflict-item.slint";

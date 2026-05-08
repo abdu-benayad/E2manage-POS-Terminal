@@ -1,0 +1,758 @@
+// ============================================================================
+// E2Manage POS Terminal - Product Grid Component (Phase 16)
+// ============================================================================
+// Responsive grid of product tiles with search, loading, and empty states
+// ============================================================================
+
+import { Colors, Typography, Spacing, Radius, Layout, Locale, Animation, Sizes, CartState } from "../theme.slint";
+import { ProductTile, CompactProductTile, ProductListItem, ProductData } from "product_tile.slint";
+import { SearchInput } from "input.slint";
+
+// ============================================================================
+// PRODUCT GRID COMPONENT (Main grid layout)
+// ============================================================================
+
+export component ProductGrid inherits Rectangle {
+    in property <[ProductData]> products: [];
+    in property <string> search-query: "";
+    in property <string> currency: CartState.currency;
+    in property <bool> loading: false;
+    in property <bool> show-search: false;
+    in property <string> empty-message: "";
+    in property <string> section-title: "";
+
+    // Compact mode for responsive layout (smaller screens)
+    in property <bool> compact: false;
+
+    // Recovery path callbacks (when barcode fails or empty state)
+    callback product-selected(string);
+    callback search-changed(string);
+    callback open-numpad-search;  // Fast numeric lookup
+    callback show-favorites;      // Quick access favorites
+    callback show-all-categories; // Browse all categories
+
+    background: Colors.background;
+
+    VerticalLayout {
+        spacing: Spacing.md;
+        padding: Spacing.md;
+
+        // Optional section title
+        if section-title != "": HorizontalLayout {
+            Text {
+                text: section-title;
+                font-size: Typography.caption;
+                font-weight: 600;
+                color: Colors.text-secondary;
+                letter-spacing: 0.5px;
+            }
+        }
+
+        // Optional search bar
+        if show-search: SearchInput {
+            placeholder: Locale.current == "ar" ?
+                        "بحث بالاسم أو الباركود..." :
+                        "Search by name or barcode...";
+            text: search-query;
+
+            search(value) => { root.search-changed(value); }
+        }
+
+        // Product count
+        if products.length > 0 && !loading: HorizontalLayout {
+            Text {
+                text: products.length + (Locale.current == "ar" ? " منتج" : " products");
+                font-size: Typography.caption;
+                color: Colors.text-secondary;
+            }
+        }
+
+        // Loading state
+        if loading: Rectangle {
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                alignment: center;
+                spacing: Spacing.md;
+
+                // Loading spinner placeholder (emoji)
+                Text {
+                    text: "\u{23F3}"; // Hourglass emoji
+                    font-size: 48px;
+                    horizontal-alignment: center;
+                }
+
+                Text {
+                    text: Locale.current == "ar" ? "جاري التحميل..." : "Loading...";
+                    font-size: Typography.body;
+                    color: Colors.text-secondary;
+                    horizontal-alignment: center;
+                }
+            }
+        }
+
+        // Empty state - show helpful content instead of dead state
+        if !loading && products.length == 0: Rectangle {
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                alignment: center;
+                spacing: Spacing.lg;
+
+                // Different content based on whether user is searching
+                if search-query != "": VerticalLayout {
+                    alignment: center;
+                    spacing: Spacing.md;
+
+                    Text {
+                        text: "\u{1F50D}"; // Magnifying glass emoji
+                        font-size: 48px;
+                        horizontal-alignment: center;
+                    }
+
+                    Text {
+                        text: Locale.current == "ar" ?
+                              "لا توجد نتائج لـ \"" + search-query + "\"" :
+                              "No results for \"" + search-query + "\"";
+                        font-size: Typography.body;
+                        color: Colors.text-secondary;
+                        horizontal-alignment: center;
+                    }
+
+                    Text {
+                        text: Locale.current == "ar" ?
+                              "جرب البحث بكلمات مختلفة أو تصفح الفئات" :
+                              "Try different keywords or browse categories";
+                        font-size: Typography.small;
+                        color: Colors.text-secondary;
+                        horizontal-alignment: center;
+                    }
+                }
+
+                // Default state - ACTIONABLE recovery paths (not just hints)
+                if search-query == "": VerticalLayout {
+                    alignment: center;
+                    spacing: Spacing.xl;
+
+                    Text {
+                        text: empty-message != "" ? empty-message :
+                              (Locale.current == "ar" ?
+                               "اختر طريقة للبحث عن المنتج" :
+                               "Choose how to find a product");
+                        font-size: Typography.subheading;
+                        font-weight: 500;
+                        color: Colors.text-primary;
+                        horizontal-alignment: center;
+                    }
+
+                    // Recovery action buttons - large touch targets
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: Spacing.lg;
+
+                        // Numeric keypad lookup (for entering barcode/SKU manually)
+                        Rectangle {
+                            width: 120px;
+                            height: 100px;
+                            border-radius: Radius.md;
+                            background: numpad-touch.pressed ? Colors.primary :
+                                        numpad-touch.has-hover ? Colors.primary-light : Colors.surface;
+                            border-width: 1px;
+                            border-color: numpad-touch.has-hover ? Colors.primary : Colors.border;
+
+                            numpad-touch := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { root.open-numpad-search(); }
+                            }
+
+                            VerticalLayout {
+                                alignment: center;
+                                spacing: Spacing.sm;
+
+                                Text {
+                                    text: "123";
+                                    font-size: 28px;
+                                    font-weight: 700;
+                                    color: numpad-touch.pressed ? Colors.text-on-primary :
+                                           numpad-touch.has-hover ? Colors.primary : Colors.text-primary;
+                                    horizontal-alignment: center;
+                                }
+
+                                Text {
+                                    text: Locale.current == "ar" ? "إدخال رقم" : "Enter code";
+                                    font-size: Typography.caption;
+                                    color: numpad-touch.pressed ? Colors.text-on-primary : Colors.text-secondary;
+                                    horizontal-alignment: center;
+                                }
+                            }
+
+                            animate background { duration: Animation.fast; }
+                            animate border-color { duration: Animation.fast; }
+                        }
+
+                        // Browse all categories
+                        Rectangle {
+                            width: 120px;
+                            height: 100px;
+                            border-radius: Radius.md;
+                            background: categories-touch.pressed ? Colors.primary :
+                                        categories-touch.has-hover ? Colors.primary-light : Colors.surface;
+                            border-width: 1px;
+                            border-color: categories-touch.has-hover ? Colors.primary : Colors.border;
+
+                            categories-touch := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { root.show-all-categories(); }
+                            }
+
+                            VerticalLayout {
+                                alignment: center;
+                                spacing: Spacing.sm;
+
+                                Text {
+                                    text: "\u{1F4C1}"; // Folder
+                                    font-size: 28px;
+                                    horizontal-alignment: center;
+                                }
+
+                                Text {
+                                    text: Locale.current == "ar" ? "الأصناف" : "Categories";
+                                    font-size: Typography.caption;
+                                    color: categories-touch.pressed ? Colors.text-on-primary : Colors.text-secondary;
+                                    horizontal-alignment: center;
+                                }
+                            }
+
+                            animate background { duration: Animation.fast; }
+                            animate border-color { duration: Animation.fast; }
+                        }
+
+                        // Favorites / frequent items
+                        Rectangle {
+                            width: 120px;
+                            height: 100px;
+                            border-radius: Radius.md;
+                            background: favorites-touch.pressed ? Colors.primary :
+                                        favorites-touch.has-hover ? Colors.primary-light : Colors.surface;
+                            border-width: 1px;
+                            border-color: favorites-touch.has-hover ? Colors.primary : Colors.border;
+
+                            favorites-touch := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { root.show-favorites(); }
+                            }
+
+                            VerticalLayout {
+                                alignment: center;
+                                spacing: Spacing.sm;
+
+                                Text {
+                                    text: "\u{2B50}"; // Star
+                                    font-size: 28px;
+                                    horizontal-alignment: center;
+                                }
+
+                                Text {
+                                    text: Locale.current == "ar" ? "الأكثر مبيعاً" : "Top Sellers";
+                                    font-size: Typography.caption;
+                                    color: favorites-touch.pressed ? Colors.text-on-primary : Colors.text-secondary;
+                                    horizontal-alignment: center;
+                                }
+                            }
+
+                            animate background { duration: Animation.fast; }
+                            animate border-color { duration: Animation.fast; }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Product grid (scrollable)
+        if !loading && products.length > 0: Flickable {
+            vertical-stretch: 1;
+            viewport-width: self.width;        // Lock horizontal — no sideways growth
+            viewport-height: self.height * 2;  // Allow vertical scrolling
+
+            VerticalLayout {
+                spacing: Spacing.sm;
+
+                // Row 1 (products 0-3)
+                if products.length > 0: HorizontalLayout {
+                    spacing: Spacing.sm;
+
+                    if products.length > 0: ProductTile {
+                        name: products[0].name;
+                        name-ar: products[0].name_ar;
+                        sku: products[0].sku;
+                        price: products[0].price;
+                        currency: root.currency;
+                        stock: products[0].stock;
+                        low-stock: products[0].low_stock;
+                        out-of-stock: products[0].out_of_stock;
+                        product-id: products[0].id;
+                        category-color: products[0].category_color;
+                        product-type: products[0].product_type;
+                        is-service: products[0].is_service;
+                        clicked(id) => { root.product-selected(id); }
+                    }
+
+                    if products.length > 1: ProductTile {
+                        name: products[1].name;
+                        name-ar: products[1].name_ar;
+                        sku: products[1].sku;
+                        price: products[1].price;
+                        currency: root.currency;
+                        stock: products[1].stock;
+                        low-stock: products[1].low_stock;
+                        out-of-stock: products[1].out_of_stock;
+                        product-id: products[1].id;
+                        category-color: products[1].category_color;
+                        product-type: products[1].product_type;
+                        is-service: products[1].is_service;
+                        clicked(id) => { root.product-selected(id); }
+                    }
+
+                    if products.length > 2: ProductTile {
+                        name: products[2].name;
+                        name-ar: products[2].name_ar;
+                        sku: products[2].sku;
+                        price: products[2].price;
+                        currency: root.currency;
+                        stock: products[2].stock;
+                        low-stock: products[2].low_stock;
+                        out-of-stock: products[2].out_of_stock;
+                        product-id: products[2].id;
+                        category-color: products[2].category_color;
+                        product-type: products[2].product_type;
+                        is-service: products[2].is_service;
+                        clicked(id) => { root.product-selected(id); }
+                    }
+
+                    if products.length > 3: ProductTile {
+                        name: products[3].name;
+                        name-ar: products[3].name_ar;
+                        sku: products[3].sku;
+                        price: products[3].price;
+                        currency: root.currency;
+                        stock: products[3].stock;
+                        low-stock: products[3].low_stock;
+                        out-of-stock: products[3].out_of_stock;
+                        product-id: products[3].id;
+                        category-color: products[3].category_color;
+                        product-type: products[3].product_type;
+                        is-service: products[3].is_service;
+                        clicked(id) => { root.product-selected(id); }
+                    }
+                }
+
+                // Row 2 (products 4-7)
+                if products.length > 4: HorizontalLayout {
+                    spacing: Spacing.sm;
+
+                    if products.length > 4: ProductTile {
+                        name: products[4].name;
+                        name-ar: products[4].name_ar;
+                        sku: products[4].sku;
+                        price: products[4].price;
+                        currency: root.currency;
+                        stock: products[4].stock;
+                        low-stock: products[4].low_stock;
+                        out-of-stock: products[4].out_of_stock;
+                        product-id: products[4].id;
+                        category-color: products[4].category_color;
+                        product-type: products[4].product_type;
+                        is-service: products[4].is_service;
+                        clicked(id) => { root.product-selected(id); }
+                    }
+
+                    if products.length > 5: ProductTile {
+                        name: products[5].name;
+                        name-ar: products[5].name_ar;
+                        sku: products[5].sku;
+                        price: products[5].price;
+                        currency: root.currency;
+                        stock: products[5].stock;
+                        low-stock: products[5].low_stock;
+                        out-of-stock: products[5].out_of_stock;
+                        product-id: products[5].id;
+                        category-color: products[5].category_color;
+                        product-type: products[5].product_type;
+                        is-service: products[5].is_service;
+                        clicked(id) => { root.product-selected(id); }
+                    }
+
+                    if products.length > 6: ProductTile {
+                        name: products[6].name;
+                        name-ar: products[6].name_ar;
+                        sku: products[6].sku;
+                        price: products[6].price;
+                        currency: root.currency;
+                        stock: products[6].stock;
+                        low-stock: products[6].low_stock;
+                        out-of-stock: products[6].out_of_stock;
+                        product-id: products[6].id;
+                        category-color: products[6].category_color;
+                        product-type: products[6].product_type;
+                        is-service: products[6].is_service;
+                        clicked(id) => { root.product-selected(id); }
+                    }
+
+                    if products.length > 7: ProductTile {
+                        name: products[7].name;
+                        name-ar: products[7].name_ar;
+                        sku: products[7].sku;
+                        price: products[7].price;
+                        currency: root.currency;
+                        stock: products[7].stock;
+                        low-stock: products[7].low_stock;
+                        out-of-stock: products[7].out_of_stock;
+                        product-id: products[7].id;
+                        category-color: products[7].category_color;
+                        product-type: products[7].product_type;
+                        is-service: products[7].is_service;
+                        clicked(id) => { root.product-selected(id); }
+                    }
+                }
+
+                // Row 3 (products 8-11)
+                if products.length > 8: HorizontalLayout {
+                    spacing: Spacing.sm;
+
+                    if products.length > 8: ProductTile {
+                        name: products[8].name;
+                        name-ar: products[8].name_ar;
+                        sku: products[8].sku;
+                        price: products[8].price;
+                        currency: root.currency;
+                        stock: products[8].stock;
+                        low-stock: products[8].low_stock;
+                        out-of-stock: products[8].out_of_stock;
+                        product-id: products[8].id;
+                        category-color: products[8].category_color;
+                        product-type: products[8].product_type;
+                        is-service: products[8].is_service;
+                        clicked(id) => { root.product-selected(id); }
+                    }
+
+                    if products.length > 9: ProductTile {
+                        name: products[9].name;
+                        name-ar: products[9].name_ar;
+                        sku: products[9].sku;
+                        price: products[9].price;
+                        currency: root.currency;
+                        stock: products[9].stock;
+                        low-stock: products[9].low_stock;
+                        out-of-stock: products[9].out_of_stock;
+                        product-id: products[9].id;
+                        category-color: products[9].category_color;
+                        product-type: products[9].product_type;
+                        is-service: products[9].is_service;
+                        clicked(id) => { root.product-selected(id); }
+                    }
+
+                    if products.length > 10: ProductTile {
+                        name: products[10].name;
+                        name-ar: products[10].name_ar;
+                        sku: products[10].sku;
+                        price: products[10].price;
+                        currency: root.currency;
+                        stock: products[10].stock;
+                        low-stock: products[10].low_stock;
+                        out-of-stock: products[10].out_of_stock;
+                        product-id: products[10].id;
+                        category-color: products[10].category_color;
+                        product-type: products[10].product_type;
+                        is-service: products[10].is_service;
+                        clicked(id) => { root.product-selected(id); }
+                    }
+
+                    if products.length > 11: ProductTile {
+                        name: products[11].name;
+                        name-ar: products[11].name_ar;
+                        sku: products[11].sku;
+                        price: products[11].price;
+                        currency: root.currency;
+                        stock: products[11].stock;
+                        low-stock: products[11].low_stock;
+                        out-of-stock: products[11].out_of_stock;
+                        product-id: products[11].id;
+                        category-color: products[11].category_color;
+                        product-type: products[11].product_type;
+                        is-service: products[11].is_service;
+                        clicked(id) => { root.product-selected(id); }
+                    }
+                }
+
+                // Row 4 (products 12-15)
+                if products.length > 12: HorizontalLayout {
+                    spacing: Spacing.sm;
+
+                    if products.length > 12: ProductTile {
+                        name: products[12].name;
+                        name-ar: products[12].name_ar;
+                        sku: products[12].sku;
+                        price: products[12].price;
+                        currency: root.currency;
+                        stock: products[12].stock;
+                        low-stock: products[12].low_stock;
+                        out-of-stock: products[12].out_of_stock;
+                        product-id: products[12].id;
+                        category-color: products[12].category_color;
+                        product-type: products[12].product_type;
+                        is-service: products[12].is_service;
+                        clicked(id) => { root.product-selected(id); }
+                    }
+
+                    if products.length > 13: ProductTile {
+                        name: products[13].name;
+                        name-ar: products[13].name_ar;
+                        sku: products[13].sku;
+                        price: products[13].price;
+                        currency: root.currency;
+                        stock: products[13].stock;
+                        low-stock: products[13].low_stock;
+                        out-of-stock: products[13].out_of_stock;
+                        product-id: products[13].id;
+                        category-color: products[13].category_color;
+                        product-type: products[13].product_type;
+                        is-service: products[13].is_service;
+                        clicked(id) => { root.product-selected(id); }
+                    }
+
+                    if products.length > 14: ProductTile {
+                        name: products[14].name;
+                        name-ar: products[14].name_ar;
+                        sku: products[14].sku;
+                        price: products[14].price;
+                        currency: root.currency;
+                        stock: products[14].stock;
+                        low-stock: products[14].low_stock;
+                        out-of-stock: products[14].out_of_stock;
+                        product-id: products[14].id;
+                        category-color: products[14].category_color;
+                        product-type: products[14].product_type;
+                        is-service: products[14].is_service;
+                        clicked(id) => { root.product-selected(id); }
+                    }
+
+                    if products.length > 15: ProductTile {
+                        name: products[15].name;
+                        name-ar: products[15].name_ar;
+                        sku: products[15].sku;
+                        price: products[15].price;
+                        currency: root.currency;
+                        stock: products[15].stock;
+                        low-stock: products[15].low_stock;
+                        out-of-stock: products[15].out_of_stock;
+                        product-id: products[15].id;
+                        category-color: products[15].category_color;
+                        product-type: products[15].product_type;
+                        is-service: products[15].is_service;
+                        clicked(id) => { root.product-selected(id); }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ============================================================================
+// COMPACT PRODUCT GRID (for smaller screens or dense layouts)
+// ============================================================================
+
+export component CompactProductGrid inherits Rectangle {
+    in property <[ProductData]> products: [];
+    in property <string> currency: CartState.currency;
+    in property <bool> loading: false;
+
+    callback product-selected(string);
+
+    background: Colors.background;
+
+    VerticalLayout {
+        spacing: Spacing.sm;
+        padding: Spacing.sm;
+
+        // Loading state
+        if loading: Rectangle {
+            vertical-stretch: 1;
+
+            Text {
+                text: Locale.current == "ar" ? "جاري التحميل..." : "Loading...";
+                font-size: Typography.body;
+                color: Colors.text-secondary;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+
+        // Empty state
+        if !loading && products.length == 0: Rectangle {
+            vertical-stretch: 1;
+
+            Text {
+                text: Locale.current == "ar" ? "لا توجد منتجات" : "No products";
+                font-size: Typography.body;
+                color: Colors.text-secondary;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+
+        // Compact grid
+        if !loading && products.length > 0: Flickable {
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                spacing: Spacing.xs;
+
+                // Row 1
+                if products.length > 0: HorizontalLayout {
+                    spacing: Spacing.xs;
+
+                    for i in [0, 1, 2, 3, 4]: Rectangle {
+                        width: 100px;
+                        height: 100px;
+
+                        if i < products.length: CompactProductTile {
+                            name: products[i].name;
+                            name-ar: products[i].name_ar;
+                            price: products[i].price;
+                            currency: root.currency;
+                            out-of-stock: products[i].out_of_stock;
+                            product-id: products[i].id;
+                            category-color: products[i].category_color;
+                            clicked(id) => { root.product-selected(id); }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ============================================================================
+// PRODUCT LIST VIEW (alternative to grid)
+// ============================================================================
+
+export component ProductListView inherits Rectangle {
+    in property <[ProductData]> products: [];
+    in property <string> currency: CartState.currency;
+    in property <bool> loading: false;
+
+    callback product-selected(string);
+
+    background: Colors.surface;
+
+    VerticalLayout {
+        spacing: 0px;
+
+        // Loading state
+        if loading: Rectangle {
+            vertical-stretch: 1;
+
+            Text {
+                text: Locale.current == "ar" ? "جاري التحميل..." : "Loading...";
+                font-size: Typography.body;
+                color: Colors.text-secondary;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+
+        // Empty state
+        if !loading && products.length == 0: Rectangle {
+            vertical-stretch: 1;
+
+            Text {
+                text: Locale.current == "ar" ? "لا توجد منتجات" : "No products";
+                font-size: Typography.body;
+                color: Colors.text-secondary;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+
+        // Product list
+        if !loading && products.length > 0: Flickable {
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                spacing: 0px;
+
+                for product in products: ProductListItem {
+                    name: product.name;
+                    name-ar: product.name_ar;
+                    sku: product.sku;
+                    price: product.price;
+                    currency: root.currency;
+                    stock: product.stock;
+                    low-stock: product.low_stock;
+                    out-of-stock: product.out_of_stock;
+                    product-id: product.id;
+                    clicked(id) => { root.product-selected(id); }
+                }
+            }
+        }
+    }
+}
+
+// ============================================================================
+// RECENT ITEMS STRIP (horizontal scrollable strip for recent products)
+// ============================================================================
+
+export component RecentItemsStrip inherits Rectangle {
+    in property <[ProductData]> products: [];
+    in property <string> currency: CartState.currency;
+    in property <string> title: "";
+
+    callback product-selected(string);
+
+    background: Colors.background;
+
+    VerticalLayout {
+        spacing: Spacing.sm;
+
+        // Title
+        if title != "": HorizontalLayout {
+            padding-left: Spacing.md;
+
+            Text {
+                text: title;
+                font-size: Typography.caption;
+                font-weight: 600;
+                color: Colors.text-secondary;
+                letter-spacing: 0.5px;
+            }
+        }
+
+        // Horizontal scrollable strip
+        Flickable {
+            height: 168px;
+            viewport-width: products.length * (140px + Spacing.sm) + Spacing.md;
+
+            HorizontalLayout {
+                spacing: Spacing.sm;
+                padding-left: Spacing.md;
+                padding-right: Spacing.md;
+
+                for product in products: ProductTile {
+                    name: product.name;
+                    name-ar: product.name_ar;
+                    sku: product.sku;
+                    price: product.price;
+                    currency: root.currency;
+                    stock: product.stock;
+                    low-stock: product.low_stock;
+                    out-of-stock: product.out_of_stock;
+                    product-id: product.id;
+                    category-color: product.category_color;
+                    product-type: product.product_type;
+                    is-service: product.is_service;
+                    clicked(id) => { root.product-selected(id); }
+                }
+            }
+        }
+    }
+}

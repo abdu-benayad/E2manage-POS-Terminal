@@ -1,0 +1,314 @@
+// ============================================================================
+// E2Manage POS Terminal - List Item Components
+// ============================================================================
+// Reusable list item components for displaying rows of data
+// Supports leading icons, text, subtitles, trailing content, and chevrons
+// ============================================================================
+
+import { Colors, Typography, Spacing, Sizes, Radius, Animation, Layout } from "../theme.slint";
+
+// ============================================================================
+// LIST ITEM COMPONENT
+// ============================================================================
+
+export component ListItem inherits Rectangle {
+    in property <string> text: "";
+    in property <string> subtitle: "";
+    in property <string> trailing-text: "";
+    in property <bool> selected: false;
+    in property <bool> has-chevron: false;
+    in property <bool> disabled: false;
+    in property <string> leading-icon: ""; // Unicode character or emoji
+    in property <bool> show-divider: true;
+    in property <color> leading-bg: Colors.surface-variant;
+
+    callback clicked;
+
+    height: subtitle != "" ? 72px : Sizes.list-item-height;
+    background: selected ? Colors.primary-light : Colors.surface;
+
+    states [
+        pressed when touch.pressed && !disabled: {
+            background: selected ? Colors.primary : Colors.background;
+        }
+        hovered when touch.has-hover && !disabled && !touch.pressed: {
+            background: selected ? Colors.primary-light : Colors.surface-variant;
+        }
+    ]
+
+    animate background { duration: Animation.fast; }
+
+    HorizontalLayout {
+        padding-left: Spacing.lg;
+        padding-right: Spacing.lg;
+        spacing: Spacing.md;
+
+        // Leading icon (optional)
+        if leading-icon != "": Rectangle {
+            width: Sizes.avatar-sm;
+            height: Sizes.avatar-sm;
+            border-radius: Radius.md;
+            background: leading-bg;
+
+            Text {
+                text: leading-icon;
+                font-size: Typography.body;
+                color: Colors.text-primary;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+
+        // Main content
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            spacing: Spacing.xxs;
+
+            Text {
+                text: root.text;
+                font-size: Typography.body;
+                color: disabled ? Colors.disabled :
+                       selected ? Colors.text-on-primary : Colors.text-primary;
+                horizontal-alignment: Layout.rtl ? right : left;
+            }
+
+            if subtitle != "": Text {
+                text: subtitle;
+                font-size: Typography.caption;
+                color: disabled ? Colors.disabled :
+                       selected ? rgba(255,255,255,0.8) : Colors.text-secondary;
+                horizontal-alignment: Layout.rtl ? right : left;
+            }
+        }
+
+        // Trailing text (optional)
+        if trailing-text != "": Text {
+            text: trailing-text;
+            font-size: Typography.body;
+            font-weight: 600;
+            color: disabled ? Colors.disabled :
+                   selected ? Colors.text-on-primary : Colors.text-primary;
+            vertical-alignment: center;
+        }
+
+        // Chevron arrow (optional)
+        if has-chevron: Text {
+            text: Layout.rtl ? "\u{2039}" : "\u{203A}"; // Single angle quote (‹ or ›)
+            font-size: Typography.heading;
+            color: disabled ? Colors.disabled : Colors.text-secondary;
+            vertical-alignment: center;
+        }
+    }
+
+    // Bottom border divider
+    if show-divider: Rectangle {
+        y: parent.height - 1px;
+        height: 1px;
+        background: Colors.border;
+    }
+
+    touch := TouchArea {
+        enabled: !disabled;
+        mouse-cursor: disabled ? default : pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+// ============================================================================
+// LIST SECTION HEADER
+// ============================================================================
+
+export component ListSectionHeader inherits Rectangle {
+    in property <string> title: "";
+    in property <string> action-text: "";
+
+    callback action-clicked;
+
+    height: 40px;
+    background: Colors.background;
+
+    HorizontalLayout {
+        padding-left: Spacing.lg;
+        padding-right: Spacing.lg;
+        alignment: space-between;
+
+        Text {
+            text: title;
+            font-size: Typography.caption;
+            font-weight: Typography.semi-bold;
+            color: Colors.text-secondary;
+            vertical-alignment: center;
+            horizontal-alignment: Layout.rtl ? right : left;
+        }
+
+        if action-text != "": Rectangle {
+            TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.action-clicked(); }
+
+                Text {
+                    text: action-text;
+                    font-size: Typography.caption;
+                    color: Colors.primary;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+}
+
+// ============================================================================
+// SELECTABLE LIST ITEM (with checkbox/radio appearance)
+// ============================================================================
+
+export component SelectableListItem inherits Rectangle {
+    in property <string> text: "";
+    in property <string> subtitle: "";
+    in property <bool> selected: false;
+    in property <bool> disabled: false;
+    in property <bool> multi-select: false; // true for checkbox, false for radio
+    in property <bool> show-divider: true;
+
+    callback clicked;
+
+    height: subtitle != "" ? 72px : Sizes.list-item-height;
+    background: Colors.surface;
+
+    states [
+        pressed when touch.pressed && !disabled: {
+            background: Colors.background;
+        }
+    ]
+
+    animate background { duration: Animation.fast; }
+
+    HorizontalLayout {
+        padding-left: Spacing.lg;
+        padding-right: Spacing.lg;
+        spacing: Spacing.md;
+
+        // Selection indicator (checkbox or radio)
+        Rectangle {
+            width: 24px;
+            height: 24px;
+            border-radius: multi-select ? Radius.sm : 12px;
+            border-width: selected ? 0px : 2px;
+            border-color: disabled ? Colors.disabled : Colors.border;
+            background: selected ? Colors.primary : transparent;
+
+            if selected: Text {
+                text: multi-select ? "\u{2713}" : "\u{2022}"; // Checkmark or bullet
+                font-size: multi-select ? Typography.caption : Typography.small;
+                font-weight: Typography.bold;
+                color: Colors.text-on-primary;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+
+        // Content
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            spacing: Spacing.xxs;
+
+            Text {
+                text: root.text;
+                font-size: Typography.body;
+                color: disabled ? Colors.disabled : Colors.text-primary;
+                horizontal-alignment: Layout.rtl ? right : left;
+            }
+
+            if subtitle != "": Text {
+                text: subtitle;
+                font-size: Typography.caption;
+                color: disabled ? Colors.disabled : Colors.text-secondary;
+                horizontal-alignment: Layout.rtl ? right : left;
+            }
+        }
+    }
+
+    // Divider
+    if show-divider: Rectangle {
+        y: parent.height - 1px;
+        height: 1px;
+        background: Colors.border;
+    }
+
+    touch := TouchArea {
+        enabled: !disabled;
+        mouse-cursor: disabled ? default : pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+// ============================================================================
+// SWIPE ACTION LIST ITEM (placeholder for future swipe gestures)
+// ============================================================================
+
+export component SwipeListItem inherits Rectangle {
+    in property <string> text: "";
+    in property <string> subtitle: "";
+    in property <string> trailing-text: "";
+    in property <bool> show-divider: true;
+
+    callback clicked;
+    callback swipe-left;
+    callback swipe-right;
+
+    height: subtitle != "" ? 72px : Sizes.list-item-height;
+    background: Colors.surface;
+
+    states [
+        pressed when touch.pressed: {
+            background: Colors.background;
+        }
+    ]
+
+    HorizontalLayout {
+        padding-left: Spacing.lg;
+        padding-right: Spacing.lg;
+        spacing: Spacing.md;
+
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            spacing: Spacing.xxs;
+
+            Text {
+                text: root.text;
+                font-size: Typography.body;
+                color: Colors.text-primary;
+                horizontal-alignment: Layout.rtl ? right : left;
+            }
+
+            if subtitle != "": Text {
+                text: subtitle;
+                font-size: Typography.caption;
+                color: Colors.text-secondary;
+                horizontal-alignment: Layout.rtl ? right : left;
+            }
+        }
+
+        if trailing-text != "": Text {
+            text: trailing-text;
+            font-size: Typography.body;
+            font-weight: 600;
+            color: Colors.text-primary;
+            vertical-alignment: center;
+        }
+    }
+
+    if show-divider: Rectangle {
+        y: parent.height - 1px;
+        height: 1px;
+        background: Colors.border;
+    }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+        // Note: Swipe gestures would need custom implementation
+    }
+}

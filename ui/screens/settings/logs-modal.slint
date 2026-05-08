@@ -1,0 +1,210 @@
+// ============================================================================
+// E2Manage POS Terminal - Logs Modal
+// ============================================================================
+// Displays system logs with filtering and refresh capabilities
+// ============================================================================
+
+import { Colors, Typography, Spacing, Radius, Locale } from "../../theme.slint";
+import { Button } from "../../components/mod.slint";
+
+export struct LogEntryData {
+    timestamp: string,
+    level: string,
+    message: string,
+}
+
+export component LogsModal inherits Rectangle {
+    in property <[LogEntryData]> logs: [];
+    in property <string> filter-level: "ALL";
+    in property <bool> is-loading: false;
+
+    callback close;
+    callback filter-changed(string);
+    callback refresh;
+
+    background: Colors.overlay;
+
+    // Click outside to close
+    TouchArea {
+        clicked => { root.close(); }
+    }
+
+    // Modal container
+    Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: min(parent.width * 0.9, 800px);
+        height: min(parent.height * 0.85, 600px);
+        background: Colors.surface;
+        border-radius: Radius.lg;
+
+        // Prevent closing when clicking inside modal
+        TouchArea {}
+
+        VerticalLayout {
+            padding: Spacing.lg;
+            spacing: Spacing.md;
+
+            // Header
+            HorizontalLayout {
+                spacing: Spacing.md;
+
+                Text {
+                    text: Locale.current == "ar" ? "سجلات النظام" : "System Logs";
+                    font-size: Typography.heading;
+                    font-weight: 600;
+                    color: Colors.text-primary;
+                    horizontal-stretch: 1;
+                }
+
+                // Close button
+                Rectangle {
+                    width: 32px;
+                    height: 32px;
+                    border-radius: Radius.sm;
+                    background: close-touch.has-hover ? Colors.surface-variant : transparent;
+
+                    close-touch := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.close(); }
+                    }
+
+                    Text {
+                        text: "X";
+                        font-size: 18px;
+                        font-weight: 600;
+                        color: Colors.text-secondary;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+
+            // Filter buttons
+            HorizontalLayout {
+                spacing: Spacing.sm;
+
+                for level in ["ALL", "ERROR", "WARN", "INFO", "DEBUG"]: Rectangle {
+                    width: 70px;
+                    height: 32px;
+                    border-radius: Radius.sm;
+                    background: filter-level == level ? Colors.primary : Colors.surface-variant;
+
+                    TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.filter-changed(level); }
+                    }
+
+                    Text {
+                        text: level;
+                        font-size: Typography.caption;
+                        color: filter-level == level ? Colors.text-on-primary : Colors.text-primary;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+
+                Rectangle { horizontal-stretch: 1; }
+
+                Button {
+                    text: Locale.current == "ar" ? "تحديث" : "Refresh";
+                    variant: "outline";
+                    clicked => { root.refresh(); }
+                }
+            }
+
+            // Log entries
+            Rectangle {
+                background: #1E1E1E;
+                border-radius: Radius.md;
+                vertical-stretch: 1;
+
+                if is-loading: Rectangle {
+                    Text {
+                        text: Locale.current == "ar" ? "جاري التحميل..." : "Loading...";
+                        font-size: Typography.body;
+                        color: #888888;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+
+                if !is-loading && logs.length == 0: Rectangle {
+                    Text {
+                        text: Locale.current == "ar" ? "لا توجد سجلات" : "No logs found";
+                        font-size: Typography.body;
+                        color: #888888;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+
+                if !is-loading && logs.length > 0: Flickable {
+                    viewport-height: log-layout.preferred-height;
+
+                    log-layout := VerticalLayout {
+                        padding: Spacing.sm;
+                        spacing: 2px;
+
+                        for entry in logs: Rectangle {
+                            height: 24px;
+
+                            HorizontalLayout {
+                                spacing: Spacing.sm;
+
+                                // Timestamp
+                                Text {
+                                    text: entry.timestamp;
+                                    font-size: 11px;
+                                    font-family: "monospace";
+                                    color: #888888;
+                                    width: 180px;
+                                }
+
+                                // Level badge
+                                Rectangle {
+                                    width: 50px;
+                                    height: 18px;
+                                    border-radius: 3px;
+                                    background: entry.level == "ERROR" ? #F44336 :
+                                               entry.level == "WARN" ? #FF9800 :
+                                               entry.level == "INFO" ? #2196F3 :
+                                               entry.level == "DEBUG" ? #9E9E9E : #607D8B;
+
+                                    Text {
+                                        text: entry.level;
+                                        font-size: 10px;
+                                        font-weight: 600;
+                                        color: white;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+                                }
+
+                                // Message
+                                Text {
+                                    text: entry.message;
+                                    font-size: 12px;
+                                    font-family: "monospace";
+                                    color: #E0E0E0;
+                                    overflow: elide;
+                                    horizontal-stretch: 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Footer
+            Text {
+                text: Locale.current == "ar" ?
+                    "عرض آخر 500 سجل" :
+                    "Showing last 500 entries";
+                font-size: Typography.caption;
+                color: Colors.text-secondary;
+                horizontal-alignment: center;
+            }
+        }
+    }
+}

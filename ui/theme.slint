@@ -1,0 +1,501 @@
+// ============================================================================
+// E2Manage POS Terminal - Design System Theme
+// ============================================================================
+// Generated from DESIGN-SYSTEM.md specifications
+// All design tokens for colors, typography, spacing, and sizing
+// ============================================================================
+
+import { Button, VerticalBox, HorizontalBox, LineEdit, ScrollView } from "std-widgets.slint";
+
+// ============================================================================
+// COLORS
+// ============================================================================
+
+global Colors {
+    // Primary Colors
+    out property <color> primary: #2563EB;
+    out property <color> primary-dark: #1E3A8A;
+    out property <color> primary-light: #3B82F6;
+
+    // Semantic Colors
+    out property <color> success: #22C55E;
+    out property <color> warning: #F59E0B;
+    out property <color> danger: #EF4444;
+    out property <color> info: #0EA5E9;
+
+    // Background Colors
+    out property <color> background: #F8FAFC;
+    out property <color> surface: #FFFFFF;
+    out property <color> surface-variant: #F1F5F9;
+    out property <color> cart-bg: #FAFAFA;
+    out property <color> overlay: rgba(0, 0, 0, 0.5);
+    out property <color> status-bar-bg: rgba(11, 21, 56, 0.9);
+    out property <color> customer-bar: #FFF3E0;
+
+    // Text Colors
+    out property <color> text-primary: #1E293B;
+    out property <color> text-secondary: #64748B;
+    out property <color> text-on-primary: #FFFFFF;
+    out property <color> text-muted: rgba(255, 255, 255, 0.85);
+    out property <color> text-on-surface: rgba(255, 255, 255, 0.9);
+    out property <color> success-text: #A5D6A7;
+    out property <color> orange-accent: #E65100;
+
+    // Border Colors
+    out property <color> border: #E2E8F0;
+    out property <color> border-focus: #2563EB;
+    out property <color> divider: rgba(0, 0, 0, 0.08);
+    out property <color> status-bar-border: rgba(255, 255, 255, 0.08);
+
+    // Progress Bar Colors
+    out property <color> progress-bg: rgba(255, 255, 255, 0.24);
+    out property <color> progress-fill: #FFFFFF;
+
+    // Additional UI Colors
+    out property <color> disabled: rgba(0, 0, 0, 0.38);
+    out property <color> ripple: rgba(37, 99, 235, 0.12);
+    out property <color> focus-ring: rgba(37, 99, 235, 0.4);
+
+    // Gradient Colors (for splash screen)
+    out property <color> gradient-top: #1E3A8A;
+    out property <color> gradient-bottom: #2563EB;
+
+    // Status Chip Colors
+    out property <color> chip-success-bg: #22C55E;
+    out property <color> chip-warning-bg: #F59E0B;
+    out property <color> chip-danger-bg: #EF4444;
+    out property <color> chip-neutral-bg: #E2E8F0;
+
+    // Role Colors (for cashier selection badge)
+    out property <color> role-cashier: #3B82F6;
+    out property <color> role-supervisor: #22C55E;
+    out property <color> role-admin: #F59E0B;
+}
+
+// ============================================================================
+// TYPOGRAPHY
+// ============================================================================
+
+global Typography {
+    // Font Sizes
+    out property <length> display: 32px;
+    out property <length> title: 24px;
+    out property <length> heading: 20px;
+    out property <length> subheading: 18px;
+    out property <length> body: 16px;
+    out property <length> caption: 14px;
+    out property <length> small: 12px;
+    out property <length> tiny: 11px;
+
+    // Arabic-specific font sizes (slightly larger for better readability)
+    out property <length> body-ar: 17px;
+    out property <length> caption-ar: 15px;
+    out property <length> small-ar: 13px;
+
+    // Font Weights (as integers for Slint)
+    out property <int> regular: 400;
+    out property <int> medium: 500;
+    out property <int> semi-bold: 600;
+    out property <int> bold: 700;
+
+    // Font family with Arabic fallbacks
+    // Primary: Cairo (Arabic-optimized), Tajawal, Noto Sans Arabic
+    // System fonts as final fallback
+    out property <string> font-family: "Cairo, Tajawal, Noto Sans Arabic, sans-serif";
+    out property <string> font-family-mono: "JetBrains Mono, Consolas, monospace";
+
+    // Helper function for locale-aware body size
+    pure public function body-size(locale: string) -> length {
+        return locale == "ar" ? body-ar : body;
+    }
+
+    // Helper function for locale-aware caption size
+    pure public function caption-size(locale: string) -> length {
+        return locale == "ar" ? caption-ar : caption;
+    }
+
+    // Helper function for locale-aware small size
+    pure public function small-size(locale: string) -> length {
+        return locale == "ar" ? small-ar : small;
+    }
+}
+
+// ============================================================================
+// SPACING
+// ============================================================================
+
+global Spacing {
+    out property <length> xxs: 2px;   // 4xs
+    out property <length> xs: 4px;    // 3xs
+    out property <length> sm: 8px;    // xs
+    out property <length> md: 12px;   // sm
+    out property <length> lg: 16px;   // md
+    out property <length> xl: 24px;   // lg
+    out property <length> xxl: 32px;  // xl
+    out property <length> xxxl: 48px; // 2xl
+
+    // Common patterns
+    out property <length> card-padding: 16px;
+    out property <length> input-padding-h: 12px;
+    out property <length> button-padding-h: 24px;
+    out property <length> button-padding-v: 12px;
+    out property <length> screen-margin: 24px;
+    out property <length> section-gap: 24px;
+}
+
+// ============================================================================
+// SIZING
+// ============================================================================
+
+global Sizes {
+    // Button Heights
+    out property <length> button-height: 48px;
+    out property <length> button-small: 40px;
+    out property <length> button-large: 56px;
+    out property <length> button-icon: 48px;
+
+    // Input Heights
+    out property <length> input-height: 44px;
+    out property <length> input-large: 56px;
+
+    // Component Sizes
+    out property <length> header-height: 64px;
+    out property <length> status-bar-height: 48px;
+    out property <length> list-item-height: 56px;
+    out property <length> touch-target: 48px;
+
+    // Avatar Sizes
+    out property <length> avatar-sm: 40px;
+    out property <length> avatar-md: 64px;
+    out property <length> avatar-lg: 72px;
+    out property <length> avatar-xl: 96px;
+
+    // Icon Sizes
+    out property <length> icon-xs: 12px;
+    out property <length> icon-sm: 16px;
+    out property <length> icon-md: 24px;
+    out property <length> icon-lg: 32px;
+    out property <length> icon-xl: 40px;
+    out property <length> icon-xxl: 64px;
+
+    // Progress Bar
+    out property <length> progress-height: 8px;
+    out property <length> progress-width: 300px;
+
+    // Keypad
+    out property <length> key-width: 80px;
+    out property <length> key-height: 64px;
+    out property <length> key-gap: 12px;
+
+    // PIN Dots
+    out property <length> pin-dot-size: 12px;
+    out property <length> pin-dot-gap: 16px;
+    out property <length> pin-container-width: 260px;
+    out property <length> pin-container-height: 52px;
+
+    // Status Dot
+    out property <length> status-dot: 8px;
+
+    // Cards
+    out property <length> card-min-width: 280px;
+
+    // Tiles
+    out property <length> cashier-tile-width: 220px;
+    out property <length> cashier-tile-height: 195px;
+    out property <length> category-tile-size: 85px;
+    out property <length> payment-tile-width: 220px;
+    out property <length> payment-tile-height: 140px;
+    out property <length> big-option-width: 420px;
+    out property <length> big-option-height: 180px;
+
+    // Shortcut Buttons
+    out property <length> shortcut-width: 120px;
+    out property <length> shortcut-height: 72px;
+
+    // Navigation
+    out property <length> nav-width: 320px;
+    out property <length> nav-row-height: 52px;
+
+    // Cart Panel
+    out property <length> cart-width: 340px;
+}
+
+// ============================================================================
+// BORDER RADIUS
+// ============================================================================
+
+global Radius {
+    out property <length> none: 0px;
+    out property <length> sm: 4px;
+    out property <length> md: 8px;
+    out property <length> lg: 12px;
+    out property <length> xl: 16px;
+    out property <length> xxl: 20px;
+    out property <length> full: 9999px;
+
+    // Component-specific
+    out property <length> button: 8px;
+    out property <length> input: 8px;
+    out property <length> card: 12px;
+    out property <length> dialog: 16px;
+    out property <length> avatar: 9999px; // full circle
+    out property <length> chip: 9999px;
+    out property <length> progress: 4px;
+}
+
+// ============================================================================
+// SHADOWS (as string descriptions - apply manually in components)
+// ============================================================================
+
+global Shadows {
+    // Slint doesn't have native shadow support like CSS
+    // These are placeholder values for documentation
+    // Use drop-shadow property or border effects as alternatives
+    out property <int> none: 0;
+    out property <int> sm: 1;
+    out property <int> md: 2;
+    out property <int> lg: 3;
+}
+
+// ============================================================================
+// ANIMATION DURATIONS (in milliseconds)
+// ============================================================================
+
+global Animation {
+    out property <duration> fast: 100ms;
+    out property <duration> normal: 200ms;
+    out property <duration> slow: 300ms;
+    out property <duration> dialog: 150ms;
+    out property <duration> toast: 200ms;
+    out property <duration> progress: 300ms;
+    out property <duration> pulse: 1000ms;
+}
+
+// ============================================================================
+// Z-INDEX LAYERS
+// ============================================================================
+
+global Layers {
+    out property <int> base: 0;
+    out property <int> dropdown: 100;
+    out property <int> sticky: 200;
+    out property <int> modal: 300;
+    out property <int> toast: 400;
+    out property <int> tooltip: 500;
+}
+
+// ============================================================================
+// RTL SUPPORT
+// ============================================================================
+
+global Layout {
+    // Set to true for RTL languages (Arabic)
+    in-out property <bool> rtl: true;
+
+    // Helper properties for directional layouts
+    out property <TextHorizontalAlignment> text-start: rtl ? TextHorizontalAlignment.right : TextHorizontalAlignment.left;
+    out property <TextHorizontalAlignment> text-end: rtl ? TextHorizontalAlignment.left : TextHorizontalAlignment.right;
+
+    // Direction-aware arrow functions
+    // Back arrow points right (→) in RTL, left (←) in LTR
+    pure public function back-arrow() -> string {
+        return rtl ? "→" : "←";
+    }
+
+    // Forward arrow points left (←) in RTL, right (→) in LTR
+    pure public function forward-arrow() -> string {
+        return rtl ? "←" : "→";
+    }
+
+    // Chevron arrows for list items
+    pure public function chevron-start() -> string {
+        return rtl ? "›" : "‹";
+    }
+
+    pure public function chevron-end() -> string {
+        return rtl ? "‹" : "›";
+    }
+}
+
+// ============================================================================
+// LOCALE
+// ============================================================================
+
+global Locale {
+    // Current locale: "ar", "en", "fr"
+    in-out property <string> current: "ar";
+
+    // Common labels (can be extended)
+    out property <string> app-name: current == "ar" ? "E2Manage نظام نقاط البيع" : "E2Manage POS";
+    out property <string> online: current == "ar" ? "متصل" : "Online";
+    out property <string> offline: current == "ar" ? "غير متصل" : "Offline";
+    out property <string> syncing: current == "ar" ? "جارٍ المزامنة..." : "Syncing...";
+    out property <string> loading: current == "ar" ? "جارٍ التحميل..." : "Loading...";
+    out property <string> error: current == "ar" ? "خطأ" : "Error";
+    out property <string> success: current == "ar" ? "نجح" : "Success";
+    out property <string> cancel: current == "ar" ? "إلغاء" : "Cancel";
+    out property <string> confirm: current == "ar" ? "تأكيد" : "Confirm";
+    out property <string> save: current == "ar" ? "حفظ" : "Save";
+    out property <string> back: current == "ar" ? "رجوع" : "Back";
+    out property <string> next: current == "ar" ? "التالي" : "Next";
+    out property <string> done: current == "ar" ? "تم" : "Done";
+
+    // Terminal registration
+    out property <string> not-registered: current == "ar" ? "غير مسجل" : "Not Registered";
+
+    // Login button
+    out property <string> login-button: current == "ar" ? "دخول" : "Login";
+
+    // Splash screen status messages
+    out property <string> splash-starting: current == "ar" ? "جارٍ البدء..." : "Starting...";
+    out property <string> splash-connecting: current == "ar" ? "جارٍ الاتصال بالخادم..." : "Connecting to server...";
+    out property <string> splash-loading-config: current == "ar" ? "تحميل الإعدادات..." : "Loading configuration...";
+    out property <string> splash-syncing-products: current == "ar" ? "جارٍ مزامنة المنتجات..." : "Syncing products...";
+    out property <string> splash-preparing: current == "ar" ? "تجهيز الواجهة..." : "Preparing interface...";
+    out property <string> splash-ready: current == "ar" ? "جاهز!" : "Ready!";
+}
+
+// ============================================================================
+// APPLICATION STATE (shared across screens)
+// ============================================================================
+
+export global AppState {
+    // Terminal info
+    in-out property <string> terminal-code: "POS-001";
+    in-out property <string> terminal-name: "Main Terminal";
+    in-out property <string> company-name: "";
+    in-out property <string> version: "v1.0.0";
+
+    // Connection state
+    in-out property <bool> is-online: true;
+    in-out property <string> last-sync: "10:30";
+    in-out property <int> pending-sync-count: 0;
+
+    // Current user/shift
+    in-out property <string> current-user: "";
+    in-out property <string> current-shift: "";
+    in-out property <bool> shift-active: false;
+
+    // Current time
+    in-out property <string> current-time: "10:30";
+
+    // Currency configuration (set from backend via Rust)
+    in-out property <string> currency: "LYD";
+    in-out property <int> currency-decimals: 3;
+    in-out property <string> zero-amount: "0.000";
+
+    // Tax configuration (set from backend via Rust)
+    in-out property <float> tax-rate-value: 0;
+    in-out property <string> tax-rate-label: "0%";
+    in-out property <bool> tax-inclusive: false;
+}
+
+// ============================================================================
+// CART STATE
+// ============================================================================
+
+global CartState {
+    in-out property <int> item-count: 0;
+    in-out property <string> subtotal: "0.000";
+    in-out property <string> tax: "0.000";
+    in-out property <string> total: "0.000";
+    in-out property <string> currency: AppState.currency;
+    in-out property <string> customer-name: "Guest";
+}
+
+// ============================================================================
+// SETTINGS STATE
+// ============================================================================
+
+global SettingsState {
+    // Current settings sub-screen
+    in-out property <string> current-screen: "home";
+
+    // About settings
+    in-out property <string> hardware-id: "a1b2c3d4e5f6";
+    in-out property <string> tenant-id: "";
+    in-out property <string> company-name: "Demo Company";
+    in-out property <string> electron-version: "";
+    in-out property <string> os-info: "Linux";
+    in-out property <string> registered-at: "2024-01-01 10:00";
+
+    // Security settings
+    in-out property <bool> pin-enabled: true;
+    in-out property <bool> auto-lock-enabled: true;
+    in-out property <int> auto-lock-timeout: 5;
+    in-out property <bool> require-pin-refund: true;
+    in-out property <bool> require-pin-discount: true;
+    in-out property <bool> require-pin-void: true;
+    in-out property <bool> require-pin-drawer: false;
+
+    // Sync settings
+    in-out property <bool> auto-sync-enabled: true;
+    in-out property <int> sync-interval: 5;
+    in-out property <string> last-full-sync: "2024-01-15 10:00";
+    in-out property <int> pending-uploads: 0;
+    in-out property <int> pending-downloads: 0;
+    in-out property <bool> sync-in-progress: false;
+    in-out property <int> sync-progress: 0;
+    in-out property <string> sync-status: "";
+    in-out property <bool> wifi-only: false;
+    in-out property <bool> sync-on-startup: true;
+
+    // Display settings
+    in-out property <string> language: "ar";
+    in-out property <string> theme: "light";
+    in-out property <int> brightness: 100;
+    in-out property <int> font-scale: 100;
+    in-out property <bool> sound-enabled: true;
+    in-out property <int> screen-timeout: 5;
+
+    // Payment settings
+    in-out property <string> default-payment-method: "cash";
+    in-out property <bool> allow-split-payment: true;
+    in-out property <bool> require-signature: false;
+    in-out property <int> signature-threshold: 50;
+    in-out property <string> currency: AppState.currency;
+    in-out property <bool> allow-multi-currency: false;
+    in-out property <bool> round-cash: true;
+    in-out property <string> rounding-mode: "nearest";
+    in-out property <bool> emv-enabled: true;
+    in-out property <string> emv-terminal-id: "";
+
+    // Printer settings
+    in-out property <string> selected-printer-id: "USB-001";
+    in-out property <string> printer-ip: "";
+    in-out property <int> paper-width: 80;
+    in-out property <bool> auto-print: true;
+    in-out property <bool> print-logo: true;
+    in-out property <bool> open-drawer: true;
+}
+
+// ============================================================================
+// RESPONSIVE LAYOUT
+// ============================================================================
+
+export global Responsive {
+    // Viewport dimensions (updated by MainWindow on resize)
+    in-out property <length> viewport-width: 1024px;
+    in-out property <length> viewport-height: 768px;
+
+    // Breakpoints
+    out property <length> breakpoint-compact: 800px;   // Below this = stacked layout
+    out property <length> breakpoint-tablet: 768px;
+    out property <length> breakpoint-desktop: 1024px;
+
+    // Computed layout modes
+    out property <bool> is-compact: viewport-width < breakpoint-compact;
+    out property <bool> is-tablet: viewport-width >= breakpoint-tablet && viewport-width < breakpoint-desktop;
+    out property <bool> is-desktop: viewport-width >= breakpoint-desktop;
+
+    // Compact mode adjustments
+    out property <length> compact-header-height: 56px;
+    out property <length> compact-status-bar-height: 40px;
+    out property <length> compact-button-height: 44px;
+}
+
+// ============================================================================
+// EXPORT FOR MAIN WINDOW
+// ============================================================================
+
+export { Colors, Typography, Spacing, Sizes, Radius, Shadows, Animation, Layers, Layout, Locale, CartState, SettingsState }
