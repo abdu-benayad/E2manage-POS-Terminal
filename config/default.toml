@@ -1,0 +1,121 @@
+# ============================================================================
+# E2Manage POS Terminal - Default Configuration
+# ============================================================================
+# This file contains default configuration values for the POS terminal.
+# Override values by creating a local.toml in the same directory.
+# ============================================================================
+
+[terminal]
+# Terminal identifier (assigned by backend during registration)
+name = "POS-001"
+
+# Default locale for UI (ar = Arabic, en = English, fr = French)
+locale = "ar"
+
+# Default currency code (ISO 4217)
+currency = "LYD"
+
+# Sector type: SUPERMARKET, RESTAURANT, FAST_FOOD, RETAIL, DISTRIBUTOR
+sector = "SUPERMARKET"
+
+# ============================================================================
+# API Configuration
+# ============================================================================
+
+[api]
+# Backend API base URL
+base_url = "https://jooher.app"
+
+# Request timeout in seconds
+timeout_seconds = 30
+
+# Maximum retry attempts for failed requests
+max_retries = 3
+
+# ============================================================================
+# Sync Configuration
+# ============================================================================
+
+[sync]
+# Catalog sync interval in minutes
+interval_minutes = 10
+
+# Heartbeat interval in seconds
+heartbeat_seconds = 60
+
+# Maximum offline transactions before warning
+offline_warning_threshold = 100
+
+# ============================================================================
+# UI Configuration
+# ============================================================================
+
+[ui]
+# Right-to-left layout (true for Arabic)
+rtl = true
+
+# Theme: light, dark (dark not yet implemented)
+theme = "light"
+
+# Touch-friendly mode (larger targets)
+touch_mode = true
+
+# ============================================================================
+# Hardware Configuration
+# ============================================================================
+
+[hardware]
+# Receipt printer
+[hardware.printer]
+enabled = true
+type = "escpos"  # escpos, cups
+port = "/dev/ttyUSB0"
+baud_rate = 9600
+paper_width = 80  # mm
+
+# Barcode scanner
+[hardware.scanner]
+enabled = true
+port = "/dev/ttyUSB1"
+baud_rate = 9600
+
+# Cash drawer
+[hardware.drawer]
+enabled = true
+printer_kick = true  # Use printer to trigger drawer
+
+# Weighing scale
+[hardware.scale]
+enabled = false
+port = "/dev/ttyUSB2"
+baud_rate = 9600
+protocol = "cas"  # cas, toledo, generic
+
+# ============================================================================
+# Database Configuration
+# ============================================================================
+
+[database]
+# SQLite database path (relative to data directory)
+path = "pos.db"
+
+# Enable WAL mode for better concurrency
+wal_mode = true
+
+# ============================================================================
+# Logging Configuration
+# ============================================================================
+
+[logging]
+# Log level: trace, debug, info, warn, error
+level = "info"
+
+# Log to file
+file_enabled = true
+file_path = "logs/pos.log"
+
+# Max log file size in MB before rotation
+max_size_mb = 10
+
+# Number of backup files to keep
+backups = 5
