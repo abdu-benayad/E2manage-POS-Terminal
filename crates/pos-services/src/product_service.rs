@@ -667,6 +667,9 @@ mod tests {
             is_weighable: true,
             is_serialized: false,
             is_active: true,
+            product_type: "PHYSICAL_GOOD".to_string(),
+            track_inventory: true,
+            product_nature: "TANGIBLE".to_string(),
         };
 
         db.save_product(&row).unwrap();
