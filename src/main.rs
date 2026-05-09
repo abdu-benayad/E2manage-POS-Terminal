@@ -5,15 +5,17 @@
 slint::include_modules!();
 
 use rust_decimal::prelude::ToPrimitive;
-use e2manage_pos_terminal::api::ApiClient;
-use e2manage_pos_terminal::db::{init_database, Database};
-use e2manage_pos_terminal::services::{AuthService, CartService, DraftService, FeatureService, PairingService, ProductService, SharedDraftService, SyncService, SyncEvent, SystemService};
-use e2manage_pos_terminal::ui::navigation::{NavigationResult, Navigator};
 use e2manage_pos_terminal::api::PairingStatus;
+use e2manage_pos_terminal::db::Database;
+use e2manage_pos_terminal::services::{
+    CartService, DraftService, FeatureService, PairingService, ProductService, SyncEvent,
+    SyncService, SystemService,
+};
+use e2manage_pos_terminal::ui::navigation::{NavigationResult, Navigator};
 use parking_lot::Mutex;
+use pos_bootstrap::{AppContext, InitConfig};
 use slint::{ModelRc, SharedString, VecModel};
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::runtime::Runtime;
@@ -22,9 +24,6 @@ use tracing::{debug, error, info, warn};
 
 /// Polling interval for pairing status (in milliseconds)
 const PAIRING_POLL_INTERVAL_MS: u64 = 3000;
-
-/// Sync interval in minutes (how often to pull data from backend)
-const SYNC_INTERVAL_MINUTES: u64 = 5;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize logging
@@ -37,79 +36,43 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("  E2Manage POS Terminal v{}", env!("CARGO_PKG_VERSION"));
     info!("===========================================");
 
-    // Create tokio runtime for async operations
-    let runtime = Arc::new(Runtime::new()?);
+    // Build the application context: tokio runtime, database, API client,
+    // and every service the UI needs. The startup sequence lives in
+    // `pos-bootstrap` so the headless CLI driver and any future binary
+    // can share it. Behaviour-preserving extraction of the previous
+    // ~80-line inline init (logging on init steps, default URLs, etc).
+    let AppContext {
+        config,
+        runtime,
+        db,
+        api,
+        auth: auth_service,
+        pairing: pairing_service,
+        cart: cart_service,
+        draft: draft_service,
+        // shared_draft is already plumbed into sync_service inside pos_bootstrap::init.
+        shared_draft: _shared_draft_service,
+        sync: sync_service,
+        sync_tx,
+        saved_session,
+        registration,
+        // `product` and `system` are pre-built by bootstrap but the UI
+        // callbacks currently instantiate their own copies — leaving that
+        // untouched in this commit; future cleanup can route through the
+        // shared instances.
+        product: _product_service,
+        system: _system_service,
+    } = pos_bootstrap::init(InitConfig::from_env())?;
 
-    // Initialize database in data/ directory
-    let data_dir = PathBuf::from("data");
-    let db = Arc::new(init_database(&data_dir)?);
-    info!("Database initialized in {:?}", data_dir);
-
-    // Get server URL from environment or use default
-    let server_url = std::env::var("E2M_API_URL")
-        .unwrap_or_else(|_| "http://178.156.135.235:3000".to_string());
-    info!("API Server: {}", server_url);
-
-    // Create API client
-    let api = Arc::new(ApiClient::new(&server_url));
-
-    // Load saved session token and set on API client
-    let auth_service = Arc::new(AuthService::new(Arc::clone(&api), Arc::clone(&db)));
-    let saved_session = auth_service.load_saved_session().ok().flatten();
-    if let Some(ref session) = saved_session {
-        if !session.session_token.is_empty() {
-            info!("Loaded saved session token for terminal: {}", session.terminal_code);
-            runtime.block_on(api.set_token(session.session_token.clone()));
-        }
-    }
-
-    // Create services
-    let pairing_service = Arc::new(PairingService::new(Arc::clone(&api), Arc::clone(&db)));
+    // FeatureService is consumed by Navigator and is therefore a UI-side
+    // concern; pos-bootstrap deliberately does not include it in AppContext.
     let feature_service = FeatureService::new(Arc::clone(&db));
     let navigator = Arc::new(Mutex::new(Navigator::new(feature_service)));
 
-    // Get terminal info for shared drafts (if registered)
-    // Note: warehouse_id would typically come from terminal_config table or backend
-    let registration = pairing_service.get_registration().ok().flatten();
-    let terminal_id_for_drafts = registration
-        .as_ref()
-        .and_then(|r| r.terminal_id.clone())
-        .or_else(|| registration.as_ref().and_then(|r| r.terminal_code.clone()))
-        .unwrap_or_else(|| "TERM-001".to_string());
-
-    // Get warehouse_id from terminal_config if available, otherwise use tenant_id or default
-    let warehouse_id_for_drafts = registration
-        .as_ref()
-        .and_then(|r| r.tenant_id.clone())
-        .unwrap_or_else(|| "default-warehouse".to_string());
-
-    // Create shared draft service for cloud-synced drafts
-    let shared_draft_service = Arc::new(SharedDraftService::new(
-        Arc::clone(&api),
-        Arc::clone(&db),
-        warehouse_id_for_drafts,
-        terminal_id_for_drafts,
-    ));
-
-    // Create sync service with shared draft service
-    let mut sync_service = SyncService::new(
-        Arc::clone(&api),
-        Arc::clone(&db),
-        SYNC_INTERVAL_MINUTES,
-    );
-    sync_service.set_shared_draft_service(Arc::clone(&shared_draft_service));
-    let sync_service = Arc::new(sync_service);
-
-    let cart_service = Arc::new(CartService::new());
-    let draft_service = Arc::new(DraftService::new(Arc::clone(&db)));
-
-    // Create broadcast channel for sync events
-    let (sync_tx, _sync_rx) = broadcast::channel::<SyncEvent>(16);
-    let sync_tx = Arc::new(sync_tx);
-
-    // Check if terminal is registered and get terminal code and company name
-    let is_registered = pairing_service.is_registered().unwrap_or(false);
-    let registration = pairing_service.get_registration().ok().flatten();
+    // Derive registration display fields. `is_registered` previously came
+    // from a separate pairing_service.is_registered() call; the same
+    // boolean is already on the loaded TerminalRegistration row.
+    let is_registered = registration.as_ref().map(|r| r.is_registered).unwrap_or(false);
     let terminal_code = registration
         .as_ref()
         .and_then(|r| r.terminal_code.clone())
@@ -151,7 +114,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Store current server URL for callbacks
-    let current_server_url = Arc::new(RwLock::new(server_url.clone()));
+    let current_server_url = Arc::new(RwLock::new(config.server_url.clone()));
 
     // Set up pairing callbacks
     setup_pairing_callbacks(

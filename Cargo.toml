@@ -81,6 +81,7 @@ pos-db.workspace = true
 pos-api.workspace = true
 pos-printing.workspace = true
 pos-services.workspace = true
+pos-bootstrap.workspace = true
 
 # UI Framework - using specific backend to reduce compile time
 # Available backends: backend-qt, backend-winit, backend-linuxkms
