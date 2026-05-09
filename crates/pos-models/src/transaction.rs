@@ -3,6 +3,8 @@
 //! This module contains the transaction-related domain models for the POS terminal.
 //! Transactions represent completed or in-progress sales, returns, and exchanges.
 
+use std::str::FromStr;
+
 use chrono::{DateTime, Utc};
 use rust_decimal::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -11,9 +13,10 @@ use uuid::Uuid;
 use crate::cart::{Cart, CartItem};
 
 /// Transaction status
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TransactionStatus {
     /// Transaction is being created (not yet completed)
+    #[default]
     Draft,
     /// Transaction completed successfully
     Completed,
@@ -21,12 +24,6 @@ pub enum TransactionStatus {
     Voided,
     /// Transaction was a return (refund)
     Returned,
-}
-
-impl Default for TransactionStatus {
-    fn default() -> Self {
-        Self::Draft
-    }
 }
 
 impl TransactionStatus {
@@ -39,23 +36,27 @@ impl TransactionStatus {
             TransactionStatus::Returned => "RETURNED",
         }
     }
+}
 
-    /// Creates a status from a string
-    pub fn from_str(s: &str) -> Option<Self> {
+impl FromStr for TransactionStatus {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_uppercase().as_str() {
-            "DRAFT" => Some(TransactionStatus::Draft),
-            "COMPLETED" => Some(TransactionStatus::Completed),
-            "VOIDED" => Some(TransactionStatus::Voided),
-            "RETURNED" => Some(TransactionStatus::Returned),
-            _ => None,
+            "DRAFT" => Ok(TransactionStatus::Draft),
+            "COMPLETED" => Ok(TransactionStatus::Completed),
+            "VOIDED" => Ok(TransactionStatus::Voided),
+            "RETURNED" => Ok(TransactionStatus::Returned),
+            _ => Err(()),
         }
     }
 }
 
 /// Payment method types
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PaymentMethod {
     /// Cash payment
+    #[default]
     Cash,
     /// Card payment (credit/debit via EMV)
     Card,
@@ -67,12 +68,6 @@ pub enum PaymentMethod {
     Other,
 }
 
-impl Default for PaymentMethod {
-    fn default() -> Self {
-        Self::Cash
-    }
-}
-
 impl PaymentMethod {
     /// Returns the method as a string for database/API
     pub fn as_str(&self) -> &'static str {
@@ -82,18 +77,6 @@ impl PaymentMethod {
             PaymentMethod::Wallet => "WALLET",
             PaymentMethod::Credit => "CREDIT",
             PaymentMethod::Other => "OTHER",
-        }
-    }
-
-    /// Creates a payment method from a string
-    pub fn from_str(s: &str) -> Option<Self> {
-        match s.to_uppercase().as_str() {
-            "CASH" => Some(PaymentMethod::Cash),
-            "CARD" => Some(PaymentMethod::Card),
-            "WALLET" => Some(PaymentMethod::Wallet),
-            "CREDIT" => Some(PaymentMethod::Credit),
-            "OTHER" => Some(PaymentMethod::Other),
-            _ => None,
         }
     }
 
@@ -115,6 +98,21 @@ impl PaymentMethod {
                 PaymentMethod::Credit => "Credit",
                 PaymentMethod::Other => "Other",
             }
+        }
+    }
+}
+
+impl FromStr for PaymentMethod {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_uppercase().as_str() {
+            "CASH" => Ok(PaymentMethod::Cash),
+            "CARD" => Ok(PaymentMethod::Card),
+            "WALLET" => Ok(PaymentMethod::Wallet),
+            "CREDIT" => Ok(PaymentMethod::Credit),
+            "OTHER" => Ok(PaymentMethod::Other),
+            _ => Err(()),
         }
     }
 }
@@ -594,6 +592,8 @@ pub fn generate_receipt_number(terminal_id: &str, sequence: u32) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use super::*;
     use crate::product::{Product, ProductUnit};
     use rust_decimal::Decimal;
@@ -628,9 +628,9 @@ mod tests {
         assert_eq!(TransactionStatus::Voided.as_str(), "VOIDED");
         assert_eq!(TransactionStatus::Returned.as_str(), "RETURNED");
 
-        assert_eq!(TransactionStatus::from_str("DRAFT"), Some(TransactionStatus::Draft));
-        assert_eq!(TransactionStatus::from_str("completed"), Some(TransactionStatus::Completed));
-        assert_eq!(TransactionStatus::from_str("invalid"), None);
+        assert_eq!(TransactionStatus::from_str("DRAFT"), Ok(TransactionStatus::Draft));
+        assert_eq!(TransactionStatus::from_str("completed"), Ok(TransactionStatus::Completed));
+        assert_eq!(TransactionStatus::from_str("invalid"), Err(()));
     }
 
     #[test]
@@ -640,9 +640,9 @@ mod tests {
         assert_eq!(PaymentMethod::Wallet.as_str(), "WALLET");
         assert_eq!(PaymentMethod::Credit.as_str(), "CREDIT");
 
-        assert_eq!(PaymentMethod::from_str("CASH"), Some(PaymentMethod::Cash));
-        assert_eq!(PaymentMethod::from_str("card"), Some(PaymentMethod::Card));
-        assert_eq!(PaymentMethod::from_str("invalid"), None);
+        assert_eq!(PaymentMethod::from_str("CASH"), Ok(PaymentMethod::Cash));
+        assert_eq!(PaymentMethod::from_str("card"), Ok(PaymentMethod::Card));
+        assert_eq!(PaymentMethod::from_str("invalid"), Err(()));
     }
 
     #[test]

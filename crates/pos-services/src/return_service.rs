@@ -604,7 +604,7 @@ impl ReturnService {
 
                             Payment {
                                 id: p.id.clone(),
-                                method: PaymentMethod::from_str(&p.method).unwrap_or(PaymentMethod::Cash),
+                                method: p.method.parse::<PaymentMethod>().ok().unwrap_or(PaymentMethod::Cash),
                                 amount: p.amount,
                                 currency: p.currency.clone(),
                                 reference: p.reference.clone(),
@@ -634,7 +634,10 @@ impl ReturnService {
                         terminal_id: dto.terminal_id,
                         operator_id: dto.operator_id,
                         operator_name: dto.operator_name,
-                        status: TransactionStatus::from_str(&dto.status)
+                        status: dto
+                            .status
+                            .parse::<TransactionStatus>()
+                            .ok()
                             .unwrap_or(TransactionStatus::Completed),
                         created_at,
                         completed_at,
@@ -669,7 +672,10 @@ impl ReturnService {
             .map(|dt| dt.with_timezone(&Utc))
             .unwrap_or_else(|_| Utc::now());
 
-        let status = TransactionStatus::from_str(&row.sync_status)
+        let status = row
+            .sync_status
+            .parse::<TransactionStatus>()
+            .ok()
             .unwrap_or(TransactionStatus::Completed);
 
         Ok(Transaction {
