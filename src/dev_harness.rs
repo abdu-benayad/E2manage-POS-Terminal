@@ -21,7 +21,11 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     let weak = harness.as_weak();
     harness.on_toggle_theme(move || {
         if let Some(h) = weak.upgrade() {
-            let next = if h.get_mode().as_str() == "light" { "dark" } else { "light" };
+            let next = if h.get_mode().as_str() == "light" {
+                "dark"
+            } else {
+                "light"
+            };
             h.set_mode(next.into());
         }
     });
