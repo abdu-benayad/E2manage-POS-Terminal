@@ -6,6 +6,10 @@
 // ============================================================================
 
 import { Button as StdButton, VerticalBox, HorizontalBox, LineEdit, ScrollView } from "std-widgets.slint";
+// Bundled fonts — the .ttf imports inside fonts.slint cause the compiler
+// to embed and register them at runtime. Must be imported before anything
+// that references the font families.
+import { Fonts } from "tokens/fonts.slint";
 import { Colors, Typography, Spacing, Sizes, Radius, Animation, Layout, Locale, AppState, CartState, SettingsState, Responsive } from "theme.slint";
 import { Button, SmallButton, IconButton, LargeButton, QuickAmountButton } from "components/mod.slint";
 import { TextInput, SearchInput, AmountInput, PinInput, SelectInput } from "components/mod.slint";

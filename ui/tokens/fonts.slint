@@ -1,0 +1,49 @@
+// ============================================================================
+// E2Manage POS Terminal - Bundled font registrations
+// ============================================================================
+// The bare `import "...ttf"` statements below are recognised by the Slint
+// compiler (see vendor/i-slint-compiler/object_tree.rs around the
+// `custom_fonts` field, lines 199-225) and emitted as
+// `renderer().register_font_from_memory(...)` calls in the generated Rust
+// (vendor/i-slint-compiler/generator/rust.rs:3163). The bytes are embedded
+// at compile time because build.rs sets EmbedResourcesKind::EmbedFiles, and
+// the renderer registers them when the first window is created. No Rust
+// glue is required.
+//
+// Custom fonts from any imported document are collected via
+// `chain(type_loader.all_documents())` in passes.rs:299, so as long as this
+// file is reachable from main.slint the imports are picked up. We export a
+// dummy `Fonts` global so callers can use the standard
+// `import { Fonts } from "tokens/fonts.slint";` syntax (a bare
+// `import "tokens/fonts.slint";` is rejected by the parser — see
+// object_tree.rs:226-229).
+//
+// Paths are resolved relative to this file.
+// ============================================================================
+
+// Latin / European (IBM Plex Sans)
+import "../../assets/fonts/IBMPlexSans-Regular.ttf";
+import "../../assets/fonts/IBMPlexSans-Medium.ttf";
+import "../../assets/fonts/IBMPlexSans-SemiBold.ttf";
+import "../../assets/fonts/IBMPlexSans-Bold.ttf";
+
+// Arabic (IBM Plex Sans Arabic)
+import "../../assets/fonts/IBMPlexSansArabic-Regular.ttf";
+import "../../assets/fonts/IBMPlexSansArabic-Medium.ttf";
+import "../../assets/fonts/IBMPlexSansArabic-SemiBold.ttf";
+import "../../assets/fonts/IBMPlexSansArabic-Bold.ttf";
+
+// Monospace (JetBrains Mono — receipts, debug overlays)
+import "../../assets/fonts/JetBrainsMono-Regular.ttf";
+import "../../assets/fonts/JetBrainsMono-Bold.ttf";
+
+// Dummy global so this file can be imported with the named-import syntax.
+// Slint requires `import { X } from "file.slint";` form for .slint files;
+// importing for side effects only is rejected by the parser.
+export global Fonts {
+    // Canonical font-family names. Use these from Typography to avoid
+    // string typos at call sites.
+    out property <string> sans: "IBM Plex Sans";
+    out property <string> sans-arabic: "IBM Plex Sans Arabic";
+    out property <string> mono: "JetBrains Mono";
+}
