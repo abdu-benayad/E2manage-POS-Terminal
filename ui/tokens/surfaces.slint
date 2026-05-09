@@ -1,0 +1,38 @@
+import { Theme } from "theme.slint";
+
+// Four surface tiers from redesign spec §4.1.
+// Components apply these via background + border-color + drop-shadow-*
+// as appropriate. Gradients are not native to Slint — components compose
+// them via stacked Rectangles when needed (see Plan 2 components).
+export global Surfaces {
+    // === Tier 1: Background (window bedrock) ===
+    out property <color> bg-top:    Theme.is-dark ? #14171C : #FBFCFD;
+    out property <color> bg-bottom: Theme.is-dark ? #0A0C10 : #EEF1F5;
+
+    // === Tier 2: Panel (rail / products area / ops column / cart) ===
+    out property <color> panel-top:    Theme.is-dark ? #181C22 : #FFFFFF;
+    out property <color> panel-bottom: Theme.is-dark ? #0F1217 : #F8FAFD;
+    out property <color> panel-border: Theme.is-dark ? rgba(255,255,255,0.06) : rgba(11,13,16,0.06);
+    // Elevation shadow — Slint uses drop-shadow-color/blur/offset on Rectangle.
+    out property <color> panel-shadow: Theme.is-dark ? rgba(0,0,0,0.50) : rgba(11,13,16,0.10);
+    out property <length> panel-shadow-blur: 24px;
+    out property <length> panel-shadow-offset-y: 8px;
+
+    // === Tier 3: Surface (tiles / buttons / cart lines) ===
+    out property <color> surface-top:    Theme.is-dark ? #1C2028 : #FFFFFF;
+    out property <color> surface-bottom: Theme.is-dark ? #101318 : #F5F7FA;
+    out property <color> surface-border: Theme.is-dark ? rgba(255,255,255,0.07) : rgba(11,13,16,0.07);
+    out property <color> surface-shadow: Theme.is-dark ? rgba(0,0,0,0.40) : rgba(11,13,16,0.10);
+    out property <length> surface-shadow-blur: 14px;
+    out property <length> surface-shadow-offset-y: 6px;
+
+    // === Tier 4: Inset (search box, qty pills) ===
+    out property <color> inset-top:    Theme.is-dark ? #14171C : #FFFFFF;
+    out property <color> inset-bottom: Theme.is-dark ? #0B0D10 : #F8FAFD;
+    out property <color> inset-border: Theme.is-dark ? rgba(255,255,255,0.06) : rgba(11,13,16,0.08);
+
+    // === Top specular highlight (1 px white-ish line on the top inner edge) ===
+    // Apply via a 1 px child Rectangle when a surface needs a "lit" feel.
+    out property <color> specular-strong: Theme.is-dark ? rgba(255,255,255,0.12) : rgba(255,255,255,1.0);
+    out property <color> specular-soft:   Theme.is-dark ? rgba(255,255,255,0.06) : rgba(255,255,255,0.7);
+}
