@@ -1,0 +1,263 @@
+// ============================================================================
+// Theme Harness — visual review surface for design tokens (Tasks 3-7)
+// ============================================================================
+// Single scrollable view exercising every Surfaces tier, accent colour,
+// category accent, and typography sample under both themes and both
+// directions. Lives under ui/screens/dev/ because it is for engineering
+// review, not the cashier-facing app. Wired in via --theme-harness flag
+// in Task 9 (dev_harness.rs).
+// ============================================================================
+
+import { Theme, Surfaces, Fonts } from "../../tokens/mod.slint";
+import { Colors, Typography, Spacing, Radius, Layout, Locale } from "../../theme.slint";
+import { ScrollView } from "std-widgets.slint";
+
+export component ThemeHarness inherits Rectangle {
+    in-out property <string> mode <=> Theme.mode;
+    in-out property <bool> rtl <=> Layout.rtl;
+    in-out property <string> locale <=> Locale.current;
+
+    callback toggle-theme;
+    callback toggle-rtl;
+    callback cycle-locale;
+
+    background: Colors.background;
+
+    VerticalLayout {
+        spacing: Spacing.md;
+        padding: Spacing.lg;
+
+        // === Top toolbar with toggles ===
+        Rectangle {
+            height: 56px;
+            background: Colors.surface;
+            border-color: Colors.border;
+            border-width: 1px;
+            border-radius: Radius.md;
+
+            HorizontalLayout {
+                padding-left: Spacing.lg;
+                padding-right: Spacing.lg;
+                spacing: Spacing.md;
+                alignment: center;
+
+                Text {
+                    text: "WadiDMS POS — Theme Harness";
+                    font-family: Typography.font-family;
+                    font-size: Typography.heading;
+                    font-weight: Typography.semi-bold;
+                    color: Colors.text-primary;
+                    horizontal-stretch: 1;
+                    vertical-alignment: center;
+                }
+
+                Rectangle {
+                    width: 110px;
+                    height: 36px;
+                    background: Colors.surface-variant;
+                    border-radius: Radius.sm;
+                    TouchArea { clicked => { root.toggle-theme(); } }
+                    Text {
+                        text: "Theme: " + Theme.mode;
+                        font-family: Typography.font-family;
+                        font-size: Typography.caption;
+                        color: Colors.text-primary;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+
+                Rectangle {
+                    width: 110px;
+                    height: 36px;
+                    background: Colors.surface-variant;
+                    border-radius: Radius.sm;
+                    TouchArea { clicked => { root.toggle-rtl(); } }
+                    Text {
+                        text: Layout.is-rtl ? "Dir: RTL" : "Dir: LTR";
+                        font-family: Typography.font-family;
+                        font-size: Typography.caption;
+                        color: Colors.text-primary;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+
+                Rectangle {
+                    width: 110px;
+                    height: 36px;
+                    background: Colors.surface-variant;
+                    border-radius: Radius.sm;
+                    TouchArea { clicked => { root.cycle-locale(); } }
+                    Text {
+                        text: "Lang: " + Locale.current;
+                        font-family: Typography.font-family;
+                        font-size: Typography.caption;
+                        color: Colors.text-primary;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+
+        // === Scrollable swatch grid ===
+        ScrollView {
+            VerticalLayout {
+                spacing: Spacing.lg;
+                padding: Spacing.md;
+
+                // --- Section: Backgrounds ---
+                Text {
+                    text: "Surfaces — Background tier";
+                    font-family: Typography.font-family;
+                    font-size: Typography.subheading;
+                    font-weight: Typography.semi-bold;
+                    color: Colors.text-primary;
+                }
+                HorizontalLayout {
+                    spacing: Spacing.sm;
+                    Rectangle { width: 80px; height: 80px; background: Surfaces.bg-top; border-radius: Radius.sm; border-color: Colors.border; border-width: 1px; }
+                    Rectangle { width: 80px; height: 80px; background: Surfaces.bg-bottom; border-radius: Radius.sm; border-color: Colors.border; border-width: 1px; }
+                }
+
+                // --- Section: Panel tier ---
+                Text {
+                    text: "Panel tier";
+                    font-family: Typography.font-family;
+                    font-size: Typography.subheading;
+                    font-weight: Typography.semi-bold;
+                    color: Colors.text-primary;
+                }
+                HorizontalLayout {
+                    spacing: Spacing.sm;
+                    Rectangle {
+                        width: 80px; height: 80px;
+                        background: Surfaces.panel-top;
+                        border-radius: Radius.sm;
+                        border-color: Surfaces.panel-border;
+                        border-width: 1px;
+                        drop-shadow-color: Surfaces.panel-shadow;
+                        drop-shadow-blur: Surfaces.panel-shadow-blur;
+                        drop-shadow-offset-y: Surfaces.panel-shadow-offset-y;
+                    }
+                    Rectangle {
+                        width: 80px; height: 80px;
+                        background: Surfaces.panel-bottom;
+                        border-radius: Radius.sm;
+                        border-color: Surfaces.panel-border;
+                        border-width: 1px;
+                    }
+                }
+
+                // --- Section: Surface tier ---
+                Text {
+                    text: "Surface tier (tiles/buttons)";
+                    font-family: Typography.font-family;
+                    font-size: Typography.subheading;
+                    font-weight: Typography.semi-bold;
+                    color: Colors.text-primary;
+                }
+                HorizontalLayout {
+                    spacing: Spacing.sm;
+                    Rectangle {
+                        width: 80px; height: 80px;
+                        background: Surfaces.surface-top;
+                        border-radius: Radius.sm;
+                        border-color: Surfaces.surface-border;
+                        border-width: 1px;
+                        drop-shadow-color: Surfaces.surface-shadow;
+                        drop-shadow-blur: Surfaces.surface-shadow-blur;
+                        drop-shadow-offset-y: Surfaces.surface-shadow-offset-y;
+                    }
+                    Rectangle {
+                        width: 80px; height: 80px;
+                        background: Surfaces.surface-bottom;
+                        border-radius: Radius.sm;
+                        border-color: Surfaces.surface-border;
+                        border-width: 1px;
+                    }
+                }
+
+                // --- Section: Inset tier ---
+                Text {
+                    text: "Inset tier (search box / qty pill)";
+                    font-family: Typography.font-family;
+                    font-size: Typography.subheading;
+                    font-weight: Typography.semi-bold;
+                    color: Colors.text-primary;
+                }
+                HorizontalLayout {
+                    spacing: Spacing.sm;
+                    Rectangle { width: 80px; height: 80px; background: Surfaces.inset-top; border-radius: Radius.sm; border-color: Surfaces.inset-border; border-width: 1px; }
+                    Rectangle { width: 80px; height: 80px; background: Surfaces.inset-bottom; border-radius: Radius.sm; border-color: Surfaces.inset-border; border-width: 1px; }
+                }
+
+                // --- Section: Accent + Pay colours ---
+                Text {
+                    text: "Accents — lime / pay-green / danger / warning";
+                    font-family: Typography.font-family;
+                    font-size: Typography.subheading;
+                    font-weight: Typography.semi-bold;
+                    color: Colors.text-primary;
+                }
+                HorizontalLayout {
+                    spacing: Spacing.sm;
+                    Rectangle { width: 80px; height: 80px; background: Colors.accent-lime; border-radius: Radius.sm; }
+                    Rectangle { width: 80px; height: 80px; background: Colors.pay-green; border-radius: Radius.sm; }
+                    Rectangle { width: 80px; height: 80px; background: Colors.danger; border-radius: Radius.sm; }
+                    Rectangle { width: 80px; height: 80px; background: Colors.warning; border-radius: Radius.sm; }
+                }
+
+                // --- Section: Category accents ---
+                Text {
+                    text: "Category accents (tile left borders)";
+                    font-family: Typography.font-family;
+                    font-size: Typography.subheading;
+                    font-weight: Typography.semi-bold;
+                    color: Colors.text-primary;
+                }
+                HorizontalLayout {
+                    spacing: Spacing.sm;
+                    Rectangle { width: 80px; height: 80px; background: Colors.cat-coffee; border-radius: Radius.sm; }
+                    Rectangle { width: 80px; height: 80px; background: Colors.cat-bakery; border-radius: Radius.sm; }
+                    Rectangle { width: 80px; height: 80px; background: Colors.cat-cold; border-radius: Radius.sm; }
+                    Rectangle { width: 80px; height: 80px; background: Colors.cat-food; border-radius: Radius.sm; }
+                }
+
+                // --- Section: Typography ---
+                Text {
+                    text: "Typography — IBM Plex Sans + Plex Sans Arabic + JetBrains Mono";
+                    font-family: Typography.font-family;
+                    font-size: Typography.subheading;
+                    font-weight: Typography.semi-bold;
+                    color: Colors.text-primary;
+                }
+                Text {
+                    text: "Latin: Display 32 — The quick brown fox";
+                    font-family: Typography.font-family;
+                    font-size: Typography.display;
+                    color: Colors.text-primary;
+                }
+                Text {
+                    text: "Latin: Title 24 — Quick brown fox";
+                    font-family: Typography.font-family;
+                    font-size: Typography.title;
+                    color: Colors.text-primary;
+                }
+                Text {
+                    text: "Arabic: نظام نقاط البيع المتكامل — السلام عليكم";
+                    font-family: Typography.font-family;
+                    font-size: Typography.title;
+                    color: Colors.text-primary;
+                }
+                Text {
+                    text: "Mono numerics: 12.600 LYD · TXN #84219 · 14:32:07";
+                    font-family: Typography.font-family-mono;
+                    font-size: Typography.heading;
+                    color: Colors.pay-green;
+                }
+            }
+        }
+    }
+}
