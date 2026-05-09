@@ -1,0 +1,15 @@
+// ============================================================================
+// E2Manage POS Terminal - Tokens Module
+// ============================================================================
+// Central export file for design-system token globals.
+// Import from here: import { Fonts, Theme } from "tokens/mod.slint";
+// ============================================================================
+
+// Font family names (canonical strings for the bundled .ttf files).
+// Importing this also activates the bare `import "...ttf"` lines inside
+// fonts.slint, which is how the compiler embeds the font bytes.
+export { Fonts } from "fonts.slint";
+
+// Runtime-switchable light/dark mode. Downstream globals (Colors, Surfaces)
+// derive from Theme.mode; screens read Colors/Surfaces, never Theme directly.
+export { Theme } from "theme.slint";

@@ -1,0 +1,16 @@
+// ============================================================================
+// Theme — runtime-switchable light/dark mode + per-mode design values
+// ============================================================================
+// Owned by the redesign foundation. Every other token global (Colors in
+// ui/theme.slint, Surfaces in ui/tokens/surfaces.slint) reads from
+// Theme.mode and resolves to the correct value at runtime. No screen
+// reads Theme directly — they read Colors/Surfaces, which read Theme.
+
+export global Theme {
+    // "light" | "dark"
+    in-out property <string> mode: "light";
+
+    // Convenience predicates (avoid string compare scattered across components)
+    out property <bool> is-dark: mode == "dark";
+    out property <bool> is-light: mode == "light";
+}
