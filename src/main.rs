@@ -56,11 +56,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         sync_tx,
         saved_session,
         registration,
-        // `product` and `system` are pre-built by bootstrap but the UI
-        // callbacks currently instantiate their own copies — leaving that
-        // untouched in this commit; future cleanup can route through the
-        // shared instances.
-        product: _product_service,
+        product: product_service,
+        // SystemService is pre-built but the callbacks below still create
+        // their own copies (the type is stateless; cleanup pending).
         system: _system_service,
     } = pos_bootstrap::init(InitConfig::from_env())?;
 
@@ -143,7 +141,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let session_currency = saved_session.as_ref().map(|s| s.currency.clone()).unwrap_or_else(|| "LYD".to_string());
     setup_catalog_callbacks(
         &window,
-        Arc::clone(&db),
+        Arc::clone(&product_service),
         Arc::clone(&cart_service),
         session_currency.clone(),
     );
@@ -151,7 +149,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Set up price check callbacks (Phase 3 — Price Check Mode)
     setup_price_check_callbacks(
         &window,
-        Arc::clone(&db),
+        Arc::clone(&product_service),
         session_currency.clone(),
     );
 
@@ -160,7 +158,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &window,
         Arc::clone(&cart_service),
         session_currency.clone(),
-        Arc::clone(&db),
+        Arc::clone(&product_service),
     );
 
     // Set up draft save callback
@@ -440,6 +438,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let pairing_service_clone = Arc::clone(&pairing_service);
     let runtime_clone = Arc::clone(&runtime);
     let db_clone = Arc::clone(&db);
+    let product_service_clone = Arc::clone(&product_service);
     let sync_service_clone = Arc::clone(&sync_service);
     let sync_tx_clone = Arc::clone(&sync_tx);
 
@@ -451,6 +450,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             pairing_service_clone,
             runtime_clone,
             db_clone,
+            product_service_clone,
             sync_service_clone,
             sync_tx_clone,
             is_registered,
@@ -973,13 +973,12 @@ fn run_sync_with_ui_updates(
 /// Sets up catalog callbacks for category selection and product add-to-cart
 fn setup_catalog_callbacks(
     window: &MainWindow,
-    db: Arc<Database>,
+    product_service: Arc<ProductService>,
     cart_service: Arc<CartService>,
     currency: String,
 ) {
     // Build shared category color map for use in all product conversions
     let category_color_map: Arc<HashMap<String, (u8, u8, u8)>> = {
-        let product_service = ProductService::new(Arc::clone(&db));
         Arc::new(match product_service.categories() {
             Ok(cats) => cats.iter().enumerate()
                 .map(|(idx, c)| {
@@ -995,7 +994,7 @@ fn setup_catalog_callbacks(
 
     // Category selection callback - filters products by category
     let window_weak = window.as_weak();
-    let db_for_category = Arc::clone(&db);
+    let product_service_for_category = Arc::clone(&product_service);
     let currency_for_category = currency.clone();
     let color_map_for_category = Arc::clone(&category_color_map);
     window.on_select_category(move |category_id: SharedString| {
@@ -1003,7 +1002,7 @@ fn setup_catalog_callbacks(
         info!("Category selected: {}", if category_id_str.is_empty() { "All" } else { &category_id_str });
 
         let window_weak_clone = window_weak.clone();
-        let product_service = ProductService::new(Arc::clone(&db_for_category));
+        let product_service = Arc::clone(&product_service_for_category);
         let color_map = Arc::clone(&color_map_for_category);
 
         // Filter products by category (or get all if empty)
@@ -1070,13 +1069,13 @@ fn setup_catalog_callbacks(
     // For weighable items, opens the weight pad instead of adding directly
     let window_weak_for_cart = window.as_weak();
     let cart_service_for_add = Arc::clone(&cart_service);
-    let db_for_add = Arc::clone(&db);
+    let product_service_for_add = Arc::clone(&product_service);
     let currency_for_cart = currency.clone();
     window.on_add_to_cart(move |product_id: SharedString| {
         let product_id_str: String = product_id.into();
         info!("Adding product to cart: {}", product_id_str);
 
-        let product_service = ProductService::new(Arc::clone(&db_for_add));
+        let product_service = Arc::clone(&product_service_for_add);
         let cur = &currency_for_cart;
 
         // Get the product by ID
@@ -1163,7 +1162,7 @@ fn setup_catalog_callbacks(
 
     // PLU lookup callback — searches by PLU/barcode code and sets result properties
     let window_weak_plu = window.as_weak();
-    let db_for_plu = Arc::clone(&db);
+    let product_service_for_plu = Arc::clone(&product_service);
     let cart_service_for_plu = Arc::clone(&cart_service);
     let currency_for_plu = currency.clone();
     window.on_plu_lookup(move |plu_code: SharedString| {
@@ -1171,7 +1170,7 @@ fn setup_catalog_callbacks(
         info!("PLU lookup: {}", code);
 
         let window_weak_clone = window_weak_plu.clone();
-        let product_service = ProductService::new(Arc::clone(&db_for_plu));
+        let product_service = Arc::clone(&product_service_for_plu);
         let cart_svc = Arc::clone(&cart_service_for_plu);
         let cur = currency_for_plu.clone();
 
@@ -1297,14 +1296,14 @@ fn setup_catalog_callbacks(
 
     // PLU add-product callback — adds a specific product by ID (for multi-result selection)
     let window_weak_plu_add = window.as_weak();
-    let db_for_plu_add = Arc::clone(&db);
+    let product_service_for_plu_add = Arc::clone(&product_service);
     let cart_service_for_plu_add = Arc::clone(&cart_service);
     let currency_for_plu_add = currency.clone();
     window.on_plu_add_product(move |product_id: SharedString| {
         let product_id_str: String = product_id.into();
         info!("PLU add product: {}", product_id_str);
 
-        let product_service = ProductService::new(Arc::clone(&db_for_plu_add));
+        let product_service = Arc::clone(&product_service_for_plu_add);
         let cur = &currency_for_plu_add;
 
         match product_service.get_by_id(&product_id_str) {
@@ -1361,18 +1360,18 @@ fn setup_catalog_callbacks(
 /// Sets up price check callbacks — read-only product lookup without cart interaction
 fn setup_price_check_callbacks(
     window: &MainWindow,
-    db: Arc<Database>,
+    product_service: Arc<ProductService>,
     currency: String,
 ) {
     let window_weak = window.as_weak();
-    let db_clone = Arc::clone(&db);
+    let product_service_for_lookup = Arc::clone(&product_service);
     let cur = currency.clone();
 
     window.on_price_check_lookup(move |query: SharedString| {
         let query_str: String = query.into();
         info!("Price check lookup: {}", query_str);
 
-        let product_service = ProductService::new(Arc::clone(&db_clone));
+        let product_service = Arc::clone(&product_service_for_lookup);
         let currency = cur.clone();
 
         // Set searching state
@@ -1467,7 +1466,7 @@ fn setup_cart_item_callbacks(
     window: &MainWindow,
     cart_service: Arc<CartService>,
     currency: String,
-    db: Arc<Database>,
+    product_service: Arc<ProductService>,
 ) {
     // --- Increment item quantity ---
     let window_weak = window.as_weak();
@@ -1692,7 +1691,7 @@ fn setup_cart_item_callbacks(
     // Weight confirmed callback — adds a weighable item to cart with the given weight
     let window_weak = window.as_weak();
     let cart_svc = Arc::clone(&cart_service);
-    let db_for_weight = Arc::clone(&db);
+    let product_service_for_weight = Arc::clone(&product_service);
     let cur = currency.to_string();
     window.on_weight_confirmed(move |weight_str: SharedString| {
         let ws: String = weight_str.into();
@@ -1700,7 +1699,7 @@ fn setup_cart_item_callbacks(
 
         let window_weak = window_weak.clone();
         let cart_svc = Arc::clone(&cart_svc);
-        let db = Arc::clone(&db_for_weight);
+        let product_service = Arc::clone(&product_service_for_weight);
         let cur = cur.clone();
 
         // Slint callbacks run on the main thread, so we can upgrade directly
@@ -1709,7 +1708,6 @@ fn setup_cart_item_callbacks(
 
             match ws.parse::<rust_decimal::Decimal>() {
                 Ok(weight) if weight > rust_decimal::Decimal::ZERO => {
-                    let product_service = ProductService::new(Arc::clone(&db));
                     match product_service.get_by_id(&product_id) {
                         Ok(Some(product)) => {
                             match cart_svc.add_item(&product, weight) {
@@ -1897,6 +1895,7 @@ fn run_startup_sequence(
     pairing_service: Arc<PairingService>,
     runtime: Arc<Runtime>,
     db: Arc<Database>,
+    product_service: Arc<ProductService>,
     sync_service: Arc<SyncService>,
     sync_tx: Arc<broadcast::Sender<SyncEvent>>,
     is_registered: bool,
@@ -1932,7 +1931,7 @@ fn run_startup_sequence(
         info!("Terminal registered, navigating to login screen");
 
         // Load catalog data from database (initial load)
-        populate_catalog_data(window_weak.clone(), Arc::clone(&db), currency.clone());
+        populate_catalog_data(window_weak.clone(), Arc::clone(&product_service), currency.clone());
 
         // Load operators from database (for login screen)
         populate_operators_data(window_weak.clone(), Arc::clone(&db));
@@ -1941,6 +1940,7 @@ fn run_startup_sequence(
         start_background_sync(
             window_weak.clone(),
             Arc::clone(&db),
+            Arc::clone(&product_service),
             Arc::clone(&sync_service),
             Arc::clone(&sync_tx),
             Arc::clone(&runtime),
@@ -1964,12 +1964,13 @@ fn run_startup_sequence(
             // Registration was recovered — load data and go straight to login
             info!("Registration recovered during pairing request, navigating to login");
 
-            populate_catalog_data(window_weak.clone(), Arc::clone(&db), currency.clone());
+            populate_catalog_data(window_weak.clone(), Arc::clone(&product_service), currency.clone());
             populate_operators_data(window_weak.clone(), Arc::clone(&db));
 
             start_background_sync(
                 window_weak.clone(),
                 Arc::clone(&db),
+                Arc::clone(&product_service),
                 Arc::clone(&sync_service),
                 Arc::clone(&sync_tx),
                 Arc::clone(&runtime),
@@ -2001,7 +2002,7 @@ fn run_startup_sequence(
             }).ok();
 
             // Start polling for pairing status
-            start_pairing_poll(window_weak, pairing_service, runtime, db, sync_service, sync_tx);
+            start_pairing_poll(window_weak, pairing_service, runtime, db, product_service, sync_service, sync_tx);
         }
     }
 }
@@ -2075,6 +2076,7 @@ fn start_pairing_poll(
     pairing_service: Arc<PairingService>,
     runtime: Arc<Runtime>,
     db: Arc<Database>,
+    product_service: Arc<ProductService>,
     sync_service: Arc<SyncService>,
     sync_tx: Arc<broadcast::Sender<SyncEvent>>,
 ) {
@@ -2127,6 +2129,7 @@ fn start_pairing_poll(
                             // Load data and navigate to login after short delay
                             let window_weak_clone2 = window_weak.clone();
                             let db_clone = Arc::clone(&db);
+                            let product_service_clone = Arc::clone(&product_service);
                             let sync_service_clone = Arc::clone(&sync_service);
                             let sync_tx_clone = Arc::clone(&sync_tx);
                             let runtime_clone = Arc::clone(&runtime);
@@ -2163,7 +2166,7 @@ fn start_pairing_poll(
                                 }
 
                                 // Load catalog data from database (may be empty if sync failed)
-                                populate_catalog_data(window_weak_clone2.clone(), Arc::clone(&db_clone), "LYD".to_string());
+                                populate_catalog_data(window_weak_clone2.clone(), Arc::clone(&product_service_clone), "LYD".to_string());
 
                                 // Load operators from database (may be empty if sync failed)
                                 populate_operators_data(window_weak_clone2.clone(), Arc::clone(&db_clone));
@@ -2172,6 +2175,7 @@ fn start_pairing_poll(
                                 start_background_sync(
                                     window_weak_clone2.clone(),
                                     Arc::clone(&db_clone),
+                                    product_service_clone,
                                     sync_service_clone,
                                     sync_tx_clone,
                                     runtime_clone,
@@ -2225,12 +2229,10 @@ fn start_pairing_poll(
 /// Populates the UI with categories and products from the database
 fn populate_catalog_data(
     window_weak: slint::Weak<MainWindow>,
-    db: Arc<Database>,
+    product_service: Arc<ProductService>,
     currency: String,
 ) {
     info!("Loading catalog data from database...");
-
-    let product_service = ProductService::new(Arc::clone(&db));
 
     // Build category color map for product tiles (before consuming categories)
     let category_color_map: HashMap<String, (u8, u8, u8)> = match product_service.categories() {
@@ -2589,6 +2591,7 @@ fn generate_arabic_initials(name: &str) -> String {
 fn start_background_sync(
     window_weak: slint::Weak<MainWindow>,
     db: Arc<Database>,
+    product_service: Arc<ProductService>,
     sync_service: Arc<SyncService>,
     sync_tx: Arc<broadcast::Sender<SyncEvent>>,
     runtime: Arc<Runtime>,
@@ -2613,6 +2616,7 @@ fn start_background_sync(
     let mut rx = sync_tx.subscribe();
     let window_weak_for_listener = window_weak.clone();
     let db_for_listener = Arc::clone(&db);
+    let product_service_for_listener = Arc::clone(&product_service);
     let currency_for_listener = currency.clone();
     let pairing_service_for_listener = Arc::clone(&pairing_service);
     let runtime_for_listener = Arc::clone(&runtime);
@@ -2630,7 +2634,7 @@ fn start_background_sync(
                             // Refresh the UI with new data
                             populate_catalog_data(
                                 window_weak_for_listener.clone(),
-                                Arc::clone(&db_for_listener),
+                                Arc::clone(&product_service_for_listener),
                                 currency_for_listener.clone(),
                             );
                         }
@@ -2687,6 +2691,7 @@ fn start_background_sync(
                             let ps_clone = Arc::clone(&pairing_service_for_listener);
                             let rt_clone = Arc::clone(&runtime_for_listener);
                             let db_clone = Arc::clone(&db_for_listener);
+                            let product_service_clone = Arc::clone(&product_service_for_listener);
                             let currency_clone = currency_for_listener.clone();
                             std::thread::spawn(move || {
                                 let window_weak_clone2 = window_weak_clone.clone();
@@ -2714,7 +2719,7 @@ fn start_background_sync(
                                     info!("Registration recovered during re-pairing, reloading data and navigating to login");
 
                                     // Reload operators and catalog with fresh data
-                                    populate_catalog_data(window_weak_clone.clone(), Arc::clone(&db_clone), currency_clone.clone());
+                                    populate_catalog_data(window_weak_clone.clone(), Arc::clone(&product_service_clone), currency_clone.clone());
                                     populate_operators_data(window_weak_clone.clone(), Arc::clone(&db_clone));
 
                                     // Update terminal code and company from recovered registration
