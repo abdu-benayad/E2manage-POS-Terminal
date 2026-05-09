@@ -6,7 +6,7 @@
 // ============================================================================
 
 import { Button, VerticalBox, HorizontalBox, LineEdit, ScrollView } from "std-widgets.slint";
-import { Theme, Fonts } from "tokens/mod.slint";
+import { Theme, Fonts, Surfaces } from "tokens/mod.slint";
 
 // ============================================================================
 // COLORS
@@ -40,8 +40,10 @@ global Colors {
     // ---------------------------------------------------------------------
     // Surfaces (also re-exported from Surfaces global; here for compat)
     // ---------------------------------------------------------------------
-    out property <color> background: Theme.is-dark ? #0A0C10 : #FBFCFD;
-    out property <color> background-2: Theme.is-dark ? #14171C : #EEF1F5;
+    // Was: ternary literals duplicating Surfaces values.
+    // Now aliased — Surfaces is the single source of truth for bedrock colours.
+    out property <color> background: Surfaces.bg-bottom;
+    out property <color> background-2: Surfaces.bg-top;
     out property <color> surface: Theme.is-dark ? #181C22 : #FFFFFF;
     out property <color> surface-2: Theme.is-dark ? #14171C : #F5F7FA;
     out property <color> surface-variant: Theme.is-dark ? #1F242C : #F0F2F5;
@@ -94,7 +96,7 @@ global Colors {
 
     // Borders with old names
     out property <color> divider: border;
-    out property <color> status-bar-border: Theme.is-dark ? rgba(255,255,255,0.08) : rgba(255,255,255,0.08);
+    out property <color> status-bar-border: Theme.is-dark ? rgba(255,255,255,0.08) : rgba(11,13,16,0.08);
 
     // Progress
     out property <color> progress-bg: Theme.is-dark ? rgba(255,255,255,0.16) : rgba(255,255,255,0.24);

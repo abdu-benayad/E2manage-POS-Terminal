@@ -137,3 +137,15 @@ Carry-forward to Plan 2:
 - Address the two pre-existing `src/main.rs` clippy warnings opportunistically
   (split `run_startup_sequence` into a context struct; collapse the
   `else if let Err`).
+- `Layout.rtl` global currently defaults to `true` (Arabic-first). The
+  production startup path in `src/main.rs` does not yet wire locale detection
+  to this flag. Plan 2's first task that touches startup must call
+  `Layout::get_global::<Layout>(window).set_rtl(...)` based on detected
+  locale, otherwise non-Arabic developer machines will see RTL layout on
+  `cargo run`.
+- Visual verification of the four-configuration matrix (light/dark × LTR/RTL
+  × en/ar) was not executed in Task 10 because the dev sandbox is headless.
+  Plan 1's "READY for Plan 2" status is contingent on this being done by an
+  operator on a workstation before the foundation branch merges to main —
+  it is a procedural gate, not architectural work. Capture screenshots into
+  `docs/POS-UI-REDESIGN-SCREENSHOTS-FOUNDATION/` and amend this section.
