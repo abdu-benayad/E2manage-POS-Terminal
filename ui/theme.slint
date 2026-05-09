@@ -6,67 +6,117 @@
 // ============================================================================
 
 import { Button, VerticalBox, HorizontalBox, LineEdit, ScrollView } from "std-widgets.slint";
+import { Theme } from "tokens/mod.slint";
 
 // ============================================================================
 // COLORS
 // ============================================================================
+// Old token names preserved for source compatibility — values now derive
+// from Theme.mode. New tokens added at the bottom (accent-lime, pay-green,
+// etc.) per redesign spec §4.2. Tokens marked "legacy alias" point at a
+// new token and should be migrated to the new name during Plan 2.
 
 global Colors {
-    // Primary Colors
-    out property <color> primary: #2563EB;
-    out property <color> primary-dark: #1E3A8A;
-    out property <color> primary-light: #3B82F6;
+    // ---------------------------------------------------------------------
+    // Brand / accent (new tokens — redesign spec §4.2)
+    // ---------------------------------------------------------------------
+    out property <color> accent-lime:
+        Theme.is-dark ? #A3E635 : #84CC16;
+    out property <color> pay-green:
+        Theme.is-dark ? #A3E635 : #15803D;
+    out property <color> pay-green-bg-stop-1:
+        Theme.is-dark ? #BEF264 : #22C55E;
+    out property <color> pay-green-bg-stop-2:
+        Theme.is-dark ? #84CC16 : #15803D;
 
-    // Semantic Colors
-    out property <color> success: #22C55E;
-    out property <color> warning: #F59E0B;
-    out property <color> danger: #EF4444;
-    out property <color> info: #0EA5E9;
+    // ---------------------------------------------------------------------
+    // Semantic
+    // ---------------------------------------------------------------------
+    out property <color> success: Theme.is-dark ? #22C55E : #15803D;
+    out property <color> warning: Theme.is-dark ? #FCD34D : #D97706;
+    out property <color> danger:  Theme.is-dark ? #F87171 : #DC2626;
+    out property <color> info:    Theme.is-dark ? #60A5FA : #0EA5E9;
 
-    // Background Colors
-    out property <color> background: #F8FAFC;
-    out property <color> surface: #FFFFFF;
-    out property <color> surface-variant: #F1F5F9;
-    out property <color> cart-bg: #FAFAFA;
-    out property <color> overlay: rgba(0, 0, 0, 0.5);
-    out property <color> status-bar-bg: rgba(11, 21, 56, 0.9);
-    out property <color> customer-bar: #FFF3E0;
+    // ---------------------------------------------------------------------
+    // Surfaces (also re-exported from Surfaces global; here for compat)
+    // ---------------------------------------------------------------------
+    out property <color> background: Theme.is-dark ? #0A0C10 : #FBFCFD;
+    out property <color> background-2: Theme.is-dark ? #14171C : #EEF1F5;
+    out property <color> surface: Theme.is-dark ? #181C22 : #FFFFFF;
+    out property <color> surface-2: Theme.is-dark ? #14171C : #F5F7FA;
+    out property <color> surface-variant: Theme.is-dark ? #1F242C : #F0F2F5;
+    out property <color> overlay: Theme.is-dark ? rgba(0,0,0,0.6) : rgba(11,13,16,0.30);
 
-    // Text Colors
-    out property <color> text-primary: #1E293B;
-    out property <color> text-secondary: #64748B;
+    // ---------------------------------------------------------------------
+    // Text
+    // ---------------------------------------------------------------------
+    out property <color> text-primary: Theme.is-dark ? #E5E7EB : #0B0D10;
+    out property <color> text-secondary: Theme.is-dark ? #9CA3AF : #6B7280;
+    out property <color> text-muted: Theme.is-dark ? #6B7280 : #9CA3AF;
     out property <color> text-on-primary: #FFFFFF;
-    out property <color> text-muted: rgba(255, 255, 255, 0.85);
-    out property <color> text-on-surface: rgba(255, 255, 255, 0.9);
-    out property <color> success-text: #A5D6A7;
-    out property <color> orange-accent: #E65100;
+    out property <color> text-on-pay: Theme.is-dark ? #0B0D10 : #FFFFFF;
 
-    // Border Colors
-    out property <color> border: #E2E8F0;
-    out property <color> border-focus: #2563EB;
-    out property <color> divider: rgba(0, 0, 0, 0.08);
-    out property <color> status-bar-border: rgba(255, 255, 255, 0.08);
+    // ---------------------------------------------------------------------
+    // Borders
+    // ---------------------------------------------------------------------
+    out property <color> border: Theme.is-dark ? rgba(255,255,255,0.06) : rgba(11,13,16,0.06);
+    out property <color> border-strong: Theme.is-dark ? rgba(255,255,255,0.10) : rgba(11,13,16,0.10);
+    out property <color> border-focus: accent-lime;
 
-    // Progress Bar Colors
-    out property <color> progress-bg: rgba(255, 255, 255, 0.24);
+    // ---------------------------------------------------------------------
+    // Per-category accents (left borders on tiles) — same on both themes
+    // ---------------------------------------------------------------------
+    out property <color> cat-coffee: #B45309;
+    out property <color> cat-bakery: #7C3AED;
+    out property <color> cat-cold:   #0EA5E9;
+    out property <color> cat-food:   #10B981;
+
+    // ---------------------------------------------------------------------
+    // Legacy aliases — preserved so existing screens still compile.
+    // These map old (pre-redesign) names onto the closest new token.
+    // Migrate call-sites to the new names during Plan 2, then remove these.
+    // ---------------------------------------------------------------------
+
+    // Brand: was a blue (#2563EB / #1E3A8A / #3B82F6); now lime/pay-green.
+    out property <color> primary: accent-lime;
+    out property <color> primary-dark: pay-green;
+    out property <color> primary-light: accent-lime;
+
+    // Surfaces with old names
+    out property <color> cart-bg: surface-2;
+    out property <color> status-bar-bg: Theme.is-dark ? rgba(11,13,16,0.9) : rgba(11,13,16,0.9);
+    out property <color> customer-bar: Theme.is-dark ? #2A1D0F : #FFF3E0;
+
+    // Text with old names
+    out property <color> text-on-surface: text-primary;
+    out property <color> success-text: success;
+    out property <color> orange-accent: cat-coffee;
+
+    // Borders with old names
+    out property <color> divider: border;
+    out property <color> status-bar-border: Theme.is-dark ? rgba(255,255,255,0.08) : rgba(255,255,255,0.08);
+
+    // Progress
+    out property <color> progress-bg: Theme.is-dark ? rgba(255,255,255,0.16) : rgba(255,255,255,0.24);
     out property <color> progress-fill: #FFFFFF;
 
-    // Additional UI Colors
-    out property <color> disabled: rgba(0, 0, 0, 0.38);
-    out property <color> ripple: rgba(37, 99, 235, 0.12);
-    out property <color> focus-ring: rgba(37, 99, 235, 0.4);
+    // Additional UI states
+    out property <color> disabled: Theme.is-dark ? rgba(255,255,255,0.38) : rgba(0,0,0,0.38);
+    out property <color> ripple: Theme.is-dark ? rgba(163,230,53,0.16) : rgba(132,204,22,0.12);
+    out property <color> focus-ring: Theme.is-dark ? rgba(163,230,53,0.45) : rgba(132,204,22,0.40);
 
-    // Gradient Colors (for splash screen)
-    out property <color> gradient-top: #1E3A8A;
-    out property <color> gradient-bottom: #2563EB;
+    // Splash gradient — kept dark-blue on light theme for brand continuity,
+    // shifted to deep neutral on dark.
+    out property <color> gradient-top: Theme.is-dark ? #14171C : #1E3A8A;
+    out property <color> gradient-bottom: Theme.is-dark ? #0A0C10 : #2563EB;
 
-    // Status Chip Colors
-    out property <color> chip-success-bg: #22C55E;
-    out property <color> chip-warning-bg: #F59E0B;
-    out property <color> chip-danger-bg: #EF4444;
-    out property <color> chip-neutral-bg: #E2E8F0;
+    // Status chip backgrounds (legacy — point at semantic tokens)
+    out property <color> chip-success-bg: success;
+    out property <color> chip-warning-bg: warning;
+    out property <color> chip-danger-bg: danger;
+    out property <color> chip-neutral-bg: Theme.is-dark ? #1F242C : #E2E8F0;
 
-    // Role Colors (for cashier selection badge)
+    // Role colors (cashier selection badge) — same hues on both themes
     out property <color> role-cashier: #3B82F6;
     out property <color> role-supervisor: #22C55E;
     out property <color> role-admin: #F59E0B;
