@@ -373,6 +373,39 @@ global Layout {
     pure public function chevron-end() -> string {
         return rtl ? "‹" : "›";
     }
+
+    // === Logical direction helpers (spec §7.1, IMPL Plan 1 Task 7) ===
+    // Components use these instead of border-left / border-right / padding-left
+    // / padding-right when they want the value to flip with RTL.
+    //
+    // Use the scalar variants:
+    //   border-left:  Layout.leading(3px, 0px);
+    //   border-right: Layout.trailing(3px, 0px);
+    // and:
+    //   border-left:  Layout.leading-color(Colors.cat-coffee, transparent);
+    //   border-right: Layout.trailing-color(Colors.cat-coffee, transparent);
+
+    pure public function leading(leading-value: length, trailing-value: length) -> length {
+        return rtl ? trailing-value : leading-value;
+    }
+
+    pure public function trailing(leading-value: length, trailing-value: length) -> length {
+        return rtl ? leading-value : trailing-value;
+    }
+
+    pure public function leading-color(leading-value: color, trailing-value: color) -> color {
+        return rtl ? trailing-value : leading-value;
+    }
+
+    pure public function trailing-color(leading-value: color, trailing-value: color) -> color {
+        return rtl ? leading-value : trailing-value;
+    }
+
+    // Layout-order convenience predicates. Components can branch with
+    //   if Layout.is-rtl: HorizontalLayout { /* reverse-ordered children */ }
+    //   if Layout.is-ltr: HorizontalLayout { /* normal-ordered children */ }
+    out property <bool> is-rtl: rtl;
+    out property <bool> is-ltr: !rtl;
 }
 
 // ============================================================================
