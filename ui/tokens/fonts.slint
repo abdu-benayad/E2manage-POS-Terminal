@@ -37,12 +37,19 @@ import "../../assets/fonts/IBMPlexSansArabic-Bold.ttf";
 import "../../assets/fonts/JetBrainsMono-Regular.ttf";
 import "../../assets/fonts/JetBrainsMono-Bold.ttf";
 
-// Dummy global so this file can be imported with the named-import syntax.
-// Slint requires `import { X } from "file.slint";` form for .slint files;
-// importing for side effects only is rejected by the parser.
+// `Fonts` token global — canonical family-name strings for the bundled
+// font files declared above. Two purposes:
+//   1. Lets this file be imported with the named-import syntax (Slint
+//      rejects bare `import "x.slint";`).
+//   2. Owns the source-of-truth for font family names. Typography (in
+//      ui/theme.slint, updated in Task 6 of the foundation plan) composes
+//      these into the CSS-style font-family stack rather than typing
+//      "IBM Plex Sans" by hand at call sites — a typo there silently
+//      falls back to system fonts.
+//
+// Until Task 6 lands these properties have no consumers and will surface
+// as "unused" if Slint adds dead-code lints. That's expected.
 export global Fonts {
-    // Canonical font-family names. Use these from Typography to avoid
-    // string typos at call sites.
     out property <string> sans: "IBM Plex Sans";
     out property <string> sans-arabic: "IBM Plex Sans Arabic";
     out property <string> mono: "JetBrains Mono";
