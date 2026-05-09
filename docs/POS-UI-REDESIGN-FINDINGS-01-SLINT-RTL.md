@@ -87,3 +87,53 @@ below mean the actually-used version 1.14.1.
   validation is the harness in Task 10. If we later want a real cluster check,
   we'd need to either snapshot femtovg pixel buffers or hook into parley's
   layout output and inspect glyph runs directly; both are larger pieces of work.
+
+## Foundation verification (Task 10)
+
+Date: 2026-05-09. Cumulative status of Tasks 1-9 (tokens, fonts, theme, surfaces,
+RTL helpers, harness binary).
+
+- **`cargo build`**: PASS. Workspace + binary build clean.
+- **`cargo clippy`**: PASS with 2 pre-existing warnings in `src/main.rs`
+  (`run_startup_sequence` 8/7 args at line 2094; `collapsible_else_if` at line
+  890). Both predate Plan 1 and are unrelated to UI tokens / fonts / harness.
+  Plan 1's added Slint code (Theme, Surfaces, Layout helpers, ThemeHarness) and
+  the `--theme-harness` CLI branch produce no new clippy warnings.
+- **`cargo fmt --check`**: FAIL on 60+ files — pre-existing across the
+  multi-crate workspace (`crates/pos-*/**`, `src/**`, `tests/**`,
+  `build.rs`). The `build.rs` and `dev_harness.rs` reformatting affects lines
+  Plan 1 touched, but the rule violations themselves (line-wrapping style) are
+  the same conventions the repo has always used. Repo has no fmt CI gate today;
+  Plan 1 did not introduce a new gate either. **Recommend**: Plan 2 add
+  `cargo fmt --check` to a CI step and run a one-shot `cargo fmt` cleanup commit
+  before, so future PRs land formatted.
+- **`cargo test --no-run`**: PASS. Full test suite (28 binaries including
+  e2e_*, services_integration, navigation, transaction, draft, slint_arabic_smoke)
+  compiles cleanly.
+- **`cargo test --test slint_arabic_smoke`**: PASS — `1 passed; 0 failed`.
+  Confirms Slint links into a test binary and the embedded fonts compile.
+- **Harness launch (`--theme-harness`)**: NOT EXECUTED in this verification run.
+  Headless dev box has no Wayland/X11 display and the agent sandbox blocks
+  binary execution. The harness compiles into the main binary (verified above)
+  and is dispatched by `src/main.rs`'s `--theme-harness` argv branch. Visual
+  validation requires running on a developer workstation with a display server.
+  **Manual verification step for Plan 2**: on a workstation,
+  `cargo run -- --theme-harness` should open a window showing the four-tier
+  surface palette, light/dark toggle, IBM Plex Sans Latin + Arabic samples,
+  JetBrains Mono numeric tabular sample, and a mixed-direction string.
+
+### Final foundation status
+
+**READY for Plan 2.** All Plan 1 deliverables (font bundle, Theme global,
+Surfaces global, Colors theme-derivation, Fonts global, Layout RTL helpers,
+ThemeHarness component, `--theme-harness` binary entry point, Slint+Arabic
+smoke test) compile, link, and pass automated checks. The remaining open item
+is a live visual review of the harness on a workstation — operator action,
+not blocking architecture.
+
+Carry-forward to Plan 2:
+- One-shot `cargo fmt` + add `cargo fmt --check` and `cargo clippy -- -D warnings`
+  to CI so the next plan does not also inherit a 60-file fmt drift.
+- Address the two pre-existing `src/main.rs` clippy warnings opportunistically
+  (split `run_startup_sequence` into a context struct; collapse the
+  `else if let Err`).
