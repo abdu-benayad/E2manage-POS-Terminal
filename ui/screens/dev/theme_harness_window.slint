@@ -1,0 +1,32 @@
+// ============================================================================
+// Theme Harness Window — top-level Window wrapper around ThemeHarness
+// ============================================================================
+// Slint only emits Rust bindings for components that inherit Window. The
+// harness component itself (theme_harness.slint) inherits Rectangle so it
+// can be embedded inside other layouts during future composition. This
+// wrapper makes it runnable as a standalone window from dev_harness.rs
+// (Task 9), without modifying the harness component.
+// ============================================================================
+
+import { ThemeHarness } from "theme_harness.slint";
+
+export component ThemeHarnessWindow inherits Window {
+    title: "WadiDMS POS — Theme Harness";
+    preferred-width: 1024px;
+    preferred-height: 768px;
+
+    // Re-expose the harness's two-way bindings + callbacks so the Rust side
+    // can drive them without reaching through a child handle.
+    in-out property <string> mode <=> harness.mode;
+    in-out property <bool> rtl <=> harness.rtl;
+    in-out property <string> locale <=> harness.locale;
+
+    callback toggle-theme <=> harness.toggle-theme;
+    callback toggle-rtl <=> harness.toggle-rtl;
+    callback cycle-locale <=> harness.cycle-locale;
+
+    harness := ThemeHarness {
+        width: 100%;
+        height: 100%;
+    }
+}

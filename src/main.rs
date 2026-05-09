@@ -4,6 +4,8 @@
 
 slint::include_modules!();
 
+mod dev_harness;
+
 use rust_decimal::prelude::ToPrimitive;
 use e2manage_pos_terminal::api::ApiClient;
 use e2manage_pos_terminal::db::{init_database, Database};
@@ -32,6 +34,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_env_filter("info")
         .with_target(false)
         .init();
+
+    // Developer harness mode — bypass full app startup
+    if std::env::args().any(|a| a == "--theme-harness") {
+        return dev_harness::run();
+    }
 
     info!("===========================================");
     info!("  E2Manage POS Terminal v{}", env!("CARGO_PKG_VERSION"));

@@ -61,6 +61,10 @@ import { ZReportScreen } from "screens/mod.slint";
 // Settings Router (Phase 36-42) - consolidates all settings screens
 import { SettingsRouter } from "screens/mod.slint";
 import { PrinterDevice } from "screens/mod.slint"; // For type reference if needed
+// Dev-only theme harness — wired into the binary behind `--theme-harness` (Task 9).
+// ThemeHarnessWindow is the runnable Window wrapper; ThemeHarness itself is a
+// Rectangle and would not produce Rust bindings on its own.
+export { ThemeHarnessWindow } from "screens/dev/mod.slint";
 // Phase 15 - Category components
 import { CategoryData } from "components/mod.slint";
 // Phase 16 - Product components
