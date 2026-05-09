@@ -490,16 +490,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Spawn thread to handle splash screen and initial routing
     let startup_currency = session_currency.clone();
     std::thread::spawn(move || {
-        run_startup_sequence(
+        run_startup_sequence(StartupContext {
             window_weak,
-            pairing_service_clone,
-            runtime_clone,
-            db_clone,
-            sync_service_clone,
-            sync_tx_clone,
+            pairing_service: pairing_service_clone,
+            runtime: runtime_clone,
+            db: db_clone,
+            sync_service: sync_service_clone,
+            sync_tx: sync_tx_clone,
             is_registered,
-            startup_currency,
-        );
+            currency: startup_currency,
+        });
     });
 
     // Intercept window close button (X) to show shutdown dialog
@@ -1935,8 +1935,8 @@ fn setup_draft_callbacks(
     info!("Draft callbacks set up successfully");
 }
 
-/// Runs the startup sequence with splash screen
-fn run_startup_sequence(
+/// Inputs required to run the startup sequence on the splash thread.
+struct StartupContext {
     window_weak: slint::Weak<MainWindow>,
     pairing_service: Arc<PairingService>,
     runtime: Arc<Runtime>,
@@ -1945,7 +1945,21 @@ fn run_startup_sequence(
     sync_tx: Arc<broadcast::Sender<SyncEvent>>,
     is_registered: bool,
     currency: String,
-) {
+}
+
+/// Runs the startup sequence with splash screen
+fn run_startup_sequence(ctx: StartupContext) {
+    let StartupContext {
+        window_weak,
+        pairing_service,
+        runtime,
+        db,
+        sync_service,
+        sync_tx,
+        is_registered,
+        currency,
+    } = ctx;
+
     // Loading steps
     let steps = [
         (0.0, "Starting..."),
