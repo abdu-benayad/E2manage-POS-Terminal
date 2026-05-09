@@ -6,7 +6,7 @@
 // ============================================================================
 
 import { Button, VerticalBox, HorizontalBox, LineEdit, ScrollView } from "std-widgets.slint";
-import { Theme } from "tokens/mod.slint";
+import { Theme, Fonts } from "tokens/mod.slint";
 
 // ============================================================================
 // COLORS
@@ -142,17 +142,25 @@ global Typography {
     out property <length> caption-ar: 15px;
     out property <length> small-ar: 13px;
 
+    // Arabic line-height multiplier (per spec §7.6). Apply at call sites:
+    //   line-height: Typography.body * Typography.arabic-line-height-multiplier;
+    // when the rendered text is Arabic. Required to clear diacritics and
+    // descenders that get clipped at Latin-default line-height.
+    out property <float> arabic-line-height-multiplier: 1.12;
+
     // Font Weights (as integers for Slint)
     out property <int> regular: 400;
     out property <int> medium: 500;
     out property <int> semi-bold: 600;
     out property <int> bold: 700;
 
-    // Font family with Arabic fallbacks
-    // Primary: Cairo (Arabic-optimized), Tajawal, Noto Sans Arabic
-    // System fonts as final fallback
-    out property <string> font-family: "Cairo, Tajawal, Noto Sans Arabic, sans-serif";
-    out property <string> font-family-mono: "JetBrains Mono, Consolas, monospace";
+    // New stack from redesign spec §4.3. IBM Plex Sans for Latin, Plex Sans
+    // Arabic for Arabic — the two cuts pair at matched x-heights so mixed-script
+    // lines render without vertical jumps. JetBrains Mono for all numerics.
+    // Family names sourced from the Fonts global (canonical strings backed by
+    // the bundled .ttf files in assets/fonts/).
+    out property <string> font-family: Fonts.sans + ", " + Fonts.sans-arabic;
+    out property <string> font-family-mono: Fonts.mono;
 
     // Helper function for locale-aware body size
     pure public function body-size(locale: string) -> length {
