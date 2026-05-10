@@ -326,6 +326,17 @@ struct DenominationDto {
     subtotal: Decimal,
 }
 
+/// Borrowed parameters for `ShiftService::sync_shift_start`.
+struct SyncShiftStartContext<'a> {
+    shift_id: &'a str,
+    shift_number: &'a str,
+    operator_id: &'a str,
+    terminal_id: &'a str,
+    opening_cash: Decimal,
+    currency: &'a str,
+    started_at: &'a str,
+}
+
 /// Shift service for managing POS shifts
 pub struct ShiftService {
     api: Arc<ApiClient>,
@@ -434,7 +445,16 @@ impl ShiftService {
 
         // Try to sync to server
         let synced = if self.api.is_online().await.is_online() {
-            match self.sync_shift_start(&shift_id, &shift_number, operator_id, terminal_id, opening_cash, currency, &now.to_rfc3339()).await {
+            let ctx = SyncShiftStartContext {
+                shift_id: &shift_id,
+                shift_number: &shift_number,
+                operator_id,
+                terminal_id,
+                opening_cash,
+                currency,
+                started_at: &now.to_rfc3339(),
+            };
+            match self.sync_shift_start(ctx).await {
                 Ok(server_id) => {
                     // Update local record with server ID
                     let _ = self.db.mark_shift_synced(&shift_id, &server_id);
@@ -622,16 +642,17 @@ impl ShiftService {
         })
     }
 
-    async fn sync_shift_start(
-        &self,
-        _shift_id: &str,
-        shift_number: &str,
-        operator_id: &str,
-        terminal_id: &str,
-        opening_cash: Decimal,
-        currency: &str,
-        started_at: &str,
-    ) -> Result<String> {
+    async fn sync_shift_start(&self, ctx: SyncShiftStartContext<'_>) -> Result<String> {
+        let SyncShiftStartContext {
+            shift_id: _shift_id,
+            shift_number,
+            operator_id,
+            terminal_id,
+            opening_cash,
+            currency,
+            started_at,
+        } = ctx;
+
         let request = StartShiftRequest {
             shift_number: shift_number.to_string(),
             operator_id: operator_id.to_string(),
@@ -649,6 +670,10 @@ impl ShiftService {
         Ok(response.id)
     }
 
+    #[expect(
+        clippy::await_holding_lock,
+        reason = "parking_lot RwLock guard on cash_count is held across the API .await; reshaping (drop guard, await, re-acquire) needs concurrency design review and is out of scope for clippy cleanup"
+    )]
     async fn sync_shift_end(
         &self,
         shift_id: &str,

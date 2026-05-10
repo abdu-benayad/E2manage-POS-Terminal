@@ -179,20 +179,6 @@ impl ReturnReason {
         }
     }
 
-    /// Creates a reason from a string
-    pub fn from_str(s: &str) -> Option<Self> {
-        match s.to_uppercase().as_str() {
-            "DEFECTIVE" => Some(ReturnReason::Defective),
-            "WRONG_PRODUCT" => Some(ReturnReason::WrongProduct),
-            "CHANGED_MIND" => Some(ReturnReason::ChangedMind),
-            "EXPIRED" => Some(ReturnReason::Expired),
-            "PRICE_ADJUSTMENT" => Some(ReturnReason::PriceAdjustment),
-            "EXCHANGE" => Some(ReturnReason::Exchange),
-            "OTHER" => Some(ReturnReason::Other),
-            _ => None,
-        }
-    }
-
     /// Returns the display name for this reason
     pub fn display_name(&self, locale: &str) -> &'static str {
         if locale == "ar" {
@@ -227,6 +213,23 @@ impl ReturnReason {
     }
 }
 
+impl std::str::FromStr for ReturnReason {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_uppercase().as_str() {
+            "DEFECTIVE" => Ok(ReturnReason::Defective),
+            "WRONG_PRODUCT" => Ok(ReturnReason::WrongProduct),
+            "CHANGED_MIND" => Ok(ReturnReason::ChangedMind),
+            "EXPIRED" => Ok(ReturnReason::Expired),
+            "PRICE_ADJUSTMENT" => Ok(ReturnReason::PriceAdjustment),
+            "EXCHANGE" => Ok(ReturnReason::Exchange),
+            "OTHER" => Ok(ReturnReason::Other),
+            _ => Err(()),
+        }
+    }
+}
+
 /// Refund method
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RefundMethod {
@@ -250,16 +253,6 @@ impl RefundMethod {
         }
     }
 
-    pub fn from_str(s: &str) -> Option<Self> {
-        match s.to_uppercase().as_str() {
-            "CASH" => Some(RefundMethod::Cash),
-            "CARD" => Some(RefundMethod::Card),
-            "STORE_CREDIT" => Some(RefundMethod::StoreCredit),
-            "EXCHANGE" => Some(RefundMethod::Exchange),
-            _ => None,
-        }
-    }
-
     pub fn display_name(&self, locale: &str) -> &'static str {
         if locale == "ar" {
             match self {
@@ -275,6 +268,20 @@ impl RefundMethod {
                 RefundMethod::StoreCredit => "Store Credit",
                 RefundMethod::Exchange => "Exchange",
             }
+        }
+    }
+}
+
+impl std::str::FromStr for RefundMethod {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_uppercase().as_str() {
+            "CASH" => Ok(RefundMethod::Cash),
+            "CARD" => Ok(RefundMethod::Card),
+            "STORE_CREDIT" => Ok(RefundMethod::StoreCredit),
+            "EXCHANGE" => Ok(RefundMethod::Exchange),
+            _ => Err(()),
         }
     }
 }
@@ -803,6 +810,10 @@ impl ReturnService {
     /// Processes a return transaction
     ///
     /// Creates a return transaction, calculates refund, and syncs to server
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "pub API across crate boundary; refactor is contract-breaking and out of scope for clippy cleanup"
+    )]
     pub async fn process_return(
         &self,
         original_txn: &Transaction,
@@ -1165,8 +1176,8 @@ mod tests {
     #[test]
     fn test_return_reason_conversion() {
         assert_eq!(ReturnReason::Defective.as_str(), "DEFECTIVE");
-        assert_eq!(ReturnReason::from_str("DEFECTIVE"), Some(ReturnReason::Defective));
-        assert_eq!(ReturnReason::from_str("invalid"), None);
+        assert_eq!("DEFECTIVE".parse::<ReturnReason>(), Ok(ReturnReason::Defective));
+        assert_eq!("invalid".parse::<ReturnReason>(), Err(()));
     }
 
     #[test]
@@ -1185,8 +1196,8 @@ mod tests {
     #[test]
     fn test_refund_method_conversion() {
         assert_eq!(RefundMethod::Cash.as_str(), "CASH");
-        assert_eq!(RefundMethod::from_str("CASH"), Some(RefundMethod::Cash));
-        assert_eq!(RefundMethod::from_str("invalid"), None);
+        assert_eq!("CASH".parse::<RefundMethod>(), Ok(RefundMethod::Cash));
+        assert_eq!("invalid".parse::<RefundMethod>(), Err(()));
     }
 
     #[test]

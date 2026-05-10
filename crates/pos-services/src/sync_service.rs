@@ -472,8 +472,8 @@ impl SyncService {
             .and_then(|s| s.last_sync);
 
         // If we have an ETag and last_sync, try delta sync first
-        if etag.is_some() && last_sync.is_some() {
-            if let Ok(true) = self.try_delta_sync(tx, &last_sync.unwrap()).await {
+        if let (Some(_), Some(since)) = (&etag, &last_sync) {
+            if let Ok(true) = self.try_delta_sync(tx, since).await {
                 return Ok(());
             }
             // Delta sync failed or returned nothing, fall through to full sync

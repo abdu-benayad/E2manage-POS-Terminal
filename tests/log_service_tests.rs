@@ -12,40 +12,40 @@ use tempfile::TempDir;
 
 #[test]
 fn test_log_level_from_str_error() {
-    assert_eq!(LogLevel::from_str("ERROR"), LogLevel::Error);
-    assert_eq!(LogLevel::from_str("error"), LogLevel::Error);
-    assert_eq!(LogLevel::from_str("Error"), LogLevel::Error);
+    assert_eq!(LogLevel::from("ERROR"), LogLevel::Error);
+    assert_eq!(LogLevel::from("error"), LogLevel::Error);
+    assert_eq!(LogLevel::from("Error"), LogLevel::Error);
 }
 
 #[test]
 fn test_log_level_from_str_warn() {
-    assert_eq!(LogLevel::from_str("WARN"), LogLevel::Warn);
-    assert_eq!(LogLevel::from_str("warn"), LogLevel::Warn);
+    assert_eq!(LogLevel::from("WARN"), LogLevel::Warn);
+    assert_eq!(LogLevel::from("warn"), LogLevel::Warn);
 }
 
 #[test]
 fn test_log_level_from_str_info() {
-    assert_eq!(LogLevel::from_str("INFO"), LogLevel::Info);
-    assert_eq!(LogLevel::from_str("info"), LogLevel::Info);
+    assert_eq!(LogLevel::from("INFO"), LogLevel::Info);
+    assert_eq!(LogLevel::from("info"), LogLevel::Info);
 }
 
 #[test]
 fn test_log_level_from_str_debug() {
-    assert_eq!(LogLevel::from_str("DEBUG"), LogLevel::Debug);
-    assert_eq!(LogLevel::from_str("debug"), LogLevel::Debug);
+    assert_eq!(LogLevel::from("DEBUG"), LogLevel::Debug);
+    assert_eq!(LogLevel::from("debug"), LogLevel::Debug);
 }
 
 #[test]
 fn test_log_level_from_str_trace() {
-    assert_eq!(LogLevel::from_str("TRACE"), LogLevel::Trace);
-    assert_eq!(LogLevel::from_str("trace"), LogLevel::Trace);
+    assert_eq!(LogLevel::from("TRACE"), LogLevel::Trace);
+    assert_eq!(LogLevel::from("trace"), LogLevel::Trace);
 }
 
 #[test]
 fn test_log_level_from_str_unknown() {
     // Unknown levels default to Trace
-    assert_eq!(LogLevel::from_str("UNKNOWN"), LogLevel::Trace);
-    assert_eq!(LogLevel::from_str(""), LogLevel::Trace);
+    assert_eq!(LogLevel::from("UNKNOWN"), LogLevel::Trace);
+    assert_eq!(LogLevel::from(""), LogLevel::Trace);
 }
 
 #[test]

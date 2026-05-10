@@ -418,9 +418,7 @@ mod tests {
 
     #[test]
     fn test_z_report_variance_status_str() {
-        let mut report = ZReport::default();
-
-        report.variance_status = VarianceStatus::Balanced;
+        let mut report = ZReport { variance_status: VarianceStatus::Balanced, ..ZReport::default() };
         assert_eq!(report.variance_status_str(), "balanced");
 
         report.variance_status = VarianceStatus::Short;

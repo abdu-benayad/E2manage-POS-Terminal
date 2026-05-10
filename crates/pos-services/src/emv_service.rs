@@ -49,7 +49,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 
 /// Result of a card payment transaction
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct CardPaymentResult {
     /// Whether the payment was successful
     pub success: bool,
@@ -75,25 +75,6 @@ pub struct CardPaymentResult {
     pub cryptogram: Option<String>,
     /// Transaction timestamp
     pub timestamp: Option<String>,
-}
-
-impl Default for CardPaymentResult {
-    fn default() -> Self {
-        Self {
-            success: false,
-            card_type: None,
-            last_four: None,
-            auth_code: None,
-            transaction_id: None,
-            error_message: None,
-            response_code: None,
-            masked_pan: None,
-            cardholder_name: None,
-            application_label: None,
-            cryptogram: None,
-            timestamp: None,
-        }
-    }
 }
 
 impl CardPaymentResult {
@@ -140,6 +121,10 @@ impl CardPaymentResult {
 
 /// Events emitted during EMV transaction processing
 #[derive(Clone, Debug)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "Approved variant carries CardPaymentResult (~272 bytes); boxing requires design review of the broadcast channel and matching code paths, out of scope for clippy cleanup"
+)]
 pub enum EmvEvent {
     /// Waiting for card insertion or tap
     WaitingForCard,

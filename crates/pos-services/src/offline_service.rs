@@ -1035,9 +1035,7 @@ mod tests {
 
     #[test]
     fn test_sync_result_has_activity() {
-        let mut result = SyncResult::default();
-
-        result.synced = 1;
+        let mut result = SyncResult { synced: 1, ..SyncResult::default() };
         assert!(result.has_activity());
 
         result.synced = 0;

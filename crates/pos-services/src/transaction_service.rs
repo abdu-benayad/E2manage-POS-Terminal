@@ -879,11 +879,13 @@ mod tests {
 
     #[test]
     fn test_shift_totals_calculations() {
-        let mut totals = ShiftTotals::default();
-        totals.sales_total = Decimal::from(1000);
-        totals.cash_total = Decimal::from(600);
-        totals.card_total = Decimal::from(400);
-        totals.return_total = Decimal::from(100);
+        let totals = ShiftTotals {
+            sales_total: Decimal::from(1000),
+            cash_total: Decimal::from(600),
+            card_total: Decimal::from(400),
+            return_total: Decimal::from(100),
+            ..ShiftTotals::default()
+        };
 
         assert_eq!(totals.net_cash(), Decimal::from(500));
         assert_eq!(totals.net_sales(), Decimal::from(900));
