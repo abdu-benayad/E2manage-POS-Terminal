@@ -70,6 +70,17 @@ These conventions apply to Tasks 3–10. Each task body assumes them.
 6. **Naming.** New components keep their plain name (`Panel`, `Button`, `SearchInput`, …) inside `atomic/`. Where a name collides with a legacy component (`Button`, `ProductTile`, `CartItem`/`CartLine`), the new export uses the same name — they are reachable through different module paths (`ui/components/atomic/mod.slint` vs `ui/components/mod.slint`), and only Plan 3 swaps the import sites.
 7. **Gallery slot per component.** Every Task 3–10 also adds one `// === <Component> ===` block to `ui/screens/dev/component_gallery.slint`, instantiating the component with two or three representative prop sets so the operator can eyeball the variants.
 
+## Slint binding-generation pattern (project-specific)
+
+This convention covers any task that needs Rust to read or write a Slint global. It was discovered during Task 1 and applies project-wide.
+
+- **`global Foo { }`** (no `export`) — visible only inside the same `.slint` file. Plan 1's `Layout` and `Locale` start out this way.
+- **`export { Foo, Bar }`** at the bottom of a `.slint` file — Slint-side re-export so other `.slint` files can import `Foo` and use it in `<=>` bindings. **Generates zero Rust accessors.**
+- **`export global Foo { ... }`** (inline form) — generates flattened `set_<prefix>_*` / `get_<prefix>_*` methods on every `Window`-inheriting component that imports the file (e.g. `set_app_company_name` from `AppState`). Does **not** generate a `pub struct Foo` and `slint::Global<MainWindow, Foo>` is **not** the working pattern in this project despite the upstream Slint docs.
+- **Forwarding property with `<=>`** on a `Window`-inheriting component — the canonical project pattern. Declaring `in-out property <T> name <=> Global.field;` inside `MainWindow` (or `ThemeHarnessWindow`, etc.) produces a clean `window.set_name(...)` / `window.get_name()` Rust accessor that updates the global in place. Use this whenever Rust needs to set or read a global field that wasn't already exposed via the inline `export global` form.
+
+For atomic components (Tasks 3–10), this convention is mostly informational — components don't access Slint state from Rust directly. It matters for: the harness adapters (`src/dev_harness.rs`, `src/component_gallery.rs`), and any Plan 3+ work where a screen component needs Rust to read/write its own state.
+
 ---
 
 ## Task 0: Clear cargo fmt drift, fix one pre-existing clippy warning, add CI gate
@@ -218,6 +229,7 @@ EOF
 - Create: `tests/locale_detect_tests.rs`
 - Modify: `src/main.rs` (`mod locale_detect;` declaration + apply after `MainWindow::new()`)
 - Modify: `src/dev_harness.rs` (use detection for initial state)
+- Modify: `ui/main.slint` (add two `<=>` forwarding properties on `MainWindow` so `set_rtl` / `set_locale` exist on the Rust side — see Step 7a)
 
 The `Layout.rtl` global currently defaults to `true` (Arabic-first). On `cargo run` from a non-Arabic developer machine, the entire UI renders RTL. This task adds a small pure detector that maps `LANG` / `LC_ALL` to a `(locale, rtl)` pair and applies it once after the main window is created.
 
@@ -350,7 +362,23 @@ cargo test --test locale_detect_tests 2>&1 | tail -20
 ```
 Expected: 8 passed; 0 failed.
 
-- [ ] **Step 7: Apply detection to the live `MainWindow`**
+- [ ] **Step 7a: Add forwarding properties on `MainWindow` so Slint emits `set_rtl` / `set_locale` accessors**
+
+`Layout` and `Locale` are declared as plain `global` (not `export global`) in `ui/theme.slint`, and the `export { Layout, Locale, ... }` list at the bottom of that file is a Slint-side re-export only — it does **not** generate Rust accessors. The canonical pattern in this project (already used by `ThemeHarnessWindow`) is to add forwarding properties on the `Window`-inheriting component so Slint generates `set_*` methods on the Rust side.
+
+In `ui/main.slint`, find the `MainWindow` component body and the existing `// AppState bindings (for setting from Rust)` block. Insert directly above it:
+
+```slint
+    // Locale + RTL forwarding (Plan 2 Task 1) — Rust sets these once at
+    // startup based on LC_ALL / LANG so the whole component tree picks up
+    // the correct direction and locale before first paint.
+    in-out property <bool> rtl <=> Layout.rtl;
+    in-out property <string> locale <=> Locale.current;
+```
+
+These two `<=>` bindings forward to the existing `Layout.rtl` and `Locale.current` globals — Slint generates `MainWindow::set_rtl(...)` and `MainWindow::set_locale(...)` Rust methods that update the globals in place, no copy. Do **not** mark the globals `export global` — last-round investigation confirmed that with this Slint version, the `export global Foo { }` form generates flattened `set_<prefix>_*` methods on `MainWindow` (e.g. `set_app_company_name` for `AppState`) rather than the `slint::Global` trait, and the `window.global::<T>()` Rust API does not work in this project.
+
+- [ ] **Step 7b: Apply detection to the live `MainWindow`**
 
 In `src/main.rs`, find the line `let window = MainWindow::new()?;` (around line 131). Insert directly after it:
 
@@ -358,8 +386,8 @@ In `src/main.rs`, find the line `let window = MainWindow::new()?;` (around line 
     // === Apply detected locale to UI globals (Plan 2 Task 1) ===========
     {
         let (locale_code, rtl) = locale_detect::detect_locale();
-        window.global::<Layout>().set_rtl(rtl);
-        window.global::<Locale>().set_current(SharedString::from(locale_code));
+        window.set_rtl(rtl);
+        window.set_locale(SharedString::from(locale_code));
         info!(
             locale = locale_code,
             rtl,
@@ -368,7 +396,7 @@ In `src/main.rs`, find the line `let window = MainWindow::new()?;` (around line 
     }
 ```
 
-`Layout` and `Locale` are Slint-generated types brought into scope by `slint::include_modules!()` at line 5; no extra `use` is needed.
+`SharedString` is brought into scope by the existing `use slint::{ModelRc, SharedString, VecModel};` line near the top of `main.rs`; no extra `use` is needed.
 
 - [ ] **Step 8: Update `src/dev_harness.rs` to use detection for the harness's initial state**
 
