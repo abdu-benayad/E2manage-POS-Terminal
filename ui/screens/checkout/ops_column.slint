@@ -1,0 +1,72 @@
+import { Theme, Surfaces } from "../../tokens/mod.slint";
+import { Colors, Typography, Spacing, Radius, Animation, Layout, Locale } from "../../theme.slint";
+import { Panel, Button, OpsButton } from "../../components/atomic/mod.slint";
+
+// OpsColumn — fixed-order operations against the currently selected cart
+// line. The button order (+1, −1, ×n, %, ✎, ⌫) is sacred per §3.8 of the
+// design spec and must not move without explicit cashier configuration.
+// `selected-line-id` is consumed only to dim the column when no line is
+// selected; the actual mutation is delegated upwards via `op-requested`.
+export component OpsColumn inherits Panel {
+    width: 112px;
+    content-padding: Spacing.sm;
+
+    in property <string> selected-line-id: "";
+    callback op-requested(string /* op */, string /* line-id */);
+    callback more-pressed;
+
+    property <bool> any-selected: root.selected-line-id != "";
+
+    VerticalLayout {
+        spacing: Spacing.sm;
+        alignment: start;
+
+        Text {
+            text: Locale.current == "ar" ? "على المحدد" : "ON SELECTED";
+            font-family: Typography.font-family;
+            font-size: Typography.tiny;
+            font-weight: Typography.semi-bold;
+            color: Colors.text-secondary;
+            horizontal-alignment: center;
+        }
+
+        OpsButton {
+            glyph: "+1"; label: Locale.current == "ar" ? "إضافة" : "ADD";
+            variant: "primary"; disabled: !root.any-selected;
+            clicked => { root.op-requested("inc", root.selected-line-id); }
+        }
+        OpsButton {
+            glyph: "−1"; label: Locale.current == "ar" ? "إزالة" : "REMOVE";
+            disabled: !root.any-selected;
+            clicked => { root.op-requested("dec", root.selected-line-id); }
+        }
+        OpsButton {
+            glyph: "×n"; label: Locale.current == "ar" ? "كمية" : "QTY";
+            disabled: !root.any-selected;
+            clicked => { root.op-requested("qty", root.selected-line-id); }
+        }
+        OpsButton {
+            glyph: "%"; label: Locale.current == "ar" ? "خصم" : "DISC";
+            disabled: !root.any-selected;
+            clicked => { root.op-requested("disc", root.selected-line-id); }
+        }
+        OpsButton {
+            glyph: "✎"; label: Locale.current == "ar" ? "تعديل" : "EDIT";
+            disabled: !root.any-selected;
+            clicked => { root.op-requested("edit", root.selected-line-id); }
+        }
+        OpsButton {
+            glyph: "⌫"; label: Locale.current == "ar" ? "حذف" : "VOID";
+            variant: "danger"; disabled: !root.any-selected;
+            clicked => { root.op-requested("void", root.selected-line-id); }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        Button {
+            label: Locale.current == "ar" ? "المزيد" : "MORE";
+            variant: "secondary";
+            clicked => { root.more-pressed(); }
+        }
+    }
+}
