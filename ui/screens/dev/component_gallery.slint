@@ -6,6 +6,7 @@ import { Button } from "../../components/atomic/mod.slint";
 import { SearchInput } from "../../components/atomic/mod.slint";
 import { OpsButton } from "../../components/atomic/mod.slint";
 import { StatusLED } from "../../components/atomic/mod.slint";
+import { PayButton } from "../../components/atomic/mod.slint";
 
 // Component gallery — Plan 2. Hosts every atomic component in light/dark
 // × LTR/RTL × en/ar so visual regressions are obvious. Each Task 3–10
@@ -251,7 +252,30 @@ export component ComponentGallery inherits Rectangle {
                         }
                     }
                 }
-                // (Task 8) PayButton section appended here
+                // === PayButton ===
+                Text {
+                    text: "PayButton";
+                    font-family: Typography.font-family;
+                    font-size: Typography.heading;
+                    font-weight: Typography.semi-bold;
+                    color: Colors.text-primary;
+                }
+                VerticalLayout {
+                    spacing: Spacing.md;
+                    PayButton {
+                        width: 360px;
+                        label: Locale.current == "ar" ? "ادفع" : "PAY";
+                        total: "12.600";
+                        currency: "LYD";
+                    }
+                    PayButton {
+                        width: 360px;
+                        label: Locale.current == "ar" ? "ادفع" : "PAY";
+                        total: "0.00";
+                        currency: "LYD";
+                        disabled: true;
+                    }
+                }
                 // (Task 9) ProductTile section appended here
                 // (Task 10) CartLine section appended here
 

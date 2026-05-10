@@ -1,0 +1,87 @@
+import { Theme, Surfaces } from "../../tokens/mod.slint";
+import { Colors, Typography, Spacing, Radius, Animation, Layout } from "../../theme.slint";
+
+export component PayButton inherits Rectangle {
+    in property <string> label: "PAY";
+    in property <string> total: "0.00";
+    in property <string> currency: "LYD";
+    in property <bool> disabled: false;
+
+    callback clicked;
+
+    height: 64px;
+    border-radius: Radius.md;
+
+    // Solid green in light, lime gradient in dark.
+    background: Theme.is-dark
+        ? @linear-gradient(180deg, Colors.pay-green-bg-stop-1 0%, Colors.pay-green-bg-stop-2 100%)
+        : Colors.pay-green;
+    opacity: root.disabled ? 0.5 : 1.0;
+
+    // Halo glow (dark mode only). A larger semi-transparent lime rectangle
+    // sitting behind the button, blurred via drop-shadow.
+    drop-shadow-color: Theme.is-dark ? Colors.accent-lime : transparent;
+    drop-shadow-blur: 24px;
+    drop-shadow-offset-y: 0px;
+
+    // Specular highlight on top edge.
+    Rectangle {
+        x: 1px; y: 1px;
+        width: parent.width - 2px;
+        height: 1px;
+        background: Surfaces.specular-strong;
+        opacity: 0.55;
+        border-radius: parent.border-radius;
+    }
+
+    states [
+        pressed when touch.pressed && !root.disabled: { opacity: 0.85; }
+    ]
+    animate opacity { duration: Animation.fast; }
+
+    HorizontalLayout {
+        padding-left: Spacing.lg;
+        padding-right: Spacing.lg;
+        spacing: Spacing.md;
+        alignment: space-between;
+
+        // Leading: label
+        Text {
+            text: root.label;
+            font-family: Typography.font-family;
+            font-size: Typography.title;
+            font-weight: Typography.bold;
+            color: Colors.text-on-pay;
+            vertical-alignment: center;
+            horizontal-alignment: Layout.is-rtl ? right : left;
+        }
+
+        // Trailing: mono total + currency
+        HorizontalLayout {
+            spacing: Spacing.xs;
+            alignment: center;
+            Text {
+                text: root.total;
+                font-family: Typography.font-family-mono;
+                font-size: Typography.title;
+                font-weight: Typography.bold;
+                color: Colors.text-on-pay;
+                vertical-alignment: center;
+            }
+            Text {
+                text: root.currency;
+                font-family: Typography.font-family;
+                font-size: Typography.body;
+                font-weight: Typography.semi-bold;
+                color: Colors.text-on-pay;
+                vertical-alignment: center;
+                opacity: 0.85;
+            }
+        }
+    }
+
+    touch := TouchArea {
+        enabled: !root.disabled;
+        clicked => { root.clicked(); }
+    }
+}
