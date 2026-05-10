@@ -32,8 +32,10 @@ impl DraftSyncOperation {
             Self::Delete => "DELETE",
         }
     }
+}
 
-    pub fn from_str(s: &str) -> Self {
+impl From<&str> for DraftSyncOperation {
+    fn from(s: &str) -> Self {
         match s {
             "CONVERT" => Self::Convert,
             "DELETE" => Self::Delete,
@@ -64,8 +66,10 @@ impl DraftQueueSyncStatus {
             Self::Failed => "FAILED",
         }
     }
+}
 
-    pub fn from_str(s: &str) -> Self {
+impl From<&str> for DraftQueueSyncStatus {
+    fn from(s: &str) -> Self {
         match s {
             "SYNCING" => Self::Syncing,
             "SYNCED" => Self::Synced,
@@ -166,12 +170,12 @@ impl DraftSyncQueueItem {
 
     /// Returns the operation type
     pub fn operation_type(&self) -> DraftSyncOperation {
-        DraftSyncOperation::from_str(&self.operation)
+        DraftSyncOperation::from(self.operation.as_str())
     }
 
     /// Returns the sync status
     pub fn status(&self) -> DraftQueueSyncStatus {
-        DraftQueueSyncStatus::from_str(&self.sync_status)
+        DraftQueueSyncStatus::from(self.sync_status.as_str())
     }
 
     /// Returns true if the item has exceeded max retries
@@ -522,10 +526,10 @@ mod tests {
         assert_eq!(DraftSyncOperation::Convert.as_str(), "CONVERT");
         assert_eq!(DraftSyncOperation::Delete.as_str(), "DELETE");
 
-        assert_eq!(DraftSyncOperation::from_str("CREATE"), DraftSyncOperation::Create);
-        assert_eq!(DraftSyncOperation::from_str("CONVERT"), DraftSyncOperation::Convert);
-        assert_eq!(DraftSyncOperation::from_str("DELETE"), DraftSyncOperation::Delete);
-        assert_eq!(DraftSyncOperation::from_str("UNKNOWN"), DraftSyncOperation::Create);
+        assert_eq!(DraftSyncOperation::from("CREATE"), DraftSyncOperation::Create);
+        assert_eq!(DraftSyncOperation::from("CONVERT"), DraftSyncOperation::Convert);
+        assert_eq!(DraftSyncOperation::from("DELETE"), DraftSyncOperation::Delete);
+        assert_eq!(DraftSyncOperation::from("UNKNOWN"), DraftSyncOperation::Create);
     }
 
     #[test]

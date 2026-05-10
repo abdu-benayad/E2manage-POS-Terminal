@@ -4,7 +4,7 @@
 
 use parking_lot::Mutex;
 use rusqlite::{Connection, Result as SqliteResult};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 /// Thread-safe database wrapper
@@ -84,7 +84,7 @@ impl Database {
     }
 
     /// Checks if the database file exists
-    pub fn exists(path: &PathBuf) -> bool {
+    pub fn exists(path: &Path) -> bool {
         path.exists()
     }
 }

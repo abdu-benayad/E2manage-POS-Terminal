@@ -98,8 +98,10 @@ impl SharedDraftSyncStatus {
             Self::PendingDelete => "PENDING_DELETE",
         }
     }
+}
 
-    pub fn from_str(s: &str) -> Self {
+impl From<&str> for SharedDraftSyncStatus {
+    fn from(s: &str) -> Self {
         match s {
             "PENDING_CONVERT" => Self::PendingConvert,
             "PENDING_DELETE" => Self::PendingDelete,
@@ -521,8 +523,8 @@ mod tests {
         assert_eq!(SharedDraftSyncStatus::PendingConvert.as_str(), "PENDING_CONVERT");
         assert_eq!(SharedDraftSyncStatus::PendingDelete.as_str(), "PENDING_DELETE");
 
-        assert_eq!(SharedDraftSyncStatus::from_str("SYNCED"), SharedDraftSyncStatus::Synced);
-        assert_eq!(SharedDraftSyncStatus::from_str("PENDING_CONVERT"), SharedDraftSyncStatus::PendingConvert);
-        assert_eq!(SharedDraftSyncStatus::from_str("unknown"), SharedDraftSyncStatus::Synced);
+        assert_eq!(SharedDraftSyncStatus::from("SYNCED"), SharedDraftSyncStatus::Synced);
+        assert_eq!(SharedDraftSyncStatus::from("PENDING_CONVERT"), SharedDraftSyncStatus::PendingConvert);
+        assert_eq!(SharedDraftSyncStatus::from("unknown"), SharedDraftSyncStatus::Synced);
     }
 }

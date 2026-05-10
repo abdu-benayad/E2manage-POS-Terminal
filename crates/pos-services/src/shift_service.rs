@@ -587,8 +587,10 @@ impl ShiftService {
     // ========================================================================
 
     fn row_to_summary(&self, row: &ShiftRow) -> ShiftResult<ShiftSummary> {
-        let status = ShiftStatus::from_str(&row.status)
-            .ok_or_else(|| ShiftError::InvalidState(format!("Unknown status: {}", row.status)))?;
+        let status = row
+            .status
+            .parse::<ShiftStatus>()
+            .map_err(|_| ShiftError::InvalidState(format!("Unknown status: {}", row.status)))?;
 
         let variance_status = row.variance.map(VarianceStatus::from_variance);
 

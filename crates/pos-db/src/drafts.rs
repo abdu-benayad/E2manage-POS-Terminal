@@ -227,6 +227,10 @@ impl Database {
     }
 
     /// Creates a draft with auto-generated name
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "pub API across crate boundary; refactor is contract-breaking and out of scope for clippy cleanup"
+    )]
     pub fn create_draft(
         &self,
         id: &str,

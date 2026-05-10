@@ -27,14 +27,18 @@ impl TransactionType {
             TransactionType::Void => "VOID",
         }
     }
+}
 
-    pub fn from_str(s: &str) -> Option<Self> {
+impl std::str::FromStr for TransactionType {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_uppercase().as_str() {
-            "SALE" => Some(TransactionType::Sale),
-            "RETURN" => Some(TransactionType::Return),
-            "EXCHANGE" => Some(TransactionType::Exchange),
-            "VOID" => Some(TransactionType::Void),
-            _ => None,
+            "SALE" => Ok(TransactionType::Sale),
+            "RETURN" => Ok(TransactionType::Return),
+            "EXCHANGE" => Ok(TransactionType::Exchange),
+            "VOID" => Ok(TransactionType::Void),
+            _ => Err(()),
         }
     }
 }
@@ -61,16 +65,20 @@ impl SyncStatus {
             SyncStatus::Discarded => "DISCARDED",
         }
     }
+}
 
-    pub fn from_str(s: &str) -> Option<Self> {
+impl std::str::FromStr for SyncStatus {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_uppercase().as_str() {
-            "PENDING" => Some(SyncStatus::Pending),
-            "SYNCING" => Some(SyncStatus::Syncing),
-            "SYNCED" => Some(SyncStatus::Synced),
-            "FAILED" => Some(SyncStatus::Failed),
-            "CONFLICT" => Some(SyncStatus::Conflict),
-            "DISCARDED" => Some(SyncStatus::Discarded),
-            _ => None,
+            "PENDING" => Ok(SyncStatus::Pending),
+            "SYNCING" => Ok(SyncStatus::Syncing),
+            "SYNCED" => Ok(SyncStatus::Synced),
+            "FAILED" => Ok(SyncStatus::Failed),
+            "CONFLICT" => Ok(SyncStatus::Conflict),
+            "DISCARDED" => Ok(SyncStatus::Discarded),
+            _ => Err(()),
         }
     }
 }
@@ -445,6 +453,36 @@ impl Database {
     }
 }
 
+impl Default for OfflineTransactionRow {
+    fn default() -> Self {
+        Self {
+            offline_id: String::new(),
+            transaction_number: None,
+            transaction_type: "SALE".to_string(),
+            items_json: "[]".to_string(),
+            payments_json: "[]".to_string(),
+            subtotal: Decimal::ZERO,
+            tax_total: Decimal::ZERO,
+            discount_total: Decimal::ZERO,
+            grand_total: Decimal::ZERO,
+            customer_id: None,
+            customer_name: None,
+            shift_id: None,
+            operator_id: None,
+            terminal_id: None,
+            receipt_number: None,
+            notes: None,
+            created_at: String::new(),
+            sync_status: "PENDING".to_string(),
+            server_id: None,
+            retry_count: 0,
+            last_error: None,
+            last_retry_at: None,
+            catalog_etag: None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -581,35 +619,5 @@ mod tests {
         let found = db.get_offline_transaction("txn-1").unwrap().unwrap();
         assert_eq!(found.sync_status, "SYNCED");
         assert_eq!(found.server_id, Some("server-id-123".to_string()));
-    }
-}
-
-impl Default for OfflineTransactionRow {
-    fn default() -> Self {
-        Self {
-            offline_id: String::new(),
-            transaction_number: None,
-            transaction_type: "SALE".to_string(),
-            items_json: "[]".to_string(),
-            payments_json: "[]".to_string(),
-            subtotal: Decimal::ZERO,
-            tax_total: Decimal::ZERO,
-            discount_total: Decimal::ZERO,
-            grand_total: Decimal::ZERO,
-            customer_id: None,
-            customer_name: None,
-            shift_id: None,
-            operator_id: None,
-            terminal_id: None,
-            receipt_number: None,
-            notes: None,
-            created_at: String::new(),
-            sync_status: "PENDING".to_string(),
-            server_id: None,
-            retry_count: 0,
-            last_error: None,
-            last_retry_at: None,
-            catalog_etag: None,
-        }
     }
 }

@@ -26,13 +26,17 @@ impl ShiftStatus {
             ShiftStatus::Suspended => "SUSPENDED",
         }
     }
+}
 
-    pub fn from_str(s: &str) -> Option<Self> {
+impl std::str::FromStr for ShiftStatus {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_uppercase().as_str() {
-            "ACTIVE" => Some(ShiftStatus::Active),
-            "CLOSED" => Some(ShiftStatus::Closed),
-            "SUSPENDED" => Some(ShiftStatus::Suspended),
-            _ => None,
+            "ACTIVE" => Ok(ShiftStatus::Active),
+            "CLOSED" => Ok(ShiftStatus::Closed),
+            "SUSPENDED" => Ok(ShiftStatus::Suspended),
+            _ => Err(()),
         }
     }
 }
@@ -261,7 +265,7 @@ impl Database {
                ORDER BY started_at DESC"#,
         )?;
 
-        let rows = stmt.query_map(params![start_date, end_date], |row| read_shift_row(row))?;
+        let rows = stmt.query_map(params![start_date, end_date], read_shift_row)?;
 
         rows.collect()
     }
@@ -279,7 +283,7 @@ impl Database {
                ORDER BY started_at ASC"#,
         )?;
 
-        let rows = stmt.query_map([], |row| read_shift_row(row))?;
+        let rows = stmt.query_map([], read_shift_row)?;
 
         rows.collect()
     }
