@@ -2,6 +2,7 @@ import { Theme, Surfaces } from "../../tokens/mod.slint";
 import { Colors, Typography, Spacing, Radius, Layout, Locale } from "../../theme.slint";
 import { ScrollView } from "std-widgets.slint";
 import { Panel } from "../../components/atomic/mod.slint";
+import { Button } from "../../components/atomic/mod.slint";
 
 // Component gallery — Plan 2. Hosts every atomic component in light/dark
 // × LTR/RTL × en/ar so visual regressions are obvious. Each Task 3–10
@@ -145,7 +146,22 @@ export component ComponentGallery inherits Rectangle {
                         }
                     }
                 }
-                // (Task 4) Button section appended here
+                // === Button ===
+                Text {
+                    text: "Button — variants";
+                    font-family: Typography.font-family;
+                    font-size: Typography.heading;
+                    font-weight: Typography.semi-bold;
+                    color: Colors.text-primary;
+                }
+                HorizontalLayout {
+                    spacing: Spacing.md;
+                    Button { label: "Primary"; variant: "primary"; }
+                    Button { label: "Secondary"; variant: "secondary"; }
+                    Button { label: "Danger"; variant: "danger"; }
+                    Button { label: "Ghost"; variant: "ghost"; }
+                    Button { label: "Disabled"; variant: "primary"; disabled: true; }
+                }
                 // (Task 5) SearchInput section appended here
                 // (Task 6) OpsButton section appended here
                 // (Task 7) StatusLED section appended here

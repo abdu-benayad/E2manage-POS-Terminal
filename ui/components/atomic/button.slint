@@ -1,0 +1,63 @@
+import { Surfaces } from "../../tokens/mod.slint";
+import { Colors, Typography, Spacing, Radius, Animation } from "../../theme.slint";
+
+export component Button inherits Rectangle {
+    in property <string> label: "Button";
+    // "primary" | "secondary" | "danger" | "ghost"
+    in property <string> variant: "primary";
+    in property <bool> disabled: false;
+
+    callback clicked;
+
+    height: 44px;
+    min-width: 120px;
+    border-radius: Radius.md;
+
+    // Background per variant
+    background: disabled ? Surfaces.surface-bottom :
+        variant == "primary" ? Colors.accent-lime :
+        variant == "secondary" ? Surfaces.surface-top :
+        variant == "danger" ? Colors.danger :
+        transparent;
+
+    border-width: variant == "secondary" ? 1px : 0px;
+    border-color: Surfaces.surface-border;
+
+    states [
+        pressed when touch.pressed && !disabled: {
+            // Compose press feedback via opacity rather than colour math —
+            // keeps the variant-specific tones intact.
+            opacity: 0.85;
+            inner-press-scale: 0.97;
+        }
+    ]
+
+    in-out property <float> inner-press-scale: 1.0;
+    animate inner-press-scale { duration: Animation.fast; easing: ease-out; }
+    animate opacity { duration: Animation.fast; }
+
+    HorizontalLayout {
+        padding-left: Spacing.lg;
+        padding-right: Spacing.lg;
+        alignment: center;
+
+        Text {
+            text: root.label;
+            font-family: Typography.font-family;
+            font-size: Typography.body;
+            font-weight: Typography.semi-bold;
+            // Text colour per variant.
+            color: root.disabled ? Colors.text-muted :
+                root.variant == "primary" ? #0B0D10 :  // dark on lime always (lime stays bright in both themes)
+                root.variant == "secondary" ? Colors.text-primary :
+                root.variant == "danger" ? Colors.text-on-primary :
+                Colors.text-primary;
+            vertical-alignment: center;
+        }
+    }
+
+    touch := TouchArea {
+        enabled: !root.disabled;
+        clicked => { root.clicked(); }
+    }
+}
