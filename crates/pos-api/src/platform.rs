@@ -45,10 +45,11 @@ pub struct PlatformHeartbeatRequest {
 }
 
 /// Heartbeat status indicating device health
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum HeartbeatStatus {
     /// Device is operating normally
+    #[default]
     Healthy,
     /// Device has some issues but is operational
     Degraded,
@@ -56,12 +57,6 @@ pub enum HeartbeatStatus {
     Error,
     /// Device is going offline
     Offline,
-}
-
-impl Default for HeartbeatStatus {
-    fn default() -> Self {
-        Self::Healthy
-    }
 }
 
 impl std::fmt::Display for HeartbeatStatus {
