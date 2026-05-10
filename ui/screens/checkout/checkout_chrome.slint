@@ -1,0 +1,130 @@
+import { Theme, Surfaces } from "../../tokens/mod.slint";
+import { Colors, Typography, Spacing, Radius, Animation, Layout, Locale } from "../../theme.slint";
+import { StatusLED } from "../../components/atomic/mod.slint";
+
+// CheckoutHeader — full-width strip above the four zones. Brand mark,
+// terminal id, operator, online LED, clock. Mock state in skeleton mode;
+// Plan 4 binds these to AppState.
+export component CheckoutHeader inherits Rectangle {
+    in property <string> brand: "E2Manage POS";
+    in property <string> terminal-id: "T-001";
+    in property <string> operator-name: "—";
+    in property <string> clock: "00:00";
+    // "online" | "offline" | "syncing"
+    in property <string> network-state: "online";
+
+    height: 56px;
+    background: Surfaces.panel-top;
+    border-color: Surfaces.panel-border;
+    border-width: 1px;
+    border-radius: Radius.md;
+    drop-shadow-color: Surfaces.panel-shadow;
+    drop-shadow-blur: Surfaces.panel-shadow-blur;
+    drop-shadow-offset-y: Surfaces.panel-shadow-offset-y;
+
+    // Specular top highlight (1 px).
+    Rectangle {
+        x: 1px; y: 1px;
+        width: parent.width - 2px;
+        height: 1px;
+        background: Surfaces.specular-strong;
+    }
+
+    HorizontalLayout {
+        padding-left: Spacing.lg;
+        padding-right: Spacing.lg;
+        spacing: Spacing.lg;
+        alignment: center;
+
+        Text {
+            text: root.brand;
+            font-family: Typography.font-family;
+            font-size: Typography.heading;
+            font-weight: Typography.bold;
+            color: Colors.text-primary;
+            vertical-alignment: center;
+        }
+        Text {
+            text: root.terminal-id;
+            font-family: Typography.font-family-mono;
+            font-size: Typography.caption;
+            color: Colors.text-secondary;
+            vertical-alignment: center;
+        }
+
+        Rectangle { horizontal-stretch: 1; }
+
+        Text {
+            text: root.operator-name;
+            font-family: Typography.font-family;
+            font-size: Typography.caption;
+            color: Colors.text-secondary;
+            vertical-alignment: center;
+        }
+        StatusLED {
+            state: root.network-state;
+        }
+        Text {
+            text: root.clock;
+            font-family: Typography.font-family-mono;
+            font-size: Typography.body;
+            font-weight: Typography.semi-bold;
+            color: Colors.text-primary;
+            vertical-alignment: center;
+        }
+    }
+}
+
+// CheckoutFooter — full-width strip below the four zones. Offline queue
+// summary (or "ready" indicator) plus a "MORE" trigger.
+export component CheckoutFooter inherits Rectangle {
+    in property <string> queue-summary: "";
+    in property <bool> queue-visible: false;
+
+    callback more-pressed;
+
+    height: 32px;
+    background: Surfaces.panel-top;
+    border-color: Surfaces.panel-border;
+    border-width: 1px;
+    border-radius: Radius.md;
+
+    HorizontalLayout {
+        padding-left: Spacing.md;
+        padding-right: Spacing.md;
+        spacing: Spacing.md;
+        alignment: center;
+
+        Text {
+            text: root.queue-visible ? root.queue-summary :
+                (Locale.current == "ar" ? "جاهز" : "Ready");
+            font-family: Typography.font-family;
+            font-size: Typography.tiny;
+            color: root.queue-visible ? Colors.warning : Colors.text-secondary;
+            vertical-alignment: center;
+        }
+
+        Rectangle { horizontal-stretch: 1; }
+
+        Rectangle {
+            width: 64px;
+            height: 22px;
+            border-radius: Radius.sm;
+            background: Surfaces.surface-top;
+            border-color: Surfaces.surface-border;
+            border-width: 1px;
+            TouchArea {
+                clicked => { root.more-pressed(); }
+            }
+            Text {
+                text: Locale.current == "ar" ? "المزيد" : "MORE";
+                font-family: Typography.font-family;
+                font-size: Typography.tiny;
+                font-weight: Typography.semi-bold;
+                color: Colors.text-primary;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
