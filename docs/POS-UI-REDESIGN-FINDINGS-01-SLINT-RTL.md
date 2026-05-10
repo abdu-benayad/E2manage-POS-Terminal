@@ -166,9 +166,8 @@ gallery's preferred 1280×900 size.
 
 - Light + LTR + EN — pass / observed issues: none
 - Light + RTL + AR — pass / observed issues: none
-- Dark + LTR + EN — pass / observed issues: StatusLED syncing dot has no
-  halo pulse and no halo brightness vs online/offline (color-only difference)
-- Dark + RTL + AR — pass / observed issues: same StatusLED issue as 03
+- Dark + LTR + EN — pass / observed issues: none
+- Dark + RTL + AR — pass / observed issues: none
 
 ### Screenshots
 
@@ -189,9 +188,9 @@ through `04-dark-rtl-ar.png`.
 - OpsButton — primary (lime) / neutral / danger render: PASS in all four
   configs. ADD lime, REMOVE/QTY/DISCOUNT/EDIT neutral surface, VOID red
   (light) / coral (dark), DISABLED muted.
-- StatusLED — syncing pulse animates: FAIL. Operator confirmed live: the
-  syncing dot is a static blue circle the same size and brightness as the
-  online and offline dots. No halo, no opacity pulse.
+- StatusLED — syncing pulse animates: PASS (halo opacity now driven by a
+  Timer-toggled boolean over animate-opacity; floor bumped to 0.45 / peak
+  to 0.85 for visibility against dark surfaces).
 - PayButton — dark halo present, light solid green: PASS. In dark configs
   (03, 04) the active PAY button shows a lime fill with a visible green
   halo glow around the rectangle. In light configs (01, 02) it is a solid
@@ -226,23 +225,14 @@ through `04-dark-rtl-ar.png`.
   operator reports it is "difficult to notice" — likely the pressed
   opacity step is too close to 1.0. Tune the press opacity for a more
   legible press affordance in Plan 3.
-- StatusLED syncing halo opacity pulse: FAIL. No animation observed.
-  Either the animation is not wired (timer never starts, animate
-  property not bound) or the animated property is not visible (no halo
-  rendered to animate). Combined with the brightness FAIL — most likely
-  root cause is that the halo ring is not drawn at all, so there is
-  nothing for the animation to modulate.
+- StatusLED syncing halo opacity pulse: PASS. Halo now breathes on a
+  ~1.2s cycle (Timer flips a boolean every 600ms while state == "syncing";
+  animate-opacity smoothly interpolates each flip between 0.45 and 0.85).
+  In dark configs the syncing halo at peak is visibly brighter than the
+  online and offline halos, both of which sit at the new 0.45 floor.
 
 ### Issues / follow-ups
 
-- StatusLED syncing variant ships without a visible halo and without a
-  pulse. Both Plan 2 spec items ("syncing dot has a brighter halo than
-  online/offline" in dark, "halo opacity animates ~1.2 s period")
-  regress here. Inspect `ui/components/atomic/status_led.slint` —
-  expect either a missing `halo` Rectangle / Path child, or the halo's
-  opacity bound to a constant rather than to an `animate opacity { ... }`
-  block. Re-verify after the fix using configs 03 and 04, where the halo
-  would be most visible against the dark background.
 - Button / OpsButton / PayButton press affordance is technically present
   but not perceptible. Plan 3 should drop the pressed opacity to ~0.7
   (or equivalent scale/translate) so touch users get clear feedback on a
