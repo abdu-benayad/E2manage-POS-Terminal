@@ -1,0 +1,96 @@
+import { Surfaces } from "../../tokens/mod.slint";
+import { Colors, Typography, Spacing, Radius, Layout } from "../../theme.slint";
+
+// SearchInput — surface tier 4 (Inset). Leading glyph + editable text +
+// trailing clear button. Mirrors with Layout.is-rtl.
+export component SearchInput inherits Rectangle {
+    in property <string> placeholder: "Search…";
+    in-out property <string> value: "";
+    callback changed(string);
+    callback cleared;
+    callback submitted(string);
+
+    height: 44px;
+    background: Surfaces.inset-top;
+    border-color: Surfaces.inset-border;
+    border-width: 1px;
+    border-radius: Radius.md;
+
+    HorizontalLayout {
+        padding-left: Spacing.md;
+        padding-right: Spacing.md;
+        spacing: Spacing.sm;
+
+        // Leading glyph (always on the leading edge — child order swaps with RTL)
+        Text {
+            text: "⌕";
+            font-family: Typography.font-family;
+            font-size: Typography.heading;
+            color: Colors.text-secondary;
+            vertical-alignment: center;
+            // Hide and re-show via x to mirror — Slint has no `order:` property,
+            // so we use `x` against parent.width when RTL.
+            visible: !Layout.is-rtl;
+        }
+
+        TextInput {
+            text <=> root.value;
+            font-family: Typography.font-family;
+            font-size: Typography.body;
+            color: Colors.text-primary;
+            single-line: true;
+            horizontal-stretch: 1;
+            vertical-alignment: center;
+            horizontal-alignment: Layout.is-rtl ? right : left;
+            edited => { root.changed(self.text); }
+            accepted => { root.submitted(self.text); }
+        }
+
+        // Trailing clear button (only when value is non-empty).
+        Rectangle {
+            width: 28px;
+            height: 28px;
+            border-radius: 14px;
+            background: Surfaces.surface-bottom;
+            visible: root.value != "";
+            TouchArea {
+                clicked => {
+                    root.value = "";
+                    root.cleared();
+                    root.changed("");
+                }
+            }
+            Text {
+                text: "×";
+                font-family: Typography.font-family;
+                font-size: Typography.body;
+                color: Colors.text-secondary;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+
+        // RTL leading-glyph slot (renders on the right when RTL).
+        Text {
+            text: "⌕";
+            font-family: Typography.font-family;
+            font-size: Typography.heading;
+            color: Colors.text-secondary;
+            vertical-alignment: center;
+            visible: Layout.is-rtl;
+        }
+    }
+
+    // Placeholder (rendered as overlay when value is empty)
+    Text {
+        x: Layout.leading(40px, parent.width - self.width - 40px);
+        y: 0;
+        height: parent.height;
+        text: root.placeholder;
+        font-family: Typography.font-family;
+        font-size: Typography.body;
+        color: Colors.text-muted;
+        vertical-alignment: center;
+        visible: root.value == "";
+    }
+}

@@ -3,6 +3,7 @@ import { Colors, Typography, Spacing, Radius, Layout, Locale } from "../../theme
 import { ScrollView } from "std-widgets.slint";
 import { Panel } from "../../components/atomic/mod.slint";
 import { Button } from "../../components/atomic/mod.slint";
+import { SearchInput } from "../../components/atomic/mod.slint";
 
 // Component gallery — Plan 2. Hosts every atomic component in light/dark
 // × LTR/RTL × en/ar so visual regressions are obvious. Each Task 3–10
@@ -162,7 +163,26 @@ export component ComponentGallery inherits Rectangle {
                     Button { label: "Ghost"; variant: "ghost"; }
                     Button { label: "Disabled"; variant: "primary"; disabled: true; }
                 }
-                // (Task 5) SearchInput section appended here
+                // === SearchInput ===
+                Text {
+                    text: "SearchInput";
+                    font-family: Typography.font-family;
+                    font-size: Typography.heading;
+                    font-weight: Typography.semi-bold;
+                    color: Colors.text-primary;
+                }
+                VerticalLayout {
+                    spacing: Spacing.sm;
+                    SearchInput {
+                        width: 360px;
+                        placeholder: "Search products…";
+                    }
+                    SearchInput {
+                        width: 360px;
+                        placeholder: "Search products…";
+                        value: "Latte";
+                    }
+                }
                 // (Task 6) OpsButton section appended here
                 // (Task 7) StatusLED section appended here
                 // (Task 8) PayButton section appended here
