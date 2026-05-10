@@ -1271,7 +1271,7 @@ mod tests {
         let commands = service.build_receipt(&txn, "en");
 
         // Should not contain barcode commands (GS k)
-        let has_barcode = commands.windows(2).any(|w| w == &[0x1D, 0x6B]);
+        let has_barcode = commands.windows(2).any(|w| w == [0x1D, 0x6B]);
         assert!(!has_barcode);
     }
 
@@ -1287,7 +1287,7 @@ mod tests {
         let commands = service.build_receipt(&txn, "en");
 
         // Should contain QR code commands (GS ( k)
-        let has_qr = commands.windows(3).any(|w| w == &[0x1D, 0x28, 0x6B]);
+        let has_qr = commands.windows(3).any(|w| w == [0x1D, 0x28, 0x6B]);
         assert!(has_qr);
     }
 }
