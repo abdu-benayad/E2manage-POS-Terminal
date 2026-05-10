@@ -1,0 +1,42 @@
+// ============================================================================
+// Plan 3 — Mock data shapes for the new checkout skeleton.
+//
+// Each struct mirrors a subset of a Rust domain type from
+// `crates/pos-models/src/{cart,product}.rs`. See
+// `docs/POS-UI-REDESIGN-IMPL-03-MAIN-CHECKOUT.md §5` for the per-field
+// mapping. Field names use snake_case to match the legacy
+// CartItemData / ProductData / CategoryData structs already in
+// ui/components/.
+//
+// In skeleton mode (Plan 3) these structs are populated by hand in the
+// preview window. In Plan 4, a Rust binding layer will format Decimal
+// fields to strings and resolve locale before populating them.
+// ============================================================================
+
+export struct CheckoutLineData {
+    id: string,
+    product_id: string,
+    name: string,
+    qty: int,
+    unit_price: string,
+    line_total: string,
+    currency: string,
+}
+
+export struct CheckoutTileData {
+    id: string,
+    name: string,
+    price: string,
+    currency: string,
+    category_id: string,
+    category_accent: color,
+    disabled: bool,
+    out_of_stock: bool,
+}
+
+export struct CheckoutCategoryData {
+    id: string,
+    name: string,
+    icon: string,
+    accent: color,
+}
