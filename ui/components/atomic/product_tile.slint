@@ -1,0 +1,107 @@
+import { Surfaces } from "../../tokens/mod.slint";
+import { Colors, Typography, Spacing, Radius, Animation, Layout, Locale } from "../../theme.slint";
+
+export component ProductTile inherits Rectangle {
+    in property <string> name: "Product";
+    in property <string> price: "0.00";
+    in property <string> currency: "LYD";
+    // Accent colour for the leading-edge stripe. Pass any of Colors.cat-*
+    // or any other colour to opt into a different category.
+    in property <color> category-accent: Colors.cat-coffee;
+    in property <bool> disabled: false;
+    // Optional out-of-stock banner.
+    in property <bool> out-of-stock: false;
+
+    callback clicked;
+
+    border-radius: Radius.md;
+    border-width: 1px;
+    border-color: Surfaces.surface-border;
+    background: Surfaces.surface-top;
+    drop-shadow-color: Surfaces.surface-shadow;
+    drop-shadow-blur: Surfaces.surface-shadow-blur;
+    drop-shadow-offset-y: Surfaces.surface-shadow-offset-y;
+
+    // Leading-edge accent stripe (3 dp wide, full height).
+    Rectangle {
+        x: Layout.leading(0px, parent.width - 3px);
+        y: 0;
+        width: 3px;
+        height: parent.height;
+        background: root.disabled ? Colors.text-muted : root.category-accent;
+        border-top-left-radius: Layout.is-rtl ? 0 : parent.border-radius;
+        border-bottom-left-radius: Layout.is-rtl ? 0 : parent.border-radius;
+        border-top-right-radius: Layout.is-rtl ? parent.border-radius : 0;
+        border-bottom-right-radius: Layout.is-rtl ? parent.border-radius : 0;
+    }
+
+    states [
+        pressed when touch.pressed && !root.disabled: { opacity: 0.88; }
+    ]
+    animate opacity { duration: Animation.fast; }
+
+    VerticalLayout {
+        padding-left: Layout.leading(Spacing.md + 3px, Spacing.md);
+        padding-right: Layout.trailing(Spacing.md + 3px, Spacing.md);
+        padding-top: Spacing.md;
+        padding-bottom: Spacing.md;
+        spacing: Spacing.xs;
+
+        Text {
+            text: root.name;
+            font-family: Typography.font-family;
+            font-size: Typography.body;
+            font-weight: Typography.semi-bold;
+            color: root.disabled ? Colors.text-muted : Colors.text-primary;
+            horizontal-stretch: 1;
+            wrap: word-wrap;
+            horizontal-alignment: Layout.is-rtl ? right : left;
+        }
+
+        // Price row, mono numerics + caption-sized currency.
+        HorizontalLayout {
+            spacing: Spacing.xs;
+            alignment: Layout.is-rtl ? end : start;
+            Text {
+                text: root.price;
+                font-family: Typography.font-family-mono;
+                font-size: Typography.heading;
+                font-weight: Typography.bold;
+                color: root.disabled ? Colors.text-muted : Colors.text-primary;
+            }
+            Text {
+                text: root.currency;
+                font-family: Typography.font-family;
+                font-size: Typography.caption;
+                color: Colors.text-secondary;
+                vertical-alignment: bottom;
+            }
+        }
+
+        // Out-of-stock pill (replaces the price row visually when set).
+        Rectangle {
+            visible: root.out-of-stock;
+            height: 22px;
+            border-radius: 11px;
+            background: Colors.danger;
+            HorizontalLayout {
+                padding-left: Spacing.sm;
+                padding-right: Spacing.sm;
+                alignment: center;
+                Text {
+                    text: Locale.current == "ar" ? "غير متوفر" : "OUT OF STOCK";
+                    font-family: Typography.font-family;
+                    font-size: Typography.tiny;
+                    font-weight: Typography.bold;
+                    color: Colors.text-on-primary;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+
+    touch := TouchArea {
+        enabled: !root.disabled;
+        clicked => { root.clicked(); }
+    }
+}

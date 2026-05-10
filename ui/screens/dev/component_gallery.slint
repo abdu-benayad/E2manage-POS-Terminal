@@ -7,6 +7,7 @@ import { SearchInput } from "../../components/atomic/mod.slint";
 import { OpsButton } from "../../components/atomic/mod.slint";
 import { StatusLED } from "../../components/atomic/mod.slint";
 import { PayButton } from "../../components/atomic/mod.slint";
+import { ProductTile } from "../../components/atomic/mod.slint";
 
 // Component gallery — Plan 2. Hosts every atomic component in light/dark
 // × LTR/RTL × en/ar so visual regressions are obvious. Each Task 3–10
@@ -276,7 +277,46 @@ export component ComponentGallery inherits Rectangle {
                         disabled: true;
                     }
                 }
-                // (Task 9) ProductTile section appended here
+                // === ProductTile ===
+                Text {
+                    text: "ProductTile — category accents";
+                    font-family: Typography.font-family;
+                    font-size: Typography.heading;
+                    font-weight: Typography.semi-bold;
+                    color: Colors.text-primary;
+                }
+                HorizontalLayout {
+                    spacing: Spacing.md;
+                    ProductTile {
+                        width: 180px; height: 120px;
+                        name: Locale.current == "ar" ? "قهوة لاتيه" : "Café Latte";
+                        price: "12.500";
+                        currency: "LYD";
+                        category-accent: Colors.cat-coffee;
+                    }
+                    ProductTile {
+                        width: 180px; height: 120px;
+                        name: Locale.current == "ar" ? "كرواسون" : "Croissant";
+                        price: "6.000";
+                        currency: "LYD";
+                        category-accent: Colors.cat-bakery;
+                    }
+                    ProductTile {
+                        width: 180px; height: 120px;
+                        name: Locale.current == "ar" ? "ماء بارد" : "Cold Water";
+                        price: "1.500";
+                        currency: "LYD";
+                        category-accent: Colors.cat-cold;
+                    }
+                    ProductTile {
+                        width: 180px; height: 120px;
+                        name: Locale.current == "ar" ? "ساندويش" : "Sandwich";
+                        price: "18.000";
+                        currency: "LYD";
+                        category-accent: Colors.cat-food;
+                        out-of-stock: true;
+                    }
+                }
                 // (Task 10) CartLine section appended here
 
                 // Filler so the gallery is non-empty before any sections land.
