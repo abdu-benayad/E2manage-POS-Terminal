@@ -5,6 +5,7 @@ import { Panel } from "../../components/atomic/mod.slint";
 import { Button } from "../../components/atomic/mod.slint";
 import { SearchInput } from "../../components/atomic/mod.slint";
 import { OpsButton } from "../../components/atomic/mod.slint";
+import { StatusLED } from "../../components/atomic/mod.slint";
 
 // Component gallery — Plan 2. Hosts every atomic component in light/dark
 // × LTR/RTL × en/ar so visual regressions are obvious. Each Task 3–10
@@ -202,7 +203,54 @@ export component ComponentGallery inherits Rectangle {
                     OpsButton { glyph: "⌫"; label: "VOID"; variant: "danger"; }
                     OpsButton { glyph: "+1"; label: "DISABLED"; variant: "primary"; disabled: true; }
                 }
-                // (Task 7) StatusLED section appended here
+                // === StatusLED ===
+                Text {
+                    text: "StatusLED";
+                    font-family: Typography.font-family;
+                    font-size: Typography.heading;
+                    font-weight: Typography.semi-bold;
+                    color: Colors.text-primary;
+                }
+                HorizontalLayout {
+                    spacing: Spacing.lg;
+                    alignment: start;
+                    HorizontalLayout {
+                        spacing: Spacing.sm;
+                        alignment: center;
+                        StatusLED { state: "online"; }
+                        Text {
+                            text: "Online";
+                            font-family: Typography.font-family;
+                            font-size: Typography.caption;
+                            color: Colors.text-primary;
+                            vertical-alignment: center;
+                        }
+                    }
+                    HorizontalLayout {
+                        spacing: Spacing.sm;
+                        alignment: center;
+                        StatusLED { state: "offline"; }
+                        Text {
+                            text: "Offline";
+                            font-family: Typography.font-family;
+                            font-size: Typography.caption;
+                            color: Colors.text-primary;
+                            vertical-alignment: center;
+                        }
+                    }
+                    HorizontalLayout {
+                        spacing: Spacing.sm;
+                        alignment: center;
+                        StatusLED { state: "syncing"; }
+                        Text {
+                            text: "Syncing";
+                            font-family: Typography.font-family;
+                            font-size: Typography.caption;
+                            color: Colors.text-primary;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
                 // (Task 8) PayButton section appended here
                 // (Task 9) ProductTile section appended here
                 // (Task 10) CartLine section appended here

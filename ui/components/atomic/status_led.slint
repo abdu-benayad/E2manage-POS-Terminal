@@ -1,0 +1,44 @@
+import { Colors, Animation } from "../../theme.slint";
+
+export component StatusLED inherits Rectangle {
+    // "online" | "offline" | "syncing"
+    in property <string> state: "online";
+
+    width: 14px;
+    height: 14px;
+
+    out property <color> dot-color:
+        state == "offline" ? Colors.warning :
+        state == "syncing" ? Colors.info :
+        Colors.accent-lime;
+
+    // Halo
+    Rectangle {
+        width: 14px;
+        height: 14px;
+        border-radius: 7px;
+        background: root.dot-color;
+        opacity: 0.25;
+        animate opacity {
+            duration: 1200ms;
+            iteration-count: -1;
+            easing: ease-in-out;
+        }
+        // Pulse only when syncing — pinned-opacity otherwise
+        // (Slint can't disable an animation conditionally, so we drive the
+        // value through a state.)
+        states [
+            pulsing when root.state == "syncing": { opacity: 0.55; }
+            steady when root.state != "syncing": { opacity: 0.25; }
+        ]
+    }
+    // Core dot
+    Rectangle {
+        x: 3px;
+        y: 3px;
+        width: 8px;
+        height: 8px;
+        border-radius: 4px;
+        background: root.dot-color;
+    }
+}
