@@ -182,7 +182,7 @@ fn add_thousand_separators(integer_str: &str, locale: &str) -> String {
 
     let mut result = String::with_capacity(len + (len - 1) / 3);
     for (i, c) in chars.iter().enumerate() {
-        if i > 0 && (len - i) % 3 == 0 {
+        if i > 0 && (len - i).is_multiple_of(3) {
             result.push_str(sep);
         }
         result.push(*c);

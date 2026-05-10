@@ -847,13 +847,11 @@ fn run_sync_with_ui_updates(
                 } else {
                     let _ = tx_clone.send(SyncEvent::Completed);
                 }
+            } else if let Err(e) = sync_service_clone.sync_all(&tx_clone).await {
+                warn!("Quick sync failed: {}", e);
+                let _ = tx_clone.send(SyncEvent::Failed(e.to_string()));
             } else {
-                if let Err(e) = sync_service_clone.sync_all(&tx_clone).await {
-                    warn!("Quick sync failed: {}", e);
-                    let _ = tx_clone.send(SyncEvent::Failed(e.to_string()));
-                } else {
-                    let _ = tx_clone.send(SyncEvent::Completed);
-                }
+                let _ = tx_clone.send(SyncEvent::Completed);
             }
         });
     });

@@ -46,7 +46,7 @@ pub fn time_ago(dt: DateTime<Utc>, locale: &str) -> String {
                     "منذ دقيقة".to_string()
                 } else if minutes == 2 {
                     "منذ دقيقتين".to_string()
-                } else if minutes >= 3 && minutes <= 10 {
+                } else if (3..=10).contains(&minutes) {
                     format!("منذ {} دقائق", minutes)
                 } else {
                     format!("منذ {} دقيقة", minutes)
@@ -56,7 +56,7 @@ pub fn time_ago(dt: DateTime<Utc>, locale: &str) -> String {
                     "منذ ساعة".to_string()
                 } else if hours == 2 {
                     "منذ ساعتين".to_string()
-                } else if hours >= 3 && hours <= 10 {
+                } else if (3..=10).contains(&hours) {
                     format!("منذ {} ساعات", hours)
                 } else {
                     format!("منذ {} ساعة", hours)
@@ -66,7 +66,7 @@ pub fn time_ago(dt: DateTime<Utc>, locale: &str) -> String {
                     "منذ يوم".to_string()
                 } else if days == 2 {
                     "منذ يومين".to_string()
-                } else if days >= 3 && days <= 10 {
+                } else if (3..=10).contains(&days) {
                     format!("منذ {} أيام", days)
                 } else {
                     format!("منذ {} يوم", days)
@@ -79,16 +79,14 @@ pub fn time_ago(dt: DateTime<Utc>, locale: &str) -> String {
                 } else {
                     format!("منذ {} أسابيع", weeks)
                 }
+            } else if months == 1 {
+                "منذ شهر".to_string()
+            } else if months == 2 {
+                "منذ شهرين".to_string()
+            } else if (3..=10).contains(&months) {
+                format!("منذ {} أشهر", months)
             } else {
-                if months == 1 {
-                    "منذ شهر".to_string()
-                } else if months == 2 {
-                    "منذ شهرين".to_string()
-                } else if months >= 3 && months <= 10 {
-                    format!("منذ {} أشهر", months)
-                } else {
-                    format!("منذ {} شهر", months)
-                }
+                format!("منذ {} شهر", months)
             }
         }
         "fr" => {
@@ -114,12 +112,10 @@ pub fn time_ago(dt: DateTime<Utc>, locale: &str) -> String {
                 } else {
                     format!("il y a {} semaines", weeks)
                 }
+            } else if months == 1 {
+                "il y a 1 mois".to_string()
             } else {
-                if months == 1 {
-                    "il y a 1 mois".to_string()
-                } else {
-                    format!("il y a {} mois", months)
-                }
+                format!("il y a {} mois", months)
             }
         }
         _ => {
@@ -150,12 +146,10 @@ pub fn time_ago(dt: DateTime<Utc>, locale: &str) -> String {
                 } else {
                     format!("{} weeks ago", weeks)
                 }
+            } else if months == 1 {
+                "1 month ago".to_string()
             } else {
-                if months == 1 {
-                    "1 month ago".to_string()
-                } else {
-                    format!("{} months ago", months)
-                }
+                format!("{} months ago", months)
             }
         }
     }
