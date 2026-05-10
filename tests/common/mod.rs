@@ -2,6 +2,12 @@
 //!
 //! Shared setup functions and test data for integration tests.
 
+#![expect(
+    dead_code,
+    reason = "shared test helpers consumed by multiple integration test binaries; rustc dead-code analysis runs per test target and cannot see cross-target use"
+)]
+
+
 use e2manage_pos_terminal::api::ApiClient;
 use e2manage_pos_terminal::db::migrations::run_migrations;
 use e2manage_pos_terminal::db::{Database, OperatorRow, ProductRow, ShiftRow};

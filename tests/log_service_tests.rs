@@ -65,13 +65,13 @@ fn test_log_level_as_str() {
 fn test_log_service_new() {
     let service = LogService::new();
     // Should initialize without panicking
-    assert!(service.log_directory().as_os_str().len() > 0);
+    assert!(!service.log_directory().as_os_str().is_empty());
 }
 
 #[test]
 fn test_log_service_default() {
     let service = LogService::default();
-    assert!(service.log_directory().as_os_str().len() > 0);
+    assert!(!service.log_directory().as_os_str().is_empty());
 }
 
 // ============================================================================

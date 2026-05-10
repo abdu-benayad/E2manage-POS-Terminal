@@ -14,6 +14,6 @@
 fn arabic_text_renders_non_empty() {
     // Smoke check — actual cluster validation is visual via the harness in Task 8.
     // The point of this test is to confirm the test infrastructure works and to
-    // give us a permanent harness for future regressions.
-    assert!(true);
+    // give us a permanent harness for future regressions. An empty body is enough
+    // to keep this as a stable test target slot until shaping assertions land.
 }

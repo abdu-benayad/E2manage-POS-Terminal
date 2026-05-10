@@ -93,7 +93,7 @@ fn test_product_search() {
 
     // Search by specific name
     let results = db.search_products("Product 5", 50).unwrap();
-    assert!(results.len() >= 1);
+    assert!(!results.is_empty());
 }
 
 #[test]

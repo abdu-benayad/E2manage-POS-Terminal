@@ -78,7 +78,7 @@ fn test_support_service_new() {
 
 #[test]
 fn test_support_service_default() {
-    let service = SupportService::default();
+    let service = SupportService;
     let contact = service.get_contact_info();
     assert!(!contact.email.is_empty());
 }

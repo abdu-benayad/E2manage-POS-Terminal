@@ -1,6 +1,12 @@
 // E2E API Tests for POS Terminal
 //
 // Comprehensive End-to-End API tests for the POS Terminal communicating with the E2Manage backend.
+
+#![expect(
+    dead_code,
+    reason = "wire-format response shapes deserialized from the backend; helper accessors and request types are exercised only by --ignored e2e runs"
+)]
+
 //
 // ## Running Tests
 //
@@ -245,6 +251,12 @@ pub struct UserInfo {
 pub struct E2EClient {
     client: Client,
     base_url: String,
+}
+
+impl Default for E2EClient {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl E2EClient {
@@ -3673,7 +3685,7 @@ mod p11_pos_config {
     #[tokio::test]
     #[ignore = "Requires running backend"]
     async fn test_04_config_requires_admin() {
-        let client = E2EClient::new();
+        let _client = E2EClient::new();
 
         // Try to update config without auth
         let request = serde_json::json!({
