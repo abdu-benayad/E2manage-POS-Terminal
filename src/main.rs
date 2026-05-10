@@ -4,6 +4,7 @@
 
 slint::include_modules!();
 
+mod component_gallery;
 mod dev_harness;
 mod locale_detect;
 
@@ -42,6 +43,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Developer harness mode — bypass full app startup
     if std::env::args().any(|a| a == "--theme-harness") {
         return dev_harness::run();
+    }
+
+    if std::env::args().any(|a| a == "--component-gallery") {
+        return component_gallery::run();
     }
 
     info!("===========================================");

@@ -1,0 +1,131 @@
+import { Theme, Surfaces } from "../../tokens/mod.slint";
+import { Colors, Typography, Spacing, Radius, Layout, Locale } from "../../theme.slint";
+import { ScrollView } from "std-widgets.slint";
+
+// Component gallery — Plan 2. Hosts every atomic component in light/dark
+// × LTR/RTL × en/ar so visual regressions are obvious. Each Task 3–10
+// adds one block below the divider comment.
+export component ComponentGallery inherits Rectangle {
+    in-out property <string> mode <=> Theme.mode;
+    in-out property <bool> rtl <=> Layout.rtl;
+    in-out property <string> locale <=> Locale.current;
+
+    callback toggle-theme;
+    callback toggle-rtl;
+    callback cycle-locale;
+
+    background: Surfaces.bg-bottom;
+
+    VerticalLayout {
+        spacing: Spacing.md;
+        padding: Spacing.lg;
+
+        // Toolbar (mirrors theme harness)
+        Rectangle {
+            height: 56px;
+            background: Surfaces.panel-top;
+            border-color: Surfaces.panel-border;
+            border-width: 1px;
+            border-radius: Radius.md;
+
+            HorizontalLayout {
+                padding-left: Spacing.lg;
+                padding-right: Spacing.lg;
+                spacing: Spacing.md;
+                alignment: center;
+
+                Text {
+                    text: "POS — Component Gallery";
+                    font-family: Typography.font-family;
+                    font-size: Typography.heading;
+                    font-weight: Typography.semi-bold;
+                    color: Colors.text-primary;
+                    horizontal-stretch: 1;
+                    vertical-alignment: center;
+                }
+
+                toolbar-btn := Rectangle {
+                    width: 110px;
+                    height: 36px;
+                    background: Surfaces.surface-top;
+                    border-color: Surfaces.surface-border;
+                    border-width: 1px;
+                    border-radius: Radius.sm;
+                    TouchArea { clicked => { root.toggle-theme(); } }
+                    Text {
+                        text: "Theme: " + Theme.mode;
+                        font-family: Typography.font-family;
+                        font-size: Typography.caption;
+                        color: Colors.text-primary;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+
+                Rectangle {
+                    width: 110px;
+                    height: 36px;
+                    background: Surfaces.surface-top;
+                    border-color: Surfaces.surface-border;
+                    border-width: 1px;
+                    border-radius: Radius.sm;
+                    TouchArea { clicked => { root.toggle-rtl(); } }
+                    Text {
+                        text: Layout.is-rtl ? "Dir: RTL" : "Dir: LTR";
+                        font-family: Typography.font-family;
+                        font-size: Typography.caption;
+                        color: Colors.text-primary;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+
+                Rectangle {
+                    width: 110px;
+                    height: 36px;
+                    background: Surfaces.surface-top;
+                    border-color: Surfaces.surface-border;
+                    border-width: 1px;
+                    border-radius: Radius.sm;
+                    TouchArea { clicked => { root.cycle-locale(); } }
+                    Text {
+                        text: "Lang: " + Locale.current;
+                        font-family: Typography.font-family;
+                        font-size: Typography.caption;
+                        color: Colors.text-primary;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+
+        // Scrollable component sections — Tasks 3–10 add blocks here.
+        ScrollView {
+            VerticalLayout {
+                spacing: Spacing.xl;
+                padding: Spacing.md;
+
+                // === COMPONENT SECTIONS START — appended by Plan 2 Tasks 3–10 ===
+
+                // (Task 3) Panel section appended here
+                // (Task 4) Button section appended here
+                // (Task 5) SearchInput section appended here
+                // (Task 6) OpsButton section appended here
+                // (Task 7) StatusLED section appended here
+                // (Task 8) PayButton section appended here
+                // (Task 9) ProductTile section appended here
+                // (Task 10) CartLine section appended here
+
+                // Filler so the gallery is non-empty before any sections land.
+                Text {
+                    text: "Component sections will appear here as Plan 2 Tasks 3–10 land.";
+                    font-family: Typography.font-family;
+                    font-size: Typography.caption;
+                    color: Colors.text-secondary;
+                    horizontal-alignment: center;
+                }
+            }
+        }
+    }
+}
