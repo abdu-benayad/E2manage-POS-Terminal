@@ -149,3 +149,101 @@ Carry-forward to Plan 2:
   operator on a workstation before the foundation branch merges to main —
   it is a procedural gate, not architectural work. Capture screenshots into
   `docs/POS-UI-REDESIGN-SCREENSHOTS-FOUNDATION/` and amend this section.
+
+## Visual verification — Plan 2 (Atomic Components)
+
+Date: 2026-05-10
+Verified-by: abdu-benayad
+
+Run host: developer workstation (X11, 1920×1080). Build: `cargo build`
+(offline, vendored), `dev` profile, 7m 42s. Binary launched with
+`--component-gallery`. Each configuration's screenshot is a vertical stitch
+of two `import -window` captures (top-of-scroll + bottom-of-scroll)
+because all eight component blocks do not fit in one viewport at the
+gallery's preferred 1280×900 size.
+
+### Configuration matrix
+
+- Light + LTR + EN — pass / observed issues: none
+- Light + RTL + AR — pass / observed issues: none
+- Dark + LTR + EN — pass / observed issues: StatusLED syncing dot has no
+  halo pulse and no halo brightness vs online/offline (color-only difference)
+- Dark + RTL + AR — pass / observed issues: same StatusLED issue as 03
+
+### Screenshots
+
+See `docs/POS-UI-REDESIGN-SCREENSHOTS-PLAN-02/01-light-ltr-en.png`
+through `04-dark-rtl-ar.png`.
+
+### Component checks
+
+- Panel — surface tier 2 tokens differ between themes: PASS. Light shows
+  white panels on a pale-gray background; dark shows dark-navy panels on
+  near-black. Panel/background contrast survives the theme flip.
+- Button — primary/secondary/danger/ghost render: PASS in both themes,
+  with primary lime, secondary surface-tinted, danger red (light) /
+  coral (dark), ghost transparent, disabled muted.
+- SearchInput — magnifier mirrors to the leading edge: PASS. Magnifier is
+  on the LEFT in LTR (01, 03) and on the RIGHT in RTL (02, 04). Placeholder
+  text mirrors as well.
+- OpsButton — primary (lime) / neutral / danger render: PASS in all four
+  configs. ADD lime, REMOVE/QTY/DISCOUNT/EDIT neutral surface, VOID red
+  (light) / coral (dark), DISABLED muted.
+- StatusLED — syncing pulse animates: FAIL. Operator confirmed live: the
+  syncing dot is a static blue circle the same size and brightness as the
+  online and offline dots. No halo, no opacity pulse.
+- PayButton — dark halo present, light solid green: PASS. In dark configs
+  (03, 04) the active PAY button shows a lime fill with a visible green
+  halo glow around the rectangle. In light configs (01, 02) it is a solid
+  deep green with no glow and no gradient. Disabled/zero-total state is
+  rendered as a muted version in both themes.
+- ProductTile — accent stripe on correct edge per direction: PASS. Stripe
+  sits on the LEFT in LTR (01 Café Latte orange / Croissant purple / Cold
+  Water teal / Sandwich red-or-green) and on the RIGHT in RTL (02, 04).
+  Out-of-stock badge ("غير متوفر" in AR) renders correctly under each tile.
+- CartLine — qty pill on correct edge, selected glow visible: PASS. The
+  ×2 / ×1 quantity pill is on the LEFT in LTR and on the RIGHT in RTL.
+  Selected line in all four configs shows a lime stroke around the row.
+
+### RTL-specific checks (configs 02, 04)
+
+- Numerics stay LTR inside RTL containers: PASS. PayButton total
+  "12.600 LYD", ProductTile prices ("12.500", "6.000", "1.500", "18.000"),
+  and CartLine totals ("25.000", "6.000", "18.000") all render
+  left-to-right with the decimal point in the expected position even
+  though the surrounding Arabic flows right-to-left.
+
+### Arabic shaping checks (configs 02, 04)
+
+- PASS. "ادفع" (PayButton), "قهوة لاتيه" / "كرواسون" / "ماء بارد" /
+  "ساندويش" (ProductTile titles), "غير متوفر" (out-of-stock badge),
+  "ساندويش بالدجاج المشوي" (long CartLine title) all show connected
+  letter forms, no isolated-form fallbacks, no missing-glyph boxes.
+
+### Animation checks
+
+- Click opacity dip on press: PASS-with-caveat. The dip fires but the
+  operator reports it is "difficult to notice" — likely the pressed
+  opacity step is too close to 1.0. Tune the press opacity for a more
+  legible press affordance in Plan 3.
+- StatusLED syncing halo opacity pulse: FAIL. No animation observed.
+  Either the animation is not wired (timer never starts, animate
+  property not bound) or the animated property is not visible (no halo
+  rendered to animate). Combined with the brightness FAIL — most likely
+  root cause is that the halo ring is not drawn at all, so there is
+  nothing for the animation to modulate.
+
+### Issues / follow-ups
+
+- StatusLED syncing variant ships without a visible halo and without a
+  pulse. Both Plan 2 spec items ("syncing dot has a brighter halo than
+  online/offline" in dark, "halo opacity animates ~1.2 s period")
+  regress here. Inspect `ui/components/atomic/status_led.slint` —
+  expect either a missing `halo` Rectangle / Path child, or the halo's
+  opacity bound to a constant rather than to an `animate opacity { ... }`
+  block. Re-verify after the fix using configs 03 and 04, where the halo
+  would be most visible against the dark background.
+- Button / OpsButton / PayButton press affordance is technically present
+  but not perceptible. Plan 3 should drop the pressed opacity to ~0.7
+  (or equivalent scale/translate) so touch users get clear feedback on a
+  24" cashier display.
