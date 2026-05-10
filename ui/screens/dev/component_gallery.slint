@@ -4,6 +4,7 @@ import { ScrollView } from "std-widgets.slint";
 import { Panel } from "../../components/atomic/mod.slint";
 import { Button } from "../../components/atomic/mod.slint";
 import { SearchInput } from "../../components/atomic/mod.slint";
+import { OpsButton } from "../../components/atomic/mod.slint";
 
 // Component gallery — Plan 2. Hosts every atomic component in light/dark
 // × LTR/RTL × en/ar so visual regressions are obvious. Each Task 3–10
@@ -183,7 +184,24 @@ export component ComponentGallery inherits Rectangle {
                         value: "Latte";
                     }
                 }
-                // (Task 6) OpsButton section appended here
+                // === OpsButton ===
+                Text {
+                    text: "OpsButton — operations column";
+                    font-family: Typography.font-family;
+                    font-size: Typography.heading;
+                    font-weight: Typography.semi-bold;
+                    color: Colors.text-primary;
+                }
+                HorizontalLayout {
+                    spacing: Spacing.sm;
+                    OpsButton { glyph: "+1"; label: "ADD"; variant: "primary"; }
+                    OpsButton { glyph: "−1"; label: "REMOVE"; }
+                    OpsButton { glyph: "×n"; label: "QTY"; }
+                    OpsButton { glyph: "%"; label: "DISCOUNT"; }
+                    OpsButton { glyph: "✎"; label: "EDIT"; }
+                    OpsButton { glyph: "⌫"; label: "VOID"; variant: "danger"; }
+                    OpsButton { glyph: "+1"; label: "DISABLED"; variant: "primary"; disabled: true; }
+                }
                 // (Task 7) StatusLED section appended here
                 // (Task 8) PayButton section appended here
                 // (Task 9) ProductTile section appended here
