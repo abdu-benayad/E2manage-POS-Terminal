@@ -5,6 +5,7 @@
 slint::include_modules!();
 
 mod dev_harness;
+mod locale_detect;
 
 use e2manage_pos_terminal::api::ApiClient;
 use e2manage_pos_terminal::api::PairingStatus;
@@ -135,6 +136,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create the main window
     let window = MainWindow::new()?;
+
+    // === Apply detected locale to UI globals (Plan 2 Task 1) ===========
+    {
+        let (locale_code, rtl) = locale_detect::detect_locale();
+        window.set_rtl(rtl);
+        window.set_locale(SharedString::from(locale_code));
+        info!(
+            locale = locale_code,
+            rtl, "applied detected locale to UI globals"
+        );
+    }
 
     // Set terminal code and company name in AppState via window bindings
     window.set_app_terminal_code(terminal_code.clone().into());

@@ -1433,6 +1433,12 @@ export component MainWindow inherits Window {
     changed viewport-w => { Responsive.viewport-width = self.width; }
     changed viewport-h => { Responsive.viewport-height = self.height; }
 
+    // Locale + RTL forwarding (Plan 2 Task 1) — Rust sets these once at
+    // startup based on LC_ALL / LANG so the whole component tree picks up
+    // the correct direction and locale before first paint.
+    in-out property <bool> rtl <=> Layout.rtl;
+    in-out property <string> locale <=> Locale.current;
+
     // AppState bindings (for setting from Rust)
     in-out property <string> app-company-name <=> AppState.company-name;
     in-out property <string> app-terminal-code <=> AppState.terminal-code;

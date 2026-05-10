@@ -13,9 +13,10 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     let harness = crate::ThemeHarnessWindow::new()?;
 
     // Initial values — light/LTR/English is the canonical first configuration.
+    let (locale_code, rtl) = crate::locale_detect::detect_locale();
     harness.set_mode("light".into());
-    harness.set_rtl(false);
-    harness.set_locale("en".into());
+    harness.set_rtl(rtl);
+    harness.set_locale(locale_code.into());
 
     // Toolbar toggles
     let weak = harness.as_weak();

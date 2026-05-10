@@ -38,6 +38,7 @@
 
 // Local modules (not split into workspace crates yet)
 pub mod hardware;
+pub mod locale_detect;
 pub mod platform;
 pub mod ui;
 pub mod utils;
