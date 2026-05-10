@@ -1,0 +1,158 @@
+import { ScrollView } from "std-widgets.slint";
+import { Theme, Surfaces } from "../../tokens/mod.slint";
+import { Colors, Typography, Spacing, Radius, Animation, Layout, Locale } from "../../theme.slint";
+import { Panel, PayButton, CartLine } from "../../components/atomic/mod.slint";
+import { CheckoutLineData } from "checkout_types.slint";
+
+// CartPanelArea — the trailing-edge zone. Cart line list + totals + Pay.
+// `selected-line-id` is two-way: tapping a CartLine updates it; the screen
+// uses it to drive the OpsColumn's disabled state.
+export component CartPanelArea inherits Panel {
+    width: 280px;
+    content-padding: Spacing.md;
+
+    in property <[CheckoutLineData]> lines: [];
+    in property <string> subtotal: "0.000";
+    in property <string> tax: "0.000";
+    in property <string> total: "0.000";
+    in property <string> currency: "LYD";
+    in property <string> customer-name: "";
+    in-out property <string> selected-line-id: "";
+
+    callback pay-pressed;
+
+    VerticalLayout {
+        spacing: Spacing.md;
+
+        // Optional customer chip.
+        Rectangle {
+            visible: root.customer-name != "";
+            height: 36px;
+            border-radius: Radius.sm;
+            background: Surfaces.inset-top;
+            border-color: Surfaces.inset-border;
+            border-width: 1px;
+            HorizontalLayout {
+                padding-left: Spacing.sm;
+                padding-right: Spacing.sm;
+                spacing: Spacing.xs;
+                alignment: start;
+                Text {
+                    text: "👤";
+                    font-family: Typography.font-family;
+                    font-size: Typography.body;
+                    color: Colors.text-secondary;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: root.customer-name;
+                    font-family: Typography.font-family;
+                    font-size: Typography.caption;
+                    font-weight: Typography.semi-bold;
+                    color: Colors.text-primary;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        // Cart line list.
+        ScrollView {
+            vertical-stretch: 1;
+            VerticalLayout {
+                spacing: Spacing.xs;
+                for line in root.lines: CartLine {
+                    name: line.name;
+                    qty: line.qty;
+                    unit-price: line.unit_price;
+                    line-total: line.line_total;
+                    currency: line.currency;
+                    selected: root.selected-line-id == line.id;
+                    clicked => { root.selected-line-id = line.id; }
+                }
+            }
+        }
+
+        // Totals block.
+        Rectangle {
+            height: 76px;
+            border-radius: Radius.sm;
+            background: Surfaces.inset-top;
+            border-color: Surfaces.inset-border;
+            border-width: 1px;
+            VerticalLayout {
+                padding: Spacing.sm;
+                spacing: Spacing.xxs;
+
+                HorizontalLayout {
+                    spacing: Spacing.sm;
+                    Text {
+                        text: Locale.current == "ar" ? "المجموع الفرعي" : "Subtotal";
+                        font-family: Typography.font-family;
+                        font-size: Typography.caption;
+                        color: Colors.text-secondary;
+                        horizontal-stretch: 1;
+                        horizontal-alignment: Layout.is-rtl ? right : left;
+                    }
+                    Text {
+                        text: root.subtotal;
+                        font-family: Typography.font-family-mono;
+                        font-size: Typography.caption;
+                        color: Colors.text-primary;
+                    }
+                }
+                HorizontalLayout {
+                    spacing: Spacing.sm;
+                    Text {
+                        text: Locale.current == "ar" ? "الضريبة" : "Tax";
+                        font-family: Typography.font-family;
+                        font-size: Typography.caption;
+                        color: Colors.text-secondary;
+                        horizontal-stretch: 1;
+                        horizontal-alignment: Layout.is-rtl ? right : left;
+                    }
+                    Text {
+                        text: root.tax;
+                        font-family: Typography.font-family-mono;
+                        font-size: Typography.caption;
+                        color: Colors.text-primary;
+                    }
+                }
+                HorizontalLayout {
+                    spacing: Spacing.sm;
+                    Text {
+                        text: Locale.current == "ar" ? "الإجمالي" : "Total";
+                        font-family: Typography.font-family;
+                        font-size: Typography.body;
+                        font-weight: Typography.bold;
+                        color: Colors.text-primary;
+                        horizontal-stretch: 1;
+                        horizontal-alignment: Layout.is-rtl ? right : left;
+                    }
+                    Text {
+                        text: root.total;
+                        font-family: Typography.font-family-mono;
+                        font-size: Typography.body;
+                        font-weight: Typography.bold;
+                        color: Colors.text-primary;
+                    }
+                    Text {
+                        text: root.currency;
+                        font-family: Typography.font-family;
+                        font-size: Typography.tiny;
+                        color: Colors.text-secondary;
+                        vertical-alignment: bottom;
+                    }
+                }
+            }
+        }
+
+        // Pay strip.
+        PayButton {
+            label: Locale.current == "ar" ? "ادفع" : "PAY";
+            total: root.total;
+            currency: root.currency;
+            disabled: root.lines.length == 0;
+            clicked => { root.pay-pressed(); }
+        }
+    }
+}
