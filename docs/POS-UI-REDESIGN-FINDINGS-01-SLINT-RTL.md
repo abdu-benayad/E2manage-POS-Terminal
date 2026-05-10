@@ -196,6 +196,13 @@ through `04-dark-rtl-ar.png`.
   halo glow around the rectangle. In light configs (01, 02) it is a solid
   deep green with no glow and no gradient. Disabled/zero-total state is
   rendered as a muted version in both themes.
+- PayButton — RTL mirror: PASS. In RTL configs the layout swaps so the
+  Arabic label "ادفع" sits on the visual right (leading edge for an
+  Arabic reader) and the currency-then-number block sits on the visual
+  left, reading "LYD 12.600 … ادفع" left-to-right. The number itself
+  remains LTR-shaped (digits + decimal). Implemented with `if`-gated
+  child elements so collapsed slots do not steal width from
+  `space-between`.
 - ProductTile — accent stripe on correct edge per direction: PASS. Stripe
   sits on the LEFT in LTR (01 Café Latte orange / Croissant purple / Cold
   Water teal / Sandwich red-or-green) and on the RIGHT in RTL (02, 04).

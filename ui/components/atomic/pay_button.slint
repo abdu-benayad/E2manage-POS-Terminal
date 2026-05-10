@@ -39,25 +39,56 @@ export component PayButton inherits Rectangle {
     ]
     animate opacity { duration: Animation.fast; }
 
+    // HorizontalLayout always lays children left-to-right, so RTL mirroring
+    // is done with `if Layout.is-rtl`-gated children — the `if` directive
+    // truly removes elements from the layout (vs `visible: false`, which
+    // can leave a slot for `space-between` to fill). The total block is
+    // mirrored internally — in RTL the currency sits on the visual left
+    // and the number to its right, preserving the Arabic reading order
+    // ("number then unit"). LTR → [label] … [12.600][LYD]
+    //                       RTL → [LYD][12.600] … [ادفع]
     HorizontalLayout {
         padding-left: Spacing.lg;
         padding-right: Spacing.lg;
         spacing: Spacing.md;
         alignment: space-between;
 
-        // Leading: label
-        Text {
+        // Label — visual left in LTR (leading edge).
+        if !Layout.is-rtl: Text {
             text: root.label;
             font-family: Typography.font-family;
             font-size: Typography.title;
             font-weight: Typography.bold;
             color: Colors.text-on-pay;
             vertical-alignment: center;
-            horizontal-alignment: Layout.is-rtl ? right : left;
+            horizontal-alignment: left;
         }
 
-        // Trailing: mono total + currency
-        HorizontalLayout {
+        // Total (currency, number) — visual left in RTL (trailing edge).
+        if Layout.is-rtl: HorizontalLayout {
+            spacing: Spacing.xs;
+            alignment: center;
+            Text {
+                text: root.currency;
+                font-family: Typography.font-family;
+                font-size: Typography.body;
+                font-weight: Typography.semi-bold;
+                color: Colors.text-on-pay;
+                vertical-alignment: center;
+                opacity: 0.85;
+            }
+            Text {
+                text: root.total;
+                font-family: Typography.font-family-mono;
+                font-size: Typography.title;
+                font-weight: Typography.bold;
+                color: Colors.text-on-pay;
+                vertical-alignment: center;
+            }
+        }
+
+        // Total (number, currency) — visual right in LTR (trailing edge).
+        if !Layout.is-rtl: HorizontalLayout {
             spacing: Spacing.xs;
             alignment: center;
             Text {
@@ -77,6 +108,17 @@ export component PayButton inherits Rectangle {
                 vertical-alignment: center;
                 opacity: 0.85;
             }
+        }
+
+        // Label — visual right in RTL (leading edge).
+        if Layout.is-rtl: Text {
+            text: root.label;
+            font-family: Typography.font-family;
+            font-size: Typography.title;
+            font-weight: Typography.bold;
+            color: Colors.text-on-pay;
+            vertical-alignment: center;
+            horizontal-alignment: right;
         }
     }
 
