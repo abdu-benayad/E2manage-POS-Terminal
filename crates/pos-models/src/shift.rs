@@ -6,9 +6,10 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 /// Variance status for cash reconciliation
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum VarianceStatus {
     /// Cash matches expected
+    #[default]
     Balanced,
     /// Cash is less than expected
     Short,
@@ -38,16 +39,11 @@ impl VarianceStatus {
     }
 }
 
-impl Default for VarianceStatus {
-    fn default() -> Self {
-        VarianceStatus::Balanced
-    }
-}
-
 /// Shift status
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ShiftStatus {
     /// Shift is currently active
+    #[default]
     Active,
     /// Shift was closed normally
     Closed,
@@ -63,20 +59,16 @@ impl ShiftStatus {
             ShiftStatus::Suspended => "suspended",
         }
     }
+}
 
-    pub fn from_str(s: &str) -> Self {
+impl From<&str> for ShiftStatus {
+    fn from(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "active" => ShiftStatus::Active,
             "closed" => ShiftStatus::Closed,
             "suspended" => ShiftStatus::Suspended,
             _ => ShiftStatus::Active,
         }
-    }
-}
-
-impl Default for ShiftStatus {
-    fn default() -> Self {
-        ShiftStatus::Active
     }
 }
 

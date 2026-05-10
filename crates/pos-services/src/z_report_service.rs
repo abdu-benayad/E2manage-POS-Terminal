@@ -198,7 +198,7 @@ impl ZReportService {
                 variance_status: row.variance.map(VarianceStatus::from_variance),
                 started_at: row.started_at.clone(),
                 ended_at: row.ended_at.clone(),
-                status: pos_models::ShiftStatus::from_str(&row.status),
+                status: pos_models::ShiftStatus::from(row.status.as_str()),
                 transaction_count: 0,
                 cash_sales: Decimal::ZERO,
                 card_sales: Decimal::ZERO,

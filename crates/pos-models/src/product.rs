@@ -41,7 +41,10 @@ impl ProductType {
         }
     }
 
-    pub fn from_str(s: &str) -> Self {
+}
+
+impl From<&str> for ProductType {
+    fn from(s: &str) -> Self {
         match s.to_uppercase().replace('-', "_").as_str() {
             "PHYSICAL_GOOD" => ProductType::PhysicalGood,
             "CONSUMABLE" => ProductType::Consumable,
@@ -90,7 +93,10 @@ impl ProductNature {
         }
     }
 
-    pub fn from_str(s: &str) -> Self {
+}
+
+impl From<&str> for ProductNature {
+    fn from(s: &str) -> Self {
         match s.to_uppercase().as_str() {
             "TANGIBLE" => ProductNature::Tangible,
             "INTANGIBLE" => ProductNature::Intangible,
@@ -634,12 +640,12 @@ mod tests {
     #[test]
     fn test_product_type_raw_material_from_str() {
         assert_eq!(
-            ProductType::from_str("RAW_MATERIAL"),
+            ProductType::from("RAW_MATERIAL"),
             ProductType::RawMaterial
         );
         // Also accepts lowercase and mixed case
         assert_eq!(
-            ProductType::from_str("raw_material"),
+            ProductType::from("raw_material"),
             ProductType::RawMaterial
         );
     }
@@ -658,7 +664,7 @@ mod tests {
     fn test_product_type_unknown_defaults_to_physical_good() {
         // Unknown strings should fall back to PhysicalGood
         assert_eq!(
-            ProductType::from_str("TOTALLY_UNKNOWN_TYPE"),
+            ProductType::from("TOTALLY_UNKNOWN_TYPE"),
             ProductType::PhysicalGood
         );
     }
@@ -682,7 +688,7 @@ mod tests {
         for (variant, s) in &variants {
             assert_eq!(variant.as_str(), *s, "as_str mismatch for {:?}", variant);
             assert_eq!(
-                ProductType::from_str(s),
+                ProductType::from(*s),
                 *variant,
                 "from_str mismatch for {}",
                 s

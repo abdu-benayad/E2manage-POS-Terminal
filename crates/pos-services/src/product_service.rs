@@ -308,9 +308,9 @@ fn product_from_row(row: ProductRow) -> Product {
         is_weighable: row.is_weighable,
         is_serialized: row.is_serialized,
         is_active: row.is_active,
-        product_type: ProductType::from_str(&row.product_type),
+        product_type: ProductType::from(row.product_type.as_str()),
         track_inventory: row.track_inventory,
-        product_nature: ProductNature::from_str(&row.product_nature),
+        product_nature: ProductNature::from(row.product_nature.as_str()),
     }
 }
 
