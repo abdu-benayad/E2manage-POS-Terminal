@@ -192,7 +192,9 @@ impl CartItem {
     /// Returns the display name based on locale
     pub fn display_name(&self, locale: &str) -> &str {
         if locale == "ar" {
-            self.product_name_ar.as_deref().unwrap_or(&self.product_name)
+            self.product_name_ar
+                .as_deref()
+                .unwrap_or(&self.product_name)
         } else {
             &self.product_name
         }

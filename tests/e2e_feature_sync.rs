@@ -23,9 +23,9 @@
 mod common;
 
 use common::setup_test_db_arc;
-use e2manage_pos_terminal::{FeatureService, SyncService, SyncEvent, ApiClient};
-use std::sync::Arc;
+use e2manage_pos_terminal::{ApiClient, FeatureService, SyncEvent, SyncService};
 use std::env;
+use std::sync::Arc;
 use tokio::sync::broadcast;
 
 /// Default backend URL for E2E tests
@@ -68,12 +68,17 @@ async fn test_feature_sync_from_backend() {
 
     // Try to authenticate (requires pre-registered terminal)
     // This assumes the E2E test script has set up the test terminal
-    let test_terminal_code = env::var("TEST_TERMINAL_CODE").unwrap_or_else(|_| "TERM-001".to_string());
+    let test_terminal_code =
+        env::var("TEST_TERMINAL_CODE").unwrap_or_else(|_| "TERM-001".to_string());
     let test_hw_id = env::var("TEST_HARDWARE_ID").unwrap_or_else(|_| "E2E-TEST-HW-001".to_string());
-    let test_secret = env::var("TEST_TERMINAL_SECRET").unwrap_or_else(|_| "e2e-test-secret-12345678".to_string());
+    let test_secret =
+        env::var("TEST_TERMINAL_SECRET").unwrap_or_else(|_| "e2e-test-secret-12345678".to_string());
 
     // Attempt terminal authentication
-    match api.login_terminal(&test_terminal_code, &test_hw_id, &test_secret).await {
+    match api
+        .login_terminal(&test_terminal_code, &test_hw_id, &test_secret)
+        .await
+    {
         Ok(_) => println!("✓ Terminal authenticated"),
         Err(e) => {
             println!("⚠ Skipping: Terminal authentication failed: {}", e);
@@ -153,11 +158,17 @@ async fn test_feature_based_navigation() {
     }
 
     // Authenticate
-    let test_terminal_code = env::var("TEST_TERMINAL_CODE").unwrap_or_else(|_| "TERM-001".to_string());
+    let test_terminal_code =
+        env::var("TEST_TERMINAL_CODE").unwrap_or_else(|_| "TERM-001".to_string());
     let test_hw_id = env::var("TEST_HARDWARE_ID").unwrap_or_else(|_| "E2E-TEST-HW-001".to_string());
-    let test_secret = env::var("TEST_TERMINAL_SECRET").unwrap_or_else(|_| "e2e-test-secret-12345678".to_string());
+    let test_secret =
+        env::var("TEST_TERMINAL_SECRET").unwrap_or_else(|_| "e2e-test-secret-12345678".to_string());
 
-    if api.login_terminal(&test_terminal_code, &test_hw_id, &test_secret).await.is_err() {
+    if api
+        .login_terminal(&test_terminal_code, &test_hw_id, &test_secret)
+        .await
+        .is_err()
+    {
         println!("⚠ Skipping: Terminal not authenticated");
         return;
     }
@@ -234,11 +245,17 @@ async fn test_etag_caching() {
     }
 
     // Authenticate
-    let test_terminal_code = env::var("TEST_TERMINAL_CODE").unwrap_or_else(|_| "TERM-001".to_string());
+    let test_terminal_code =
+        env::var("TEST_TERMINAL_CODE").unwrap_or_else(|_| "TERM-001".to_string());
     let test_hw_id = env::var("TEST_HARDWARE_ID").unwrap_or_else(|_| "E2E-TEST-HW-001".to_string());
-    let test_secret = env::var("TEST_TERMINAL_SECRET").unwrap_or_else(|_| "e2e-test-secret-12345678".to_string());
+    let test_secret =
+        env::var("TEST_TERMINAL_SECRET").unwrap_or_else(|_| "e2e-test-secret-12345678".to_string());
 
-    if api.login_terminal(&test_terminal_code, &test_hw_id, &test_secret).await.is_err() {
+    if api
+        .login_terminal(&test_terminal_code, &test_hw_id, &test_secret)
+        .await
+        .is_err()
+    {
         println!("⚠ Skipping: Terminal not authenticated");
         return;
     }
@@ -249,7 +266,10 @@ async fn test_etag_caching() {
 
     // First sync - should get full data
     println!("Performing first sync...");
-    sync_service.sync_all(&tx).await.expect("First sync should succeed");
+    sync_service
+        .sync_all(&tx)
+        .await
+        .expect("First sync should succeed");
 
     let first_event = rx.try_recv();
     let was_updated = matches!(first_event, Ok(SyncEvent::FeaturesUpdated { .. }));
@@ -265,7 +285,10 @@ async fn test_etag_caching() {
 
     // Second sync - should return 304 (not modified) if data hasn't changed
     println!("Performing second sync (should use cached ETag)...");
-    sync_service.sync_all(&tx).await.expect("Second sync should succeed");
+    sync_service
+        .sync_all(&tx)
+        .await
+        .expect("Second sync should succeed");
 
     match rx.try_recv() {
         Ok(SyncEvent::FeaturesNotModified) => {
@@ -273,7 +296,10 @@ async fn test_etag_caching() {
         }
         Ok(SyncEvent::FeaturesUpdated { count }) => {
             // This is also valid if backend data changed
-            println!("✓ Second sync: FeaturesUpdated ({} features) - data may have changed", count);
+            println!(
+                "✓ Second sync: FeaturesUpdated ({} features) - data may have changed",
+                count
+            );
         }
         Ok(other) => {
             println!("? Second sync: Unexpected event {:?}", other);
@@ -308,11 +334,17 @@ async fn test_feature_config_toggle() {
     }
 
     // Authenticate
-    let test_terminal_code = env::var("TEST_TERMINAL_CODE").unwrap_or_else(|_| "TERM-001".to_string());
+    let test_terminal_code =
+        env::var("TEST_TERMINAL_CODE").unwrap_or_else(|_| "TERM-001".to_string());
     let test_hw_id = env::var("TEST_HARDWARE_ID").unwrap_or_else(|_| "E2E-TEST-HW-001".to_string());
-    let test_secret = env::var("TEST_TERMINAL_SECRET").unwrap_or_else(|_| "e2e-test-secret-12345678".to_string());
+    let test_secret =
+        env::var("TEST_TERMINAL_SECRET").unwrap_or_else(|_| "e2e-test-secret-12345678".to_string());
 
-    if api.login_terminal(&test_terminal_code, &test_hw_id, &test_secret).await.is_err() {
+    if api
+        .login_terminal(&test_terminal_code, &test_hw_id, &test_secret)
+        .await
+        .is_err()
+    {
         println!("⚠ Skipping: Terminal not authenticated");
         return;
     }
@@ -320,7 +352,10 @@ async fn test_feature_config_toggle() {
     // Sync features
     let sync_service = SyncService::with_defaults(api.clone(), db.clone());
     let (tx, _) = broadcast::channel::<SyncEvent>(16);
-    sync_service.sync_all(&tx).await.expect("Feature sync should succeed");
+    sync_service
+        .sync_all(&tx)
+        .await
+        .expect("Feature sync should succeed");
 
     // Check feature service
     let feature_service = FeatureService::new(db.clone());
@@ -331,11 +366,15 @@ async fn test_feature_config_toggle() {
             println!("\nFeature status:");
             for f in &features {
                 let core_indicator = if f.is_core { "(core)" } else { "(optional)" };
-                println!("  - {} {} enabled: {}", f.name, core_indicator, f.is_enabled);
+                println!(
+                    "  - {} {} enabled: {}",
+                    f.name, core_indicator, f.is_enabled
+                );
             }
 
             // Core features should always be enabled
-            let core_disabled: Vec<_> = features.iter()
+            let core_disabled: Vec<_> = features
+                .iter()
                 .filter(|f| f.is_core && !f.is_enabled)
                 .collect();
 

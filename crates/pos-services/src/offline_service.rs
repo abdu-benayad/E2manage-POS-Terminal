@@ -31,12 +31,12 @@
 //! println!("Synced: {}, Failed: {}", result.synced, result.failed);
 //! ```
 
+use anyhow::{anyhow, Result};
+use chrono::{DateTime, Utc};
 use pos_api::ApiClient;
 use pos_db::transactions::{OfflineTransactionRow, SyncStatus};
 use pos_db::Database;
 use pos_models::transaction::Transaction;
-use anyhow::{anyhow, Result};
-use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -259,7 +259,11 @@ impl OfflineService {
     /// # Returns
     ///
     /// The offline ID (UUID) assigned to this transaction
-    pub fn queue_transaction_with_catalog(&self, txn: &Transaction, catalog_etag: Option<String>) -> Result<String> {
+    pub fn queue_transaction_with_catalog(
+        &self,
+        txn: &Transaction,
+        catalog_etag: Option<String>,
+    ) -> Result<String> {
         let offline_id = Uuid::new_v4().to_string();
 
         // Serialize items and payments to JSON
@@ -390,7 +394,10 @@ impl OfflineService {
                     match failure_type {
                         SyncFailureType::Conflict => {
                             // Mark as conflict - needs manager resolution
-                            if let Err(db_err) = self.db.mark_transaction_conflict(&txn.offline_id, &error_msg) {
+                            if let Err(db_err) = self
+                                .db
+                                .mark_transaction_conflict(&txn.offline_id, &error_msg)
+                            {
                                 error!(
                                     "Failed to mark transaction {} as conflict: {}",
                                     txn.offline_id, db_err
@@ -404,13 +411,17 @@ impl OfflineService {
                         }
                         SyncFailureType::Permanent => {
                             // Set max retries to stop further attempts
-                            if let Err(db_err) = self.db.set_transaction_max_retries(&txn.offline_id) {
+                            if let Err(db_err) =
+                                self.db.set_transaction_max_retries(&txn.offline_id)
+                            {
                                 error!(
                                     "Failed to set max retries for transaction {}: {}",
                                     txn.offline_id, db_err
                                 );
                             }
-                            if let Err(db_err) = self.db.mark_transaction_failed(&txn.offline_id, &error_msg) {
+                            if let Err(db_err) =
+                                self.db.mark_transaction_failed(&txn.offline_id, &error_msg)
+                            {
                                 error!(
                                     "Failed to mark transaction {} as failed: {}",
                                     txn.offline_id, db_err
@@ -424,7 +435,9 @@ impl OfflineService {
                         }
                         SyncFailureType::Transient => {
                             // Normal failure - will retry with backoff
-                            if let Err(db_err) = self.db.mark_transaction_failed(&txn.offline_id, &error_msg) {
+                            if let Err(db_err) =
+                                self.db.mark_transaction_failed(&txn.offline_id, &error_msg)
+                            {
                                 error!(
                                     "Failed to mark transaction {} as failed: {}",
                                     txn.offline_id, db_err
@@ -432,7 +445,9 @@ impl OfflineService {
                             }
                             warn!(
                                 "Transaction sync failed (transient): {} - {} (retry {})",
-                                txn.offline_id, error_msg, txn.retry_count + 1
+                                txn.offline_id,
+                                error_msg,
+                                txn.retry_count + 1
                             );
                             result.failed += 1;
                         }
@@ -480,10 +495,8 @@ impl OfflineService {
             catalog_etag: txn.catalog_etag.clone(),
         };
 
-        let response: CreateTransactionResponse = self
-            .api
-            .post("/api/pos/offline/upload", &request)
-            .await?;
+        let response: CreateTransactionResponse =
+            self.api.post("/api/pos/offline/upload", &request).await?;
 
         Ok(response.id)
     }
@@ -539,11 +552,9 @@ impl OfflineService {
         let conn = conn.lock();
 
         let total: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM offline_transactions",
-                [],
-                |row| row.get(0),
-            )
+            .query_row("SELECT COUNT(*) FROM offline_transactions", [], |row| {
+                row.get(0)
+            })
             .unwrap_or(0);
 
         let synced: i64 = conn
@@ -609,8 +620,14 @@ mod tests {
         db.save_operator(&operator).unwrap();
 
         // Create test shift for foreign key reference
-        db.start_shift("shift-1", "SHIFT-001", "op-1", Some("TERM-001"), Decimal::from(100))
-            .unwrap();
+        db.start_shift(
+            "shift-1",
+            "SHIFT-001",
+            "op-1",
+            Some("TERM-001"),
+            Decimal::from(100),
+        )
+        .unwrap();
 
         (api, db)
     }
@@ -777,7 +794,9 @@ mod tests {
         let offline_id = service.queue_transaction(&txn).unwrap();
 
         // Mark as synced using the cloned db reference
-        db_clone.mark_transaction_synced(&offline_id, "server-123").unwrap();
+        db_clone
+            .mark_transaction_synced(&offline_id, "server-123")
+            .unwrap();
 
         // Cleanup (0 days means anything synced)
         // This won't actually delete since the transaction was just created
@@ -795,15 +814,15 @@ mod tests {
     #[test]
     fn test_backoff_calculation() {
         // Verify exponential growth: 1min, 2min, 4min, 8min, 16min, 32min, 60min (max)
-        assert_eq!(OfflineService::calculate_backoff_seconds(0), 60);      // 1 min
-        assert_eq!(OfflineService::calculate_backoff_seconds(1), 120);     // 2 min
-        assert_eq!(OfflineService::calculate_backoff_seconds(2), 240);     // 4 min
-        assert_eq!(OfflineService::calculate_backoff_seconds(3), 480);     // 8 min
-        assert_eq!(OfflineService::calculate_backoff_seconds(4), 960);     // 16 min
-        assert_eq!(OfflineService::calculate_backoff_seconds(5), 1920);    // 32 min
-        assert_eq!(OfflineService::calculate_backoff_seconds(6), 3600);    // 60 min (max)
-        assert_eq!(OfflineService::calculate_backoff_seconds(7), 3600);    // Still max
-        assert_eq!(OfflineService::calculate_backoff_seconds(10), 3600);   // Still max
+        assert_eq!(OfflineService::calculate_backoff_seconds(0), 60); // 1 min
+        assert_eq!(OfflineService::calculate_backoff_seconds(1), 120); // 2 min
+        assert_eq!(OfflineService::calculate_backoff_seconds(2), 240); // 4 min
+        assert_eq!(OfflineService::calculate_backoff_seconds(3), 480); // 8 min
+        assert_eq!(OfflineService::calculate_backoff_seconds(4), 960); // 16 min
+        assert_eq!(OfflineService::calculate_backoff_seconds(5), 1920); // 32 min
+        assert_eq!(OfflineService::calculate_backoff_seconds(6), 3600); // 60 min (max)
+        assert_eq!(OfflineService::calculate_backoff_seconds(7), 3600); // Still max
+        assert_eq!(OfflineService::calculate_backoff_seconds(10), 3600); // Still max
     }
 
     #[test]
@@ -1014,7 +1033,10 @@ mod tests {
         assert_eq!(SyncFailureType::classify(&error), SyncFailureType::Conflict);
 
         let error = anyhow::anyhow!("INVALID data");
-        assert_eq!(SyncFailureType::classify(&error), SyncFailureType::Permanent);
+        assert_eq!(
+            SyncFailureType::classify(&error),
+            SyncFailureType::Permanent
+        );
     }
 
     // =========================================================================
@@ -1035,7 +1057,10 @@ mod tests {
 
     #[test]
     fn test_sync_result_has_activity() {
-        let mut result = SyncResult { synced: 1, ..SyncResult::default() };
+        let mut result = SyncResult {
+            synced: 1,
+            ..SyncResult::default()
+        };
         assert!(result.has_activity());
 
         result.synced = 0;

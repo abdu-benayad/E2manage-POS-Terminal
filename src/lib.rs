@@ -43,10 +43,10 @@ pub mod ui;
 pub mod utils;
 
 // Re-export workspace crates for backwards compatibility
-pub use pos_models as models;
-pub use pos_db as db;
 pub use pos_api as api;
+pub use pos_db as db;
 pub use pos_escpos as escpos;
+pub use pos_models as models;
 pub use pos_printing as printing;
 pub use pos_services as services;
 
@@ -61,39 +61,40 @@ pub use pos_api::{CatalogResponse, CategoryDto, OperatorDto, OperatorsResponse, 
 
 // Re-export platform API types
 pub use pos_api::{
-    HeartbeatStatus, PlatformCommand, PlatformCommandType,
-    SecurityPolicy, SecurityCategory, EnforcementMode, PolicyType,
-    CheckUpdateResponse, LicenseStatus,
+    CheckUpdateResponse, EnforcementMode, HeartbeatStatus, LicenseStatus, PlatformCommand,
+    PlatformCommandType, PolicyType, SecurityCategory, SecurityPolicy,
 };
 
 // Re-export commonly used types from services
+pub use pos_services::SystemService;
 pub use pos_services::{AuthService, PinVerificationResult, TerminalSession};
-pub use pos_services::{CartService, CartError, CartResult};
-pub use pos_services::{ProductService, ProductError};
-pub use pos_services::{SyncService, SyncEvent, SyncStatus};
-pub use pos_services::{TransactionService, TransactionError, TransactionResult, CompleteResult};
-pub use pos_services::{PrintService, PrinterConfig, ShiftReport};
-pub use pos_services::{ShiftService, ShiftError, ShiftResult, ShiftSummary, VarianceStatus};
-pub use pos_services::{ZReportService, ZReportError, ZReportResult};
-pub use pos_services::{ReturnService, ReturnError, ReturnItem, ReturnReason, RefundMethod};
-pub use pos_services::{DraftService, DraftError, Draft};
+pub use pos_services::{CardPaymentResult, EmvEvent, EmvService};
+pub use pos_services::{CartError, CartResult, CartService};
+pub use pos_services::{CompleteResult, TransactionError, TransactionResult, TransactionService};
+pub use pos_services::{Draft, DraftError, DraftService};
+pub use pos_services::{FeatureError, FeatureResult, FeatureService};
+pub use pos_services::{
+    HeartbeatError, HeartbeatEvent, PlatformHeartbeatService, DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
+};
+pub use pos_services::{LogEntry, LogError, LogLevel, LogResult, LogService};
 pub use pos_services::{OfflineService, QueueStats};
 pub use pos_services::{PairingService, PairingState, TerminalRegistration};
-pub use pos_services::{EmvService, EmvEvent, CardPaymentResult};
-pub use pos_services::{QrService, QrEvent, QrPaymentResult};
-pub use pos_services::{FeatureService, FeatureError, FeatureResult};
-pub use pos_services::{LogService, LogEntry, LogLevel, LogError, LogResult};
-pub use pos_services::{SupportService, SupportContact};
-pub use pos_services::{UpdateService, UpdateError, UpdateResult, VersionInfo, ReleaseNotes};
-pub use pos_services::SystemService;
-pub use pos_services::{PlatformHeartbeatService, HeartbeatEvent, HeartbeatError, DEFAULT_HEARTBEAT_INTERVAL_SECONDS};
-pub use pos_services::{PolicyService, PolicyResult, PolicyError};
+pub use pos_services::{PolicyError, PolicyResult, PolicyService};
+pub use pos_services::{PrintService, PrinterConfig, ShiftReport};
+pub use pos_services::{ProductError, ProductService};
+pub use pos_services::{QrEvent, QrPaymentResult, QrService};
+pub use pos_services::{RefundMethod, ReturnError, ReturnItem, ReturnReason, ReturnService};
+pub use pos_services::{ReleaseNotes, UpdateError, UpdateResult, UpdateService, VersionInfo};
+pub use pos_services::{ShiftError, ShiftResult, ShiftService, ShiftSummary, VarianceStatus};
+pub use pos_services::{SupportContact, SupportService};
+pub use pos_services::{SyncEvent, SyncService, SyncStatus};
+pub use pos_services::{ZReportError, ZReportResult, ZReportService};
 
 // Re-export commonly used types from models
-pub use pos_models::{Product, Category, ProductUnit, ProductSearchResult};
-pub use pos_models::{Cart, CartItem};
-pub use pos_models::{Transaction, TransactionItem, TransactionStatus, Payment, PaymentMethod};
 pub use pos_models::ZReport;
+pub use pos_models::{Cart, CartItem};
+pub use pos_models::{Category, Product, ProductSearchResult, ProductUnit};
+pub use pos_models::{Payment, PaymentMethod, Transaction, TransactionItem, TransactionStatus};
 
 // Re-export ESC/POS types
-pub use pos_escpos::{EscPos, Alignment, CodePage, BarcodeFormat};
+pub use pos_escpos::{Alignment, BarcodeFormat, CodePage, EscPos};

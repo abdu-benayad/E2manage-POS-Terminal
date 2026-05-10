@@ -102,15 +102,19 @@ mod tests {
     #[test]
     fn test_execute() {
         let db = Database::in_memory().unwrap();
-        db.execute_batch("CREATE TABLE test (id INTEGER PRIMARY KEY)").unwrap();
-        let rows = db.execute("INSERT INTO test (id) VALUES (?1)", &[&1i64]).unwrap();
+        db.execute_batch("CREATE TABLE test (id INTEGER PRIMARY KEY)")
+            .unwrap();
+        let rows = db
+            .execute("INSERT INTO test (id) VALUES (?1)", &[&1i64])
+            .unwrap();
         assert_eq!(rows, 1);
     }
 
     #[test]
     fn test_transaction() {
         let db = Database::in_memory().unwrap();
-        db.execute_batch("CREATE TABLE test (id INTEGER PRIMARY KEY, value TEXT)").unwrap();
+        db.execute_batch("CREATE TABLE test (id INTEGER PRIMARY KEY, value TEXT)")
+            .unwrap();
 
         let result = db.begin_transaction(|conn| {
             conn.execute("INSERT INTO test VALUES (1, 'a')", [])?;

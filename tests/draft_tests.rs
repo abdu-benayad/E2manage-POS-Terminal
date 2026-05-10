@@ -7,7 +7,7 @@ mod common;
 
 use common::*;
 use e2manage_pos_terminal::services::draft_service::{
-    DraftService, DraftError, Draft, MAX_DRAFTS_PER_OPERATOR, DEFAULT_DRAFT_EXPIRY_HOURS,
+    Draft, DraftError, DraftService, DEFAULT_DRAFT_EXPIRY_HOURS, MAX_DRAFTS_PER_OPERATOR,
 };
 use rust_decimal::Decimal;
 use std::sync::Arc;
@@ -24,7 +24,8 @@ fn setup_draft_service() -> (DraftService, Arc<e2manage_pos_terminal::db::Databa
     (service, db)
 }
 
-fn setup_draft_service_with_multiple_operators() -> (DraftService, Arc<e2manage_pos_terminal::db::Database>) {
+fn setup_draft_service_with_multiple_operators(
+) -> (DraftService, Arc<e2manage_pos_terminal::db::Database>) {
     let db = setup_test_db_arc();
     create_test_operator(&db, "op-1", "Operator One");
     create_test_operator(&db, "op-2", "Operator Two");
@@ -105,7 +106,9 @@ fn test_save_cart_with_custom_expiry() {
     let cart = create_cart_with_item(&product, Decimal::ONE);
 
     // Save with 48 hour expiry
-    let draft = service.save_cart_with_expiry(&cart, None, "op-1", "shift-1", Some(48)).unwrap();
+    let draft = service
+        .save_cart_with_expiry(&cart, None, "op-1", "shift-1", Some(48))
+        .unwrap();
 
     assert!(draft.expires_at.is_some());
     // Should expire in roughly 48 hours (allow some margin for test execution)
@@ -120,7 +123,9 @@ fn test_save_cart_without_expiry() {
     let cart = create_cart_with_item(&product, Decimal::ONE);
 
     // Save with no expiry
-    let draft = service.save_cart_with_expiry(&cart, None, "op-1", "shift-1", None).unwrap();
+    let draft = service
+        .save_cart_with_expiry(&cart, None, "op-1", "shift-1", None)
+        .unwrap();
 
     assert!(draft.expires_at.is_none());
     assert!(!draft.is_expired());
@@ -152,7 +157,10 @@ fn test_recall_preserves_customer() {
     let recalled_cart = service.recall(&draft.id).unwrap();
 
     assert_eq!(recalled_cart.customer_id, Some("cust-001".to_string()));
-    assert_eq!(recalled_cart.customer_name, Some("Test Customer".to_string()));
+    assert_eq!(
+        recalled_cart.customer_name,
+        Some("Test Customer".to_string())
+    );
 }
 
 #[test]
@@ -191,7 +199,9 @@ fn test_get_draft() {
     let product = sample_product();
     let cart = create_cart_with_item(&product, Decimal::from(2));
 
-    let saved_draft = service.save_cart(&cart, Some("My Draft".to_string()), "op-1", "shift-1").unwrap();
+    let saved_draft = service
+        .save_cart(&cart, Some("My Draft".to_string()), "op-1", "shift-1")
+        .unwrap();
     let fetched_draft = service.get(&saved_draft.id).unwrap();
 
     assert_eq!(fetched_draft.id, saved_draft.id);
@@ -218,9 +228,15 @@ fn test_list_by_operator() {
     let cart = create_cart_with_item(&product, Decimal::ONE);
 
     // Create drafts for different operators
-    service.save_cart(&cart, Some("Op1 Draft 1".to_string()), "op-1", "shift-1").unwrap();
-    service.save_cart(&cart, Some("Op1 Draft 2".to_string()), "op-1", "shift-1").unwrap();
-    service.save_cart(&cart, Some("Op2 Draft 1".to_string()), "op-2", "shift-1").unwrap();
+    service
+        .save_cart(&cart, Some("Op1 Draft 1".to_string()), "op-1", "shift-1")
+        .unwrap();
+    service
+        .save_cart(&cart, Some("Op1 Draft 2".to_string()), "op-1", "shift-1")
+        .unwrap();
+    service
+        .save_cart(&cart, Some("Op2 Draft 1".to_string()), "op-2", "shift-1")
+        .unwrap();
 
     let op1_drafts = service.list_by_operator("op-1").unwrap();
     let op2_drafts = service.list_by_operator("op-2").unwrap();
@@ -361,9 +377,13 @@ fn test_rename_draft() {
     let product = sample_product();
     let cart = create_cart_with_item(&product, Decimal::ONE);
 
-    let draft = service.save_cart(&cart, Some("Original Name".to_string()), "op-1", "shift-1").unwrap();
+    let draft = service
+        .save_cart(&cart, Some("Original Name".to_string()), "op-1", "shift-1")
+        .unwrap();
 
-    let renamed = service.rename(&draft.id, Some("New Name".to_string())).unwrap();
+    let renamed = service
+        .rename(&draft.id, Some("New Name".to_string()))
+        .unwrap();
     assert_eq!(renamed.name, Some("New Name".to_string()));
 
     // Verify persistence
@@ -377,7 +397,9 @@ fn test_rename_to_none() {
     let product = sample_product();
     let cart = create_cart_with_item(&product, Decimal::ONE);
 
-    let draft = service.save_cart(&cart, Some("Has Name".to_string()), "op-1", "shift-1").unwrap();
+    let draft = service
+        .save_cart(&cart, Some("Has Name".to_string()), "op-1", "shift-1")
+        .unwrap();
 
     let renamed = service.rename(&draft.id, None).unwrap();
     assert!(renamed.name.is_none());
@@ -404,7 +426,9 @@ fn test_draft_limit_per_operator() {
 
     // Create maximum allowed drafts
     for i in 0..MAX_DRAFTS_PER_OPERATOR {
-        service.save_cart(&cart, Some(format!("Draft {}", i)), "op-1", "shift-1").unwrap();
+        service
+            .save_cart(&cart, Some(format!("Draft {}", i)), "op-1", "shift-1")
+            .unwrap();
     }
 
     // Try to create one more
@@ -420,7 +444,9 @@ fn test_draft_limit_independent_per_operator() {
 
     // Fill up op-1's limit
     for i in 0..MAX_DRAFTS_PER_OPERATOR {
-        service.save_cart(&cart, Some(format!("Draft {}", i)), "op-1", "shift-1").unwrap();
+        service
+            .save_cart(&cart, Some(format!("Draft {}", i)), "op-1", "shift-1")
+            .unwrap();
     }
 
     // op-2 should still be able to create drafts
@@ -437,7 +463,9 @@ fn test_draft_limit_freed_after_delete() {
     // Create maximum drafts
     let mut draft_ids = Vec::new();
     for i in 0..MAX_DRAFTS_PER_OPERATOR {
-        let draft = service.save_cart(&cart, Some(format!("Draft {}", i)), "op-1", "shift-1").unwrap();
+        let draft = service
+            .save_cart(&cart, Some(format!("Draft {}", i)), "op-1", "shift-1")
+            .unwrap();
         draft_ids.push(draft.id);
     }
 
@@ -540,10 +568,7 @@ fn test_draft_error_display() {
         DraftError::Expired("draft-456".to_string()).to_string(),
         "Draft has expired: draft-456"
     );
-    assert_eq!(
-        DraftError::EmptyCart.to_string(),
-        "Cannot save empty cart"
-    );
+    assert_eq!(DraftError::EmptyCart.to_string(), "Cannot save empty cart");
     assert_eq!(
         DraftError::LimitExceeded(10).to_string(),
         "Maximum drafts limit reached (10)"

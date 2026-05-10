@@ -2,8 +2,8 @@
 //!
 //! Handles product queries including FTS5 full-text search.
 
-use rust_decimal::Decimal;
 use rusqlite::{params, OptionalExtension, Result as SqliteResult};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use super::{decimal_from_sqlite, decimal_to_sqlite, Database};
@@ -222,9 +222,13 @@ impl Database {
                 is_weighable: row.get(17)?,
                 is_serialized: row.get(18)?,
                 is_active: row.get(19)?,
-                product_type: row.get::<_, Option<String>>(20)?.unwrap_or_else(|| "PHYSICAL_GOOD".to_string()),
+                product_type: row
+                    .get::<_, Option<String>>(20)?
+                    .unwrap_or_else(|| "PHYSICAL_GOOD".to_string()),
                 track_inventory: row.get::<_, Option<bool>>(21)?.unwrap_or(true),
-                product_nature: row.get::<_, Option<String>>(22)?.unwrap_or_else(|| "TANGIBLE".to_string()),
+                product_nature: row
+                    .get::<_, Option<String>>(22)?
+                    .unwrap_or_else(|| "TANGIBLE".to_string()),
             })
         })?;
 
@@ -272,9 +276,13 @@ impl Database {
                 is_weighable: row.get(17)?,
                 is_serialized: row.get(18)?,
                 is_active: row.get(19)?,
-                product_type: row.get::<_, Option<String>>(20)?.unwrap_or_else(|| "PHYSICAL_GOOD".to_string()),
+                product_type: row
+                    .get::<_, Option<String>>(20)?
+                    .unwrap_or_else(|| "PHYSICAL_GOOD".to_string()),
                 track_inventory: row.get::<_, Option<bool>>(21)?.unwrap_or(true),
-                product_nature: row.get::<_, Option<String>>(22)?.unwrap_or_else(|| "TANGIBLE".to_string()),
+                product_nature: row
+                    .get::<_, Option<String>>(22)?
+                    .unwrap_or_else(|| "TANGIBLE".to_string()),
             })
         })?;
 
@@ -316,9 +324,13 @@ impl Database {
                     is_weighable: row.get(17)?,
                     is_serialized: row.get(18)?,
                     is_active: row.get(19)?,
-                    product_type: row.get::<_, Option<String>>(20)?.unwrap_or_else(|| "PHYSICAL_GOOD".to_string()),
+                    product_type: row
+                        .get::<_, Option<String>>(20)?
+                        .unwrap_or_else(|| "PHYSICAL_GOOD".to_string()),
                     track_inventory: row.get::<_, Option<bool>>(21)?.unwrap_or(true),
-                    product_nature: row.get::<_, Option<String>>(22)?.unwrap_or_else(|| "TANGIBLE".to_string()),
+                    product_nature: row
+                        .get::<_, Option<String>>(22)?
+                        .unwrap_or_else(|| "TANGIBLE".to_string()),
                 })
             },
         )
@@ -360,9 +372,13 @@ impl Database {
                     is_weighable: row.get(17)?,
                     is_serialized: row.get(18)?,
                     is_active: row.get(19)?,
-                    product_type: row.get::<_, Option<String>>(20)?.unwrap_or_else(|| "PHYSICAL_GOOD".to_string()),
+                    product_type: row
+                        .get::<_, Option<String>>(20)?
+                        .unwrap_or_else(|| "PHYSICAL_GOOD".to_string()),
                     track_inventory: row.get::<_, Option<bool>>(21)?.unwrap_or(true),
-                    product_nature: row.get::<_, Option<String>>(22)?.unwrap_or_else(|| "TANGIBLE".to_string()),
+                    product_nature: row
+                        .get::<_, Option<String>>(22)?
+                        .unwrap_or_else(|| "TANGIBLE".to_string()),
                 })
             },
         )
@@ -413,9 +429,13 @@ impl Database {
                 is_weighable: row.get(17)?,
                 is_serialized: row.get(18)?,
                 is_active: row.get(19)?,
-                product_type: row.get::<_, Option<String>>(20)?.unwrap_or_else(|| "PHYSICAL_GOOD".to_string()),
+                product_type: row
+                    .get::<_, Option<String>>(20)?
+                    .unwrap_or_else(|| "PHYSICAL_GOOD".to_string()),
                 track_inventory: row.get::<_, Option<bool>>(21)?.unwrap_or(true),
-                product_nature: row.get::<_, Option<String>>(22)?.unwrap_or_else(|| "TANGIBLE".to_string()),
+                product_nature: row
+                    .get::<_, Option<String>>(22)?
+                    .unwrap_or_else(|| "TANGIBLE".to_string()),
             })
         })?;
 
@@ -461,9 +481,13 @@ impl Database {
                 is_weighable: row.get(17)?,
                 is_serialized: row.get(18)?,
                 is_active: row.get(19)?,
-                product_type: row.get::<_, Option<String>>(20)?.unwrap_or_else(|| "PHYSICAL_GOOD".to_string()),
+                product_type: row
+                    .get::<_, Option<String>>(20)?
+                    .unwrap_or_else(|| "PHYSICAL_GOOD".to_string()),
                 track_inventory: row.get::<_, Option<bool>>(21)?.unwrap_or(true),
-                product_nature: row.get::<_, Option<String>>(22)?.unwrap_or_else(|| "TANGIBLE".to_string()),
+                product_nature: row
+                    .get::<_, Option<String>>(22)?
+                    .unwrap_or_else(|| "TANGIBLE".to_string()),
             })
         })?;
 
@@ -475,9 +499,11 @@ impl Database {
         let conn = self.connection();
         let conn = conn.lock();
 
-        conn.query_row("SELECT COUNT(*) FROM products WHERE is_active = 1", [], |row| {
-            row.get(0)
-        })
+        conn.query_row(
+            "SELECT COUNT(*) FROM products WHERE is_active = 1",
+            [],
+            |row| row.get(0),
+        )
     }
 
     /// Deletes a product by ID

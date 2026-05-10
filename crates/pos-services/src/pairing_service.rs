@@ -7,13 +7,13 @@
 //! 4. Poll for pairing completion
 //! 5. Save registration credentials
 
+use anyhow::Result;
+use chrono::{DateTime, Utc};
 use pos_api::{
     ApiClient, DeviceInfo, HardwareInfo, OsInfo, PairedTerminalInfo, PairingStatus,
     RegisterDeviceRequest,
 };
 use pos_db::Database;
-use anyhow::Result;
-use chrono::{DateTime, Utc};
 use rusqlite::params;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
@@ -209,7 +209,10 @@ impl PairingService {
 
     /// Attempts to recover registration credentials when terminal is already registered
     async fn try_recover_registration(&self, hardware_id: &str) -> Result<PairingState> {
-        info!("Attempting to recover registration for hardware ID: {}", hardware_id);
+        info!(
+            "Attempting to recover registration for hardware ID: {}",
+            hardware_id
+        );
 
         let terminal_info = self.api.recover_registration(hardware_id).await?;
 
@@ -224,7 +227,15 @@ impl PairingService {
         // Login with the recovered credentials to get a session token
         if !terminal_info.secret.is_empty() {
             info!("Logging in terminal after recovery");
-            match self.api.login_terminal(&terminal_info.terminal_code, hardware_id, &terminal_info.secret).await {
+            match self
+                .api
+                .login_terminal(
+                    &terminal_info.terminal_code,
+                    hardware_id,
+                    &terminal_info.secret,
+                )
+                .await
+            {
                 Ok(login_response) => {
                     info!("Terminal logged in successfully after recovery");
                     if let Err(e) = self.save_terminal_config(hardware_id, &login_response) {
@@ -267,12 +278,17 @@ impl PairingService {
                 if !terminal.secret.is_empty() {
                     let hardware_id = self.get_hardware_id()?;
                     info!("Logging in terminal to get session token");
-                    match self.api.login_terminal(&terminal.terminal_code, &hardware_id, &terminal.secret).await {
+                    match self
+                        .api
+                        .login_terminal(&terminal.terminal_code, &hardware_id, &terminal.secret)
+                        .await
+                    {
                         Ok(login_response) => {
                             info!("Terminal logged in successfully, session token set");
                             // login_terminal already calls set_token internally
                             // Also save the full terminal config to DB for persistence
-                            if let Err(e) = self.save_terminal_config(&hardware_id, &login_response) {
+                            if let Err(e) = self.save_terminal_config(&hardware_id, &login_response)
+                            {
                                 warn!("Failed to save terminal config to DB: {}", e);
                             }
                         }
@@ -327,7 +343,11 @@ impl PairingService {
     }
 
     /// Saves the full terminal config from login response for persistence across restarts
-    fn save_terminal_config(&self, hardware_id: &str, response: &pos_api::LoginTerminalResponse) -> Result<()> {
+    fn save_terminal_config(
+        &self,
+        hardware_id: &str,
+        response: &pos_api::LoginTerminalResponse,
+    ) -> Result<()> {
         let conn = self.db.connection();
         let conn = conn.lock();
 
@@ -427,11 +447,9 @@ impl PairingService {
         let conn = self.db.connection();
         let conn = conn.lock();
 
-        let result = conn.query_row(
-            "SELECT value FROM settings WHERE key = ?1",
-            [key],
-            |row| row.get::<_, String>(0),
-        );
+        let result = conn.query_row("SELECT value FROM settings WHERE key = ?1", [key], |row| {
+            row.get::<_, String>(0)
+        });
 
         match result {
             Ok(value) => Ok(Some(value)),

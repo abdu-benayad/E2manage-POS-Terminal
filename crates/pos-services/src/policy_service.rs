@@ -194,7 +194,10 @@ impl PolicyService {
     }
 
     /// Gets all policies in a category
-    pub async fn get_policies_by_category(&self, category: SecurityCategory) -> Vec<SecurityPolicy> {
+    pub async fn get_policies_by_category(
+        &self,
+        category: SecurityCategory,
+    ) -> Vec<SecurityPolicy> {
         self.policies
             .read()
             .await
@@ -241,10 +244,7 @@ impl PolicyService {
                     return PolicyResult::Allow;
                 }
 
-                let required = policy
-                    .policy_value
-                    .as_bool()
-                    .unwrap_or(true);
+                let required = policy.policy_value.as_bool().unwrap_or(true);
 
                 if required {
                     // Policy requires this feature to be enabled
@@ -342,7 +342,10 @@ impl PolicyService {
                 } else {
                     self.apply_enforcement(
                         &policy.enforcement_mode,
-                        &format!("Value '{}' is not in allowed list for policy {}", value, code),
+                        &format!(
+                            "Value '{}' is not in allowed list for policy {}",
+                            value, code
+                        ),
                     )
                 }
             }
@@ -369,10 +372,7 @@ impl PolicyService {
                     return PolicyResult::Allow;
                 }
 
-                let expected = policy
-                    .policy_value
-                    .as_str()
-                    .unwrap_or("");
+                let expected = policy.policy_value.as_str().unwrap_or("");
 
                 if expected.is_empty() || value == expected {
                     PolicyResult::Allow

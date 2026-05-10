@@ -99,7 +99,8 @@ impl TestClient {
     pub async fn fetch_csrf_token(&mut self) -> Result<String, String> {
         let url = format!("{}/api/csrf-token", self.base_url);
 
-        let response = self.client
+        let response = self
+            .client
             .get(&url)
             .send()
             .await
@@ -114,7 +115,8 @@ impl TestClient {
             token: String,
         }
 
-        let csrf: CsrfResponse = response.json()
+        let csrf: CsrfResponse = response
+            .json()
             .await
             .map_err(|e| format!("Failed to parse CSRF response: {}", e))?;
 
@@ -152,7 +154,8 @@ impl TestClient {
             return Err(format!("HTTP {}: {}", status, error_text));
         }
 
-        response.json()
+        response
+            .json()
             .await
             .map_err(|e| format!("Failed to parse response: {}", e))
     }
@@ -165,9 +168,7 @@ impl TestClient {
     ) -> Result<ApiResponse<T>, String> {
         let url = format!("{}{}", self.base_url, path);
 
-        let mut request = self.client
-            .post(&url)
-            .json(body);
+        let mut request = self.client.post(&url).json(body);
 
         if let Some(ref token) = self.auth_token {
             request = request.header("Authorization", format!("Bearer {}", token));
@@ -189,7 +190,8 @@ impl TestClient {
             return Err(format!("HTTP {}: {}", status, error_text));
         }
 
-        response.json()
+        response
+            .json()
             .await
             .map_err(|e| format!("Failed to parse response: {}", e))
     }
@@ -198,7 +200,13 @@ impl TestClient {
     pub async fn is_online(&self) -> bool {
         let url = format!("{}/api/health", self.base_url);
 
-        match self.client.get(&url).timeout(Duration::from_secs(5)).send().await {
+        match self
+            .client
+            .get(&url)
+            .timeout(Duration::from_secs(5))
+            .send()
+            .await
+        {
             Ok(response) => response.status().is_success(),
             Err(_) => false,
         }
@@ -216,7 +224,11 @@ async fn test_backend_health() {
 
     let is_online = client.is_online().await;
 
-    assert!(is_online, "Backend should be online at {}", get_backend_url());
+    assert!(
+        is_online,
+        "Backend should be online at {}",
+        get_backend_url()
+    );
     println!("✓ Backend health check passed");
 }
 
@@ -241,9 +253,7 @@ async fn test_sync_status_requires_auth() {
     let client = TestClient::new();
 
     // Without auth, should get 401
-    let result: Result<ApiResponse<SyncStatus>, _> = client
-        .get("/api/pos/sync/status")
-        .await;
+    let result: Result<ApiResponse<SyncStatus>, _> = client.get("/api/pos/sync/status").await;
 
     assert!(result.is_err(), "Should require authentication");
     let error = result.unwrap_err();
@@ -299,8 +309,8 @@ pub struct CatalogResponse {
 #[ignore = "Requires running backend with test data"]
 async fn test_catalog_structure() {
     // This test needs a valid auth token - get from environment
-    let auth_token = env::var("TEST_AUTH_TOKEN")
-        .expect("TEST_AUTH_TOKEN must be set for catalog tests");
+    let auth_token =
+        env::var("TEST_AUTH_TOKEN").expect("TEST_AUTH_TOKEN must be set for catalog tests");
 
     let client = TestClient::new().with_auth(&auth_token);
 
@@ -308,7 +318,11 @@ async fn test_catalog_structure() {
         .get("/api/pos/sync/catalog?includeCategories=true")
         .await;
 
-    assert!(result.is_ok(), "Catalog request should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Catalog request should succeed: {:?}",
+        result.err()
+    );
 
     let response = result.unwrap();
     assert!(response.success, "Response should indicate success");
@@ -327,8 +341,14 @@ async fn test_catalog_structure() {
 
     println!("✓ Catalog structure validation passed");
     println!("  - Version: {}", catalog.version);
-    println!("  - Products: {}", catalog.products.map(|p| p.len()).unwrap_or(0));
-    println!("  - Categories: {}", catalog.categories.map(|c| c.len()).unwrap_or(0));
+    println!(
+        "  - Products: {}",
+        catalog.products.map(|p| p.len()).unwrap_or(0)
+    );
+    println!(
+        "  - Categories: {}",
+        catalog.categories.map(|c| c.len()).unwrap_or(0)
+    );
 }
 
 // ============================================================================
@@ -338,8 +358,8 @@ async fn test_catalog_structure() {
 #[tokio::test]
 #[ignore = "Requires running backend with test data"]
 async fn test_catalog_etag_caching() {
-    let auth_token = env::var("TEST_AUTH_TOKEN")
-        .expect("TEST_AUTH_TOKEN must be set for catalog tests");
+    let auth_token =
+        env::var("TEST_AUTH_TOKEN").expect("TEST_AUTH_TOKEN must be set for catalog tests");
 
     // First request - get initial catalog
     let client = reqwest::Client::builder()
@@ -416,22 +436,27 @@ pub struct ProductsSyncResponse {
 #[tokio::test]
 #[ignore = "Requires running backend with test data"]
 async fn test_products_sync_full() {
-    let auth_token = env::var("TEST_AUTH_TOKEN")
-        .expect("TEST_AUTH_TOKEN must be set");
+    let auth_token = env::var("TEST_AUTH_TOKEN").expect("TEST_AUTH_TOKEN must be set");
 
     let client = TestClient::new().with_auth(&auth_token);
 
-    let result: Result<ApiResponse<ProductsSyncResponse>, _> = client
-        .get("/api/pos/sync/products")
-        .await;
+    let result: Result<ApiResponse<ProductsSyncResponse>, _> =
+        client.get("/api/pos/sync/products").await;
 
-    assert!(result.is_ok(), "Products sync should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Products sync should succeed: {:?}",
+        result.err()
+    );
 
     let response = result.unwrap();
     assert!(response.success);
 
     let data = response.data.expect("Should have data");
-    assert_eq!(data.sync_type, "FULL", "Should be full sync without lastSync param");
+    assert_eq!(
+        data.sync_type, "FULL",
+        "Should be full sync without lastSync param"
+    );
 
     println!("✓ Products full sync passed");
     println!("  - Sync type: {}", data.sync_type);
@@ -442,8 +467,7 @@ async fn test_products_sync_full() {
 #[tokio::test]
 #[ignore = "Requires running backend with test data"]
 async fn test_products_sync_incremental() {
-    let auth_token = env::var("TEST_AUTH_TOKEN")
-        .expect("TEST_AUTH_TOKEN must be set");
+    let auth_token = env::var("TEST_AUTH_TOKEN").expect("TEST_AUTH_TOKEN must be set");
 
     let client = TestClient::new().with_auth(&auth_token);
 
@@ -452,16 +476,26 @@ async fn test_products_sync_incremental() {
     let last_sync_str = last_sync.to_rfc3339();
 
     let result: Result<ApiResponse<ProductsSyncResponse>, _> = client
-        .get(&format!("/api/pos/sync/products?lastSync={}", last_sync_str))
+        .get(&format!(
+            "/api/pos/sync/products?lastSync={}",
+            last_sync_str
+        ))
         .await;
 
-    assert!(result.is_ok(), "Incremental sync should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Incremental sync should succeed: {:?}",
+        result.err()
+    );
 
     let response = result.unwrap();
     assert!(response.success);
 
     let data = response.data.expect("Should have data");
-    assert_eq!(data.sync_type, "INCREMENTAL", "Should be incremental sync with lastSync param");
+    assert_eq!(
+        data.sync_type, "INCREMENTAL",
+        "Should be incremental sync with lastSync param"
+    );
 
     println!("✓ Products incremental sync passed");
     println!("  - Sync type: {}", data.sync_type);
@@ -527,15 +561,16 @@ pub struct UploadResponse {
 #[tokio::test]
 #[ignore = "Requires running backend with test terminal"]
 async fn test_offline_upload() {
-    let auth_token = env::var("TEST_AUTH_TOKEN")
-        .expect("TEST_AUTH_TOKEN must be set");
-    let terminal_id = env::var("TEST_TERMINAL_ID")
-        .expect("TEST_TERMINAL_ID must be set");
+    let auth_token = env::var("TEST_AUTH_TOKEN").expect("TEST_AUTH_TOKEN must be set");
+    let terminal_id = env::var("TEST_TERMINAL_ID").expect("TEST_TERMINAL_ID must be set");
 
     let mut client = TestClient::new().with_auth(&auth_token);
 
     // Fetch CSRF token first
-    client.fetch_csrf_token().await.expect("Should fetch CSRF token");
+    client
+        .fetch_csrf_token()
+        .await
+        .expect("Should fetch CSRF token");
 
     // Create test transaction
     let local_id = uuid::Uuid::new_v4().to_string();
@@ -564,9 +599,8 @@ async fn test_offline_upload() {
         transactions: vec![transaction],
     };
 
-    let result: Result<ApiResponse<UploadResponse>, _> = client
-        .post("/api/pos/sync/upload", &request)
-        .await;
+    let result: Result<ApiResponse<UploadResponse>, _> =
+        client.post("/api/pos/sync/upload", &request).await;
 
     assert!(result.is_ok(), "Upload should succeed: {:?}", result.err());
 
@@ -612,26 +646,30 @@ pub struct TerminalAuthResponse {
 #[tokio::test]
 #[ignore = "Requires registered test terminal"]
 async fn test_terminal_authentication() {
-    let hardware_id = env::var("TEST_HARDWARE_ID")
-        .expect("TEST_HARDWARE_ID must be set");
-    let secret = env::var("TEST_TERMINAL_SECRET")
-        .expect("TEST_TERMINAL_SECRET must be set");
+    let hardware_id = env::var("TEST_HARDWARE_ID").expect("TEST_HARDWARE_ID must be set");
+    let secret = env::var("TEST_TERMINAL_SECRET").expect("TEST_TERMINAL_SECRET must be set");
 
     let mut client = TestClient::new();
 
     // Fetch CSRF token
-    client.fetch_csrf_token().await.expect("Should fetch CSRF token");
+    client
+        .fetch_csrf_token()
+        .await
+        .expect("Should fetch CSRF token");
 
     let request = TerminalAuthRequest {
         hardware_id,
         secret,
     };
 
-    let result: Result<ApiResponse<TerminalAuthResponse>, _> = client
-        .post("/api/pos/terminals/login", &request)
-        .await;
+    let result: Result<ApiResponse<TerminalAuthResponse>, _> =
+        client.post("/api/pos/terminals/login", &request).await;
 
-    assert!(result.is_ok(), "Terminal auth should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Terminal auth should succeed: {:?}",
+        result.err()
+    );
 
     let response = result.unwrap();
     assert!(response.success);
@@ -652,7 +690,7 @@ async fn test_terminal_authentication() {
 /// Test that Rust serialization matches what backend expects
 mod serialization_tests {
     use e2manage_pos_terminal::api::auth::{
-        LoginTerminalRequest, HeartbeatRequest, VerifyPinRequest,
+        HeartbeatRequest, LoginTerminalRequest, VerifyPinRequest,
     };
 
     #[test]
@@ -666,7 +704,11 @@ mod serialization_tests {
         let json = serde_json::to_string(&request).unwrap();
 
         // Backend expects camelCase
-        assert!(json.contains("hardwareId"), "Should use camelCase: {}", json);
+        assert!(
+            json.contains("hardwareId"),
+            "Should use camelCase: {}",
+            json
+        );
         assert!(!json.contains("hardware_id"), "Should not use snake_case");
     }
 
@@ -797,7 +839,7 @@ mod deserialization_tests {
 
 /// These tests validate that the Rust DTOs match backend API contract
 mod contract_tests {
-    use e2manage_pos_terminal::api::sync::{ProductDto, CategoryDto, OperatorDto};
+    use e2manage_pos_terminal::api::sync::{CategoryDto, OperatorDto, ProductDto};
 
     #[test]
     fn test_product_dto_matches_backend() {

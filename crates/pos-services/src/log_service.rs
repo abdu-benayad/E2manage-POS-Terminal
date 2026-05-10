@@ -123,7 +123,11 @@ impl LogService {
     }
 
     /// Read logs filtered by level
-    pub fn read_logs_by_level(&self, level: LogLevel, max_lines: usize) -> LogResult<Vec<LogEntry>> {
+    pub fn read_logs_by_level(
+        &self,
+        level: LogLevel,
+        max_lines: usize,
+    ) -> LogResult<Vec<LogEntry>> {
         let all_logs = self.read_recent_logs(max_lines * 10)?;
         Ok(all_logs
             .into_iter()
@@ -153,7 +157,11 @@ impl LogService {
         Some(LogEntry {
             timestamp: parts[0].to_string(),
             level: LogLevel::from(parts[1]),
-            target: parts.get(2).map(|s| s.trim_end_matches(':')).unwrap_or("").to_string(),
+            target: parts
+                .get(2)
+                .map(|s| s.trim_end_matches(':'))
+                .unwrap_or("")
+                .to_string(),
             message: parts.get(3).unwrap_or(&"").to_string(),
         })
     }

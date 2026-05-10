@@ -221,7 +221,10 @@ impl UpdateService {
 
     /// Converts API response to VersionInfo
     fn convert_response(&self, response: CheckUpdateResponse) -> UpdateResult<VersionInfo> {
-        let latest_version = response.version.clone().unwrap_or_else(|| self.current_version.clone());
+        let latest_version = response
+            .version
+            .clone()
+            .unwrap_or_else(|| self.current_version.clone());
         let download_url = response.download_url.clone().unwrap_or_default();
         let release_notes = response
             .release_notes
@@ -291,11 +294,8 @@ impl UpdateService {
     /// * `0` if a == b
     /// * `1` if a > b
     pub fn compare_versions(a: &str, b: &str) -> i32 {
-        let parse_version = |v: &str| -> Vec<u32> {
-            v.split('.')
-                .filter_map(|s| s.parse::<u32>().ok())
-                .collect()
-        };
+        let parse_version =
+            |v: &str| -> Vec<u32> { v.split('.').filter_map(|s| s.parse::<u32>().ok()).collect() };
 
         let parts_a = parse_version(a);
         let parts_b = parse_version(b);
@@ -355,10 +355,7 @@ impl UpdateService {
         if let Some(expected) = checksum {
             let actual = self.calculate_sha256(dest_path)?;
             if actual.to_lowercase() != expected.to_lowercase() {
-                error!(
-                    "Checksum mismatch: expected {}, got {}",
-                    expected, actual
-                );
+                error!("Checksum mismatch: expected {}, got {}", expected, actual);
                 return Err(UpdateError::ChecksumError(format!(
                     "Expected {}, got {}",
                     expected, actual

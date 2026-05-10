@@ -158,10 +158,12 @@ where
             M: de::MapAccess<'de>,
         {
             // Deserialize as UnitDto and extract code or symbol
-            let unit: UnitDto = de::Deserialize::deserialize(
-                de::value::MapAccessDeserializer::new(map)
-            )?;
-            Ok(unit.code.or(unit.symbol).unwrap_or_else(|| "UNIT".to_string()))
+            let unit: UnitDto =
+                de::Deserialize::deserialize(de::value::MapAccessDeserializer::new(map))?;
+            Ok(unit
+                .code
+                .or(unit.symbol)
+                .unwrap_or_else(|| "UNIT".to_string()))
         }
 
         fn visit_unit<E: de::Error>(self) -> Result<String, E> {
@@ -418,11 +420,15 @@ impl OperatorDto {
     /// Converts to OperatorRow for database storage
     pub fn to_operator_row(&self) -> pos_db::OperatorRow {
         // Serialize permissions to JSON string
-        let permissions_json = self.permissions.as_ref()
+        let permissions_json = self
+            .permissions
+            .as_ref()
             .map(|p| serde_json::to_string(p).unwrap_or_default());
 
         // Use employee_number as code, or generate from ID if not available
-        let code = self.employee_number.clone()
+        let code = self
+            .employee_number
+            .clone()
             .unwrap_or_else(|| format!("OP-{}", &self.id[..8.min(self.id.len())]));
 
         pos_db::OperatorRow {
@@ -563,7 +569,10 @@ mod tests {
 
         let row = dto.to_product_row();
         assert_eq!(row.id, "p1");
-        assert_eq!(row.price, rust_decimal::Decimal::from_f64_retain(15.99).unwrap());
+        assert_eq!(
+            row.price,
+            rust_decimal::Decimal::from_f64_retain(15.99).unwrap()
+        );
         assert_eq!(row.name_ar, Some("اختبار".to_string()));
     }
 

@@ -182,7 +182,12 @@ impl Payment {
     }
 
     /// Creates a new wallet payment
-    pub fn wallet(amount: Decimal, currency: &str, wallet_type: &str, transaction_id: &str) -> Self {
+    pub fn wallet(
+        amount: Decimal,
+        currency: &str,
+        wallet_type: &str,
+        transaction_id: &str,
+    ) -> Self {
         Self {
             id: Uuid::new_v4().to_string(),
             method: PaymentMethod::Wallet,
@@ -292,7 +297,9 @@ impl TransactionItem {
     /// Returns the display name based on locale
     pub fn display_name(&self, locale: &str) -> &str {
         if locale == "ar" {
-            self.product_name_ar.as_deref().unwrap_or(&self.product_name)
+            self.product_name_ar
+                .as_deref()
+                .unwrap_or(&self.product_name)
         } else {
             &self.product_name
         }
@@ -404,10 +411,21 @@ impl Transaction {
         operator_id: &str,
         operator_name: &str,
     ) -> Self {
-        let mut txn = Self::new("sale", currency, shift_id, terminal_id, operator_id, operator_name);
+        let mut txn = Self::new(
+            "sale",
+            currency,
+            shift_id,
+            terminal_id,
+            operator_id,
+            operator_name,
+        );
 
         // Convert cart items to transaction items
-        txn.items = cart.items.iter().map(TransactionItem::from_cart_item).collect();
+        txn.items = cart
+            .items
+            .iter()
+            .map(TransactionItem::from_cart_item)
+            .collect();
 
         // Cart and Transaction both use Decimal — direct assignment
         txn.subtotal = cart.subtotal;
@@ -443,14 +461,23 @@ impl Transaction {
         card_type: &str,
         auth_code: &str,
     ) {
-        self.payments
-            .push(Payment::card(amount, &self.currency, card_last_four, card_type, auth_code));
+        self.payments.push(Payment::card(
+            amount,
+            &self.currency,
+            card_last_four,
+            card_type,
+            auth_code,
+        ));
     }
 
     /// Adds a wallet payment
     pub fn add_wallet_payment(&mut self, amount: Decimal, wallet_type: &str, transaction_id: &str) {
-        self.payments
-            .push(Payment::wallet(amount, &self.currency, wallet_type, transaction_id));
+        self.payments.push(Payment::wallet(
+            amount,
+            &self.currency,
+            wallet_type,
+            transaction_id,
+        ));
     }
 
     /// Adds a credit payment
@@ -628,8 +655,14 @@ mod tests {
         assert_eq!(TransactionStatus::Voided.as_str(), "VOIDED");
         assert_eq!(TransactionStatus::Returned.as_str(), "RETURNED");
 
-        assert_eq!(TransactionStatus::from_str("DRAFT"), Ok(TransactionStatus::Draft));
-        assert_eq!(TransactionStatus::from_str("completed"), Ok(TransactionStatus::Completed));
+        assert_eq!(
+            TransactionStatus::from_str("DRAFT"),
+            Ok(TransactionStatus::Draft)
+        );
+        assert_eq!(
+            TransactionStatus::from_str("completed"),
+            Ok(TransactionStatus::Completed)
+        );
         assert_eq!(TransactionStatus::from_str("invalid"), Err(()));
     }
 

@@ -3,10 +3,10 @@
 //! Handles terminal login, operator PIN verification, and session management.
 //! Supports both online verification (via API) and offline verification (via local DB).
 
-use pos_api::{ApiClient, HeartbeatRequest, HeartbeatResponse, LoginTerminalResponse};
-use pos_db::Database;
 use anyhow::{anyhow, Result};
 use bcrypt::{hash, verify, DEFAULT_COST};
+use pos_api::{ApiClient, HeartbeatRequest, HeartbeatResponse, LoginTerminalResponse};
+use pos_db::Database;
 use rusqlite::params;
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
@@ -78,9 +78,15 @@ impl AuthService {
         hardware_id: &str,
         secret: &str,
     ) -> Result<TerminalSession> {
-        info!("Logging in terminal {} with hardware ID: {}", terminal_code, hardware_id);
+        info!(
+            "Logging in terminal {} with hardware ID: {}",
+            terminal_code, hardware_id
+        );
 
-        let response = self.api.login_terminal(terminal_code, hardware_id, secret).await?;
+        let response = self
+            .api
+            .login_terminal(terminal_code, hardware_id, secret)
+            .await?;
 
         // Save terminal configuration to local database
         self.save_terminal_config(hardware_id, &response)?;
@@ -99,10 +105,26 @@ impl AuthService {
             company_id: response.company_id,
             branch_id: response.branch_id,
             locale: response.config.locale.unwrap_or_else(|| "ar".to_string()),
-            currency: response.config.currency.unwrap_or_else(|| "LYD".to_string()),
-            tax_rate: response.config.tax_config.as_ref().map(|t| t.default_rate).unwrap_or(0.0),
-            tax_inclusive: response.config.tax_config.as_ref().map(|t| t.tax_inclusive).unwrap_or(false),
-            sector: response.config.business_sector.unwrap_or_else(|| "RETAIL".to_string()),
+            currency: response
+                .config
+                .currency
+                .unwrap_or_else(|| "LYD".to_string()),
+            tax_rate: response
+                .config
+                .tax_config
+                .as_ref()
+                .map(|t| t.default_rate)
+                .unwrap_or(0.0),
+            tax_inclusive: response
+                .config
+                .tax_config
+                .as_ref()
+                .map(|t| t.tax_inclusive)
+                .unwrap_or(false),
+            sector: response
+                .config
+                .business_sector
+                .unwrap_or_else(|| "RETAIL".to_string()),
             features: response.features,
         })
     }
@@ -134,8 +156,18 @@ impl AuthService {
                 response.branch_id,
                 response.config.locale,
                 response.config.currency,
-                response.config.tax_config.as_ref().map(|t| t.default_rate).unwrap_or(0.0),
-                response.config.tax_config.as_ref().map(|t| t.tax_inclusive as i32).unwrap_or(0),
+                response
+                    .config
+                    .tax_config
+                    .as_ref()
+                    .map(|t| t.default_rate)
+                    .unwrap_or(0.0),
+                response
+                    .config
+                    .tax_config
+                    .as_ref()
+                    .map(|t| t.tax_inclusive as i32)
+                    .unwrap_or(0),
                 response.config.business_sector,
             ],
         )?;
@@ -169,11 +201,17 @@ impl AuthService {
                     tenant_id: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
                     company_id: row.get::<_, Option<String>>(5)?.unwrap_or_default(),
                     branch_id: row.get(6)?,
-                    locale: row.get::<_, Option<String>>(7)?.unwrap_or_else(|| "ar".to_string()),
-                    currency: row.get::<_, Option<String>>(8)?.unwrap_or_else(|| "LYD".to_string()),
+                    locale: row
+                        .get::<_, Option<String>>(7)?
+                        .unwrap_or_else(|| "ar".to_string()),
+                    currency: row
+                        .get::<_, Option<String>>(8)?
+                        .unwrap_or_else(|| "LYD".to_string()),
                     tax_rate: row.get::<_, Option<f64>>(9)?.unwrap_or(0.0),
                     tax_inclusive: row.get::<_, Option<i32>>(10)?.unwrap_or(0) != 0,
-                    sector: row.get::<_, Option<String>>(11)?.unwrap_or_else(|| "RETAIL".to_string()),
+                    sector: row
+                        .get::<_, Option<String>>(11)?
+                        .unwrap_or_else(|| "RETAIL".to_string()),
                     features: vec![], // Features need to be synced
                 })
             },
@@ -218,11 +256,7 @@ impl AuthService {
     /// # Returns
     ///
     /// Verification result with operator info if valid
-    pub async fn verify_pin(
-        &self,
-        operator_id: &str,
-        pin: &str,
-    ) -> Result<PinVerificationResult> {
+    pub async fn verify_pin(&self, operator_id: &str, pin: &str) -> Result<PinVerificationResult> {
         debug!("Verifying PIN for operator: {}", operator_id);
 
         // Try online verification first

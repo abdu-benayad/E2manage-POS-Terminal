@@ -30,7 +30,13 @@ fn test_complete_shift_workflow_sync() {
     let opening_cash = Decimal::from(500);
     let shift = app
         .db
-        .start_shift("shift-001", "SHIFT-001", &operator_id, Some("TERM-01"), opening_cash)
+        .start_shift(
+            "shift-001",
+            "SHIFT-001",
+            &operator_id,
+            Some("TERM-01"),
+            opening_cash,
+        )
         .expect("Failed to start shift");
 
     assert_eq!(shift.status, "ACTIVE");
@@ -41,15 +47,26 @@ fn test_complete_shift_workflow_sync() {
 
     // Transaction 1: Cash sale
     let result = app.product_service.search("SKU001", 10).unwrap();
-    app.cart_service.add_item(&result.products[0], Decimal::from(2)).unwrap();
+    app.cart_service
+        .add_item(&result.products[0], Decimal::from(2))
+        .unwrap();
     let cart = app.cart_service.get_cart();
 
     app.transaction_service
-        .create_from_cart(&cart, "LYD", &shift.id, "TERM-001", &operator_id, &operator_name)
+        .create_from_cart(
+            &cart,
+            "LYD",
+            &shift.id,
+            "TERM-001",
+            &operator_id,
+            &operator_name,
+        )
         .unwrap();
     let txn = app.transaction_service.get_current().unwrap();
     let txn1_total = txn.grand_total;
-    app.transaction_service.add_cash_payment(txn1_total).unwrap();
+    app.transaction_service
+        .add_cash_payment(txn1_total)
+        .unwrap();
     total_cash_sales += txn1_total;
 
     app.cart_service.clear();
@@ -57,11 +74,20 @@ fn test_complete_shift_workflow_sync() {
 
     // Transaction 2: Card sale
     let result = app.product_service.search("SKU005", 10).unwrap();
-    app.cart_service.add_item(&result.products[0], Decimal::ONE).unwrap();
+    app.cart_service
+        .add_item(&result.products[0], Decimal::ONE)
+        .unwrap();
     let cart = app.cart_service.get_cart();
 
     app.transaction_service
-        .create_from_cart(&cart, "LYD", &shift.id, "TERM-001", &operator_id, &operator_name)
+        .create_from_cart(
+            &cart,
+            "LYD",
+            &shift.id,
+            "TERM-001",
+            &operator_id,
+            &operator_name,
+        )
         .unwrap();
     let txn = app.transaction_service.get_current().unwrap();
     let txn2_total = txn.grand_total;
@@ -77,12 +103,9 @@ fn test_complete_shift_workflow_sync() {
 
     // 5. END SHIFT with cash count (direct DB for sync test)
     let counted_cash = expected_cash; // Perfect count
-    let close_result = app.db.end_shift(
-        &shift.id,
-        counted_cash,
-        expected_cash,
-        Some("End of day"),
-    );
+    let close_result = app
+        .db
+        .end_shift(&shift.id, counted_cash, expected_cash, Some("End of day"));
     assert!(close_result.is_ok());
 
     // Verify shift is closed
@@ -105,7 +128,13 @@ fn test_shift_with_cash_variance() {
     let opening_cash = Decimal::from(500);
     let shift = app
         .db
-        .start_shift("shift-002", "SHIFT-002", "op-001", Some("TERM-01"), opening_cash)
+        .start_shift(
+            "shift-002",
+            "SHIFT-002",
+            "op-001",
+            Some("TERM-01"),
+            opening_cash,
+        )
         .unwrap();
 
     // Simulate a cash sale
@@ -129,7 +158,8 @@ fn test_shift_with_cash_variance() {
     assert_eq!(closed_shift.status, "CLOSED");
 
     // Variance should be recorded (negative means short)
-    let actual_variance = closed_shift.closing_cash.unwrap_or(Decimal::ZERO) - closed_shift.expected_cash.unwrap_or(Decimal::ZERO);
+    let actual_variance = closed_shift.closing_cash.unwrap_or(Decimal::ZERO)
+        - closed_shift.expected_cash.unwrap_or(Decimal::ZERO);
     assert_eq!(actual_variance, variance);
 
     println!("✓ Shift with cash variance passed");
@@ -147,21 +177,43 @@ fn test_multiple_sequential_shifts() {
     // Shift 1: Morning
     let shift1 = app
         .db
-        .start_shift("shift-003a", "SHIFT-M001", "op-001", Some("TERM-01"), Decimal::from(500))
+        .start_shift(
+            "shift-003a",
+            "SHIFT-M001",
+            "op-001",
+            Some("TERM-01"),
+            Decimal::from(500),
+        )
         .unwrap();
 
     app.db
-        .end_shift(&shift1.id, Decimal::from(500), Decimal::from(500), Some("Morning shift"))
+        .end_shift(
+            &shift1.id,
+            Decimal::from(500),
+            Decimal::from(500),
+            Some("Morning shift"),
+        )
         .unwrap();
 
     // Shift 2: Afternoon (after shift 1 closed)
     let shift2 = app
         .db
-        .start_shift("shift-003b", "SHIFT-A001", "op-001", Some("TERM-01"), Decimal::from(600))
+        .start_shift(
+            "shift-003b",
+            "SHIFT-A001",
+            "op-001",
+            Some("TERM-01"),
+            Decimal::from(600),
+        )
         .unwrap();
 
     app.db
-        .end_shift(&shift2.id, Decimal::from(600), Decimal::from(600), Some("Afternoon shift"))
+        .end_shift(
+            &shift2.id,
+            Decimal::from(600),
+            Decimal::from(600),
+            Some("Afternoon shift"),
+        )
         .unwrap();
 
     // Both shifts should be closed
@@ -191,7 +243,13 @@ fn test_get_current_active_shift() {
     // Start a shift
     let shift = app
         .db
-        .start_shift("shift-004", "SHIFT-004", "op-001", Some("TERM-01"), Decimal::from(500))
+        .start_shift(
+            "shift-004",
+            "SHIFT-004",
+            "op-001",
+            Some("TERM-01"),
+            Decimal::from(500),
+        )
         .unwrap();
 
     // Should find active shift
@@ -214,9 +272,13 @@ fn test_shift_requires_operator() {
     app.seed_test_data();
 
     // Start shift with valid operator
-    let result = app
-        .db
-        .start_shift("shift-005", "SHIFT-005", "op-001", Some("TERM-01"), Decimal::from(500));
+    let result = app.db.start_shift(
+        "shift-005",
+        "SHIFT-005",
+        "op-001",
+        Some("TERM-01"),
+        Decimal::from(500),
+    );
     assert!(result.is_ok());
 
     let shift = result.unwrap();
@@ -237,7 +299,13 @@ fn test_shift_with_zero_opening_cash() {
     // Zero float is valid for card-only terminals
     let shift = app
         .db
-        .start_shift("shift-006", "SHIFT-006", "op-001", Some("TERM-01"), Decimal::ZERO)
+        .start_shift(
+            "shift-006",
+            "SHIFT-006",
+            "op-001",
+            Some("TERM-01"),
+            Decimal::ZERO,
+        )
         .unwrap();
 
     assert_eq!(shift.opening_cash, Decimal::ZERO);
@@ -257,7 +325,13 @@ fn test_shift_lookup_by_id() {
 
     let shift = app
         .db
-        .start_shift("shift-007", "SHIFT-007", "op-001", Some("TERM-01"), Decimal::from(500))
+        .start_shift(
+            "shift-007",
+            "SHIFT-007",
+            "op-001",
+            Some("TERM-01"),
+            Decimal::from(500),
+        )
         .unwrap();
 
     // Lookup by ID
@@ -286,7 +360,13 @@ fn test_shift_timestamps() {
     // Start shift
     let shift = app
         .db
-        .start_shift("shift-008", "SHIFT-008", "op-001", Some("TERM-01"), Decimal::from(500))
+        .start_shift(
+            "shift-008",
+            "SHIFT-008",
+            "op-001",
+            Some("TERM-01"),
+            Decimal::from(500),
+        )
         .unwrap();
 
     assert!(!shift.started_at.is_empty());
@@ -314,14 +394,25 @@ fn test_transactions_associated_with_shift() {
 
     let shift = app
         .db
-        .start_shift("shift-009", "SHIFT-009", "op-001", Some("TERM-01"), Decimal::from(500))
+        .start_shift(
+            "shift-009",
+            "SHIFT-009",
+            "op-001",
+            Some("TERM-01"),
+            Decimal::from(500),
+        )
         .unwrap();
 
     // Create transactions
     for i in 1..=3 {
-        let result = app.product_service.search(&format!("SKU{:03}", i), 10).unwrap();
+        let result = app
+            .product_service
+            .search(&format!("SKU{:03}", i), 10)
+            .unwrap();
         app.cart_service.clear();
-        app.cart_service.add_item(&result.products[0], Decimal::ONE).unwrap();
+        app.cart_service
+            .add_item(&result.products[0], Decimal::ONE)
+            .unwrap();
 
         let cart = app.cart_service.get_cart();
         app.transaction_service
@@ -329,7 +420,9 @@ fn test_transactions_associated_with_shift() {
             .unwrap();
 
         let txn = app.transaction_service.get_current().unwrap();
-        app.transaction_service.add_cash_payment(txn.grand_total).unwrap();
+        app.transaction_service
+            .add_cash_payment(txn.grand_total)
+            .unwrap();
 
         // Verify transaction has shift ID
         let txn = app.transaction_service.get_current().unwrap();
@@ -353,7 +446,13 @@ fn test_shift_status_transitions() {
     // Start: ACTIVE
     let shift = app
         .db
-        .start_shift("shift-010", "SHIFT-010", "op-001", Some("TERM-01"), Decimal::from(500))
+        .start_shift(
+            "shift-010",
+            "SHIFT-010",
+            "op-001",
+            Some("TERM-01"),
+            Decimal::from(500),
+        )
         .unwrap();
     assert_eq!(shift.status, "ACTIVE");
 
@@ -380,7 +479,13 @@ fn test_shift_terminal_association() {
     let terminal_id = "TERM-99";
     let shift = app
         .db
-        .start_shift("shift-011", "SHIFT-011", "op-001", Some(terminal_id), Decimal::from(500))
+        .start_shift(
+            "shift-011",
+            "SHIFT-011",
+            "op-001",
+            Some(terminal_id),
+            Decimal::from(500),
+        )
         .unwrap();
 
     assert_eq!(shift.terminal_id, Some(terminal_id.to_string()));
@@ -399,12 +504,23 @@ fn test_shift_close_with_notes() {
 
     let shift = app
         .db
-        .start_shift("shift-012", "SHIFT-012", "op-001", Some("TERM-01"), Decimal::from(500))
+        .start_shift(
+            "shift-012",
+            "SHIFT-012",
+            "op-001",
+            Some("TERM-01"),
+            Decimal::from(500),
+        )
         .unwrap();
 
     let note = "End of day - all registers balanced";
     app.db
-        .end_shift(&shift.id, Decimal::from(500), Decimal::from(500), Some(note))
+        .end_shift(
+            &shift.id,
+            Decimal::from(500),
+            Decimal::from(500),
+            Some(note),
+        )
         .unwrap();
 
     let closed = app.db.get_shift_by_id(&shift.id).unwrap().unwrap();

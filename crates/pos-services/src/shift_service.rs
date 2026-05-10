@@ -397,8 +397,11 @@ impl ShiftService {
         currency: &str,
     ) -> ShiftResult<StartShiftResult> {
         // Check for existing active shift
-        if let Some(existing) = self.db.get_current_active_shift()
-            .map_err(|e| ShiftError::DatabaseError(e.to_string()))? {
+        if let Some(existing) = self
+            .db
+            .get_current_active_shift()
+            .map_err(|e| ShiftError::DatabaseError(e.to_string()))?
+        {
             if existing.status == "ACTIVE" {
                 return Err(ShiftError::AlreadyActive);
             }
@@ -502,7 +505,9 @@ impl ShiftService {
             cc.update_denomination(index, count);
             Ok(cc.total)
         } else {
-            Err(ShiftError::InvalidState("Cash count not started".to_string()))
+            Err(ShiftError::InvalidState(
+                "Cash count not started".to_string(),
+            ))
         }
     }
 
@@ -511,8 +516,14 @@ impl ShiftService {
         let shift = self.current_shift.read();
         let cash_count = self.cash_count.read();
 
-        let expected = shift.as_ref().map(|s| s.expected_cash).unwrap_or(Decimal::ZERO);
-        let counted = cash_count.as_ref().map(|c| c.total).unwrap_or(Decimal::ZERO);
+        let expected = shift
+            .as_ref()
+            .map(|s| s.expected_cash)
+            .unwrap_or(Decimal::ZERO);
+        let counted = cash_count
+            .as_ref()
+            .map(|c| c.total)
+            .unwrap_or(Decimal::ZERO);
 
         let variance = counted - expected;
         let status = VarianceStatus::from_variance(variance);
@@ -553,7 +564,10 @@ impl ShiftService {
 
         // Try to sync to server
         let synced = if self.api.is_online().await.is_online() {
-            match self.sync_shift_end(&shift.id, counted_cash, shift.expected_cash, variance, note).await {
+            match self
+                .sync_shift_end(&shift.id, counted_cash, shift.expected_cash, variance, note)
+                .await
+            {
                 Ok(_) => {
                     info!("Shift {} end synced to server", shift.shift_number);
                     true
@@ -591,7 +605,11 @@ impl ShiftService {
     }
 
     /// Gets historical shifts for a date range
-    pub fn get_shifts_in_range(&self, start_date: &str, end_date: &str) -> ShiftResult<Vec<ShiftSummary>> {
+    pub fn get_shifts_in_range(
+        &self,
+        start_date: &str,
+        end_date: &str,
+    ) -> ShiftResult<Vec<ShiftSummary>> {
         let rows = self
             .db
             .get_shifts_in_range(start_date, end_date)
@@ -662,10 +680,7 @@ impl ShiftService {
             started_at: started_at.to_string(),
         };
 
-        let response: StartShiftResponse = self
-            .api
-            .post("/api/pos/shifts", &request)
-            .await?;
+        let response: StartShiftResponse = self.api.post("/api/pos/shifts", &request).await?;
 
         Ok(response.id)
     }
@@ -750,25 +765,40 @@ mod tests {
     fn test_cash_count_update_denomination() {
         let mut cc = CashCount::new("LYD");
         cc.update_denomination(0, 10); // 10 x 50 = 500
-        cc.update_denomination(1, 5);  // 5 x 20 = 100
+        cc.update_denomination(1, 5); // 5 x 20 = 100
         assert_eq!(cc.total, Decimal::from(600));
     }
 
     #[test]
     fn test_variance_status_balanced() {
-        assert_eq!(VarianceStatus::from_variance(Decimal::ZERO), VarianceStatus::Balanced);
+        assert_eq!(
+            VarianceStatus::from_variance(Decimal::ZERO),
+            VarianceStatus::Balanced
+        );
     }
 
     #[test]
     fn test_variance_status_short() {
-        assert_eq!(VarianceStatus::from_variance(Decimal::from(-10)), VarianceStatus::Short);
-        assert_eq!(VarianceStatus::from_variance(Decimal::new(-2, 2)), VarianceStatus::Short);
+        assert_eq!(
+            VarianceStatus::from_variance(Decimal::from(-10)),
+            VarianceStatus::Short
+        );
+        assert_eq!(
+            VarianceStatus::from_variance(Decimal::new(-2, 2)),
+            VarianceStatus::Short
+        );
     }
 
     #[test]
     fn test_variance_status_over() {
-        assert_eq!(VarianceStatus::from_variance(Decimal::from(10)), VarianceStatus::Over);
-        assert_eq!(VarianceStatus::from_variance(Decimal::new(2, 2)), VarianceStatus::Over);
+        assert_eq!(
+            VarianceStatus::from_variance(Decimal::from(10)),
+            VarianceStatus::Over
+        );
+        assert_eq!(
+            VarianceStatus::from_variance(Decimal::new(2, 2)),
+            VarianceStatus::Over
+        );
     }
 
     #[test]

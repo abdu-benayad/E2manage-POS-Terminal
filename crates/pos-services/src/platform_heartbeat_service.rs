@@ -41,9 +41,7 @@ const MAX_RECENT_ERRORS: usize = 10;
 #[derive(Debug, Clone)]
 pub enum HeartbeatEvent {
     /// Heartbeat was sent successfully
-    HeartbeatSent {
-        status: HeartbeatStatus,
-    },
+    HeartbeatSent { status: HeartbeatStatus },
     /// Platform sent a command
     CommandReceived(PlatformCommandType),
     /// Update command received
@@ -58,9 +56,7 @@ pub enum HeartbeatEvent {
     /// Force logout requested
     ForceLogoutRequested,
     /// Heartbeat failed
-    HeartbeatFailed {
-        error: String,
-    },
+    HeartbeatFailed { error: String },
 }
 
 /// System metrics collected for heartbeat
@@ -300,7 +296,10 @@ impl PlatformHeartbeatService {
         if response.acknowledged {
             // Clear errors after successful heartbeat
             self.clear_errors().await;
-            debug!("Heartbeat acknowledged, commands: {}", response.commands.len());
+            debug!(
+                "Heartbeat acknowledged, commands: {}",
+                response.commands.len()
+            );
         } else {
             warn!("Heartbeat not acknowledged by server");
         }
@@ -391,7 +390,9 @@ impl PlatformHeartbeatService {
     ) {
         info!("Processing platform command: {:?}", command.command_type);
 
-        let _ = event_tx.send(HeartbeatEvent::CommandReceived(command.command_type.clone()));
+        let _ = event_tx.send(HeartbeatEvent::CommandReceived(
+            command.command_type.clone(),
+        ));
 
         match command.command_type {
             PlatformCommandType::Update => {

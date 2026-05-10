@@ -285,7 +285,9 @@ impl ApiClient {
         if !envelope.success {
             return Err(anyhow!(
                 "API error: {}",
-                envelope.message.unwrap_or_else(|| "Unknown error".to_string())
+                envelope
+                    .message
+                    .unwrap_or_else(|| "Unknown error".to_string())
             ));
         }
 
@@ -318,7 +320,9 @@ impl ApiClient {
         if !envelope.success {
             return Err(anyhow!(
                 "API error: {}",
-                envelope.message.unwrap_or_else(|| "Unknown error".to_string())
+                envelope
+                    .message
+                    .unwrap_or_else(|| "Unknown error".to_string())
             ));
         }
 
@@ -381,7 +385,9 @@ impl ApiClient {
         if !envelope.success {
             return Err(anyhow!(
                 "API error: {}",
-                envelope.message.unwrap_or_else(|| "Unknown error".to_string())
+                envelope
+                    .message
+                    .unwrap_or_else(|| "Unknown error".to_string())
             ));
         }
 
@@ -455,7 +461,8 @@ impl ApiClient {
                     let status = response.status();
                     if status.is_success() {
                         OnlineStatus::Online
-                    } else if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
+                    } else if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN
+                    {
                         warn!("Online check: auth rejected ({})", status);
                         OnlineStatus::AuthRejected
                     } else {
@@ -533,12 +540,7 @@ impl ApiClient {
                     ))
                 }
                 Err(_) => {
-                    error!(
-                        "HTTP error {} at {}: {}",
-                        status.as_u16(),
-                        url,
-                        error_text
-                    );
+                    error!("HTTP error {} at {}: {}", status.as_u16(), url, error_text);
                     Err(anyhow!(
                         "HTTP Error {}: {}",
                         status.as_u16(),
@@ -604,10 +606,7 @@ mod tests {
 
         // Set terminal ID
         client.set_terminal_id("TERM-001".to_string()).await;
-        assert_eq!(
-            client.get_terminal_id().await,
-            Some("TERM-001".to_string())
-        );
+        assert_eq!(client.get_terminal_id().await, Some("TERM-001".to_string()));
     }
 
     #[tokio::test]

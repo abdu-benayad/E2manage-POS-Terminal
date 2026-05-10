@@ -113,7 +113,11 @@ impl ProductService {
     ///
     /// Use this when FTS doesn't find results or for partial/fuzzy matching.
     #[instrument(skip(self), fields(query = %query, limit = %limit))]
-    pub fn search_like(&self, query: &str, limit: i32) -> Result<ProductSearchResult, ProductError> {
+    pub fn search_like(
+        &self,
+        query: &str,
+        limit: i32,
+    ) -> Result<ProductSearchResult, ProductError> {
         let query = query.trim();
 
         if query.is_empty() {
@@ -139,7 +143,11 @@ impl ProductService {
 
     /// Combined search: tries FTS first, falls back to LIKE if no results
     #[instrument(skip(self), fields(query = %query, limit = %limit))]
-    pub fn smart_search(&self, query: &str, limit: i32) -> Result<ProductSearchResult, ProductError> {
+    pub fn smart_search(
+        &self,
+        query: &str,
+        limit: i32,
+    ) -> Result<ProductSearchResult, ProductError> {
         // Try FTS first
         let result = self.search(query, limit)?;
 
@@ -209,9 +217,15 @@ impl ProductService {
         limit: i32,
         offset: i32,
     ) -> Result<Vec<Product>, ProductError> {
-        let rows = self.db.get_products_by_category(category_id, limit, offset)?;
+        let rows = self
+            .db
+            .get_products_by_category(category_id, limit, offset)?;
         let products: Vec<Product> = rows.into_iter().map(product_from_row).collect();
-        debug!("Found {} products in category {}", products.len(), category_id);
+        debug!(
+            "Found {} products in category {}",
+            products.len(),
+            category_id
+        );
         Ok(products)
     }
 
@@ -238,7 +252,11 @@ impl ProductService {
     pub fn child_categories(&self, parent_id: &str) -> Result<Vec<Category>, ProductError> {
         let rows = self.db.get_child_categories(parent_id)?;
         let categories: Vec<Category> = rows.into_iter().map(category_from_row).collect();
-        debug!("Found {} child categories for {}", categories.len(), parent_id);
+        debug!(
+            "Found {} child categories for {}",
+            categories.len(),
+            parent_id
+        );
         Ok(categories)
     }
 
@@ -247,7 +265,12 @@ impl ProductService {
     pub fn all_products(&self, limit: i32, offset: i32) -> Result<Vec<Product>, ProductError> {
         let rows = self.db.get_all_products(limit, offset)?;
         let products: Vec<Product> = rows.into_iter().map(product_from_row).collect();
-        debug!("Found {} products (limit={}, offset={})", products.len(), limit, offset);
+        debug!(
+            "Found {} products (limit={}, offset={})",
+            products.len(),
+            limit,
+            offset
+        );
         Ok(products)
     }
 
@@ -506,7 +529,10 @@ mod tests {
         // When query is a barcode, should return exact match immediately
         let result = service.search("1234567890123", 10).unwrap();
         assert_eq!(result.products.len(), 1);
-        assert_eq!(result.products[0].barcode, Some("1234567890123".to_string()));
+        assert_eq!(
+            result.products[0].barcode,
+            Some("1234567890123".to_string())
+        );
     }
 
     #[test]
@@ -682,7 +708,8 @@ mod tests {
         assert!(product.is_weighable);
         assert!(!product.is_serialized);
         assert!(product.allow_negative_stock);
-        assert_eq!(product.price_with_tax(), rust_decimal::Decimal::new(115, 1)); // 10 + 15% = 11.5
+        assert_eq!(product.price_with_tax(), rust_decimal::Decimal::new(115, 1));
+        // 10 + 15% = 11.5
     }
 
     #[test]

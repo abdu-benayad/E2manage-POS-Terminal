@@ -457,8 +457,10 @@ mod tests {
     fn test_get_pending_draft_syncs() {
         let db = setup_db();
 
-        db.queue_draft_sync(&DraftSyncQueueItem::new_create("q1", "d1", "{}")).unwrap();
-        db.queue_draft_sync(&DraftSyncQueueItem::new_create("q2", "d2", "{}")).unwrap();
+        db.queue_draft_sync(&DraftSyncQueueItem::new_create("q1", "d1", "{}"))
+            .unwrap();
+        db.queue_draft_sync(&DraftSyncQueueItem::new_create("q2", "d2", "{}"))
+            .unwrap();
 
         let pending = db.get_pending_draft_syncs(10).unwrap();
         assert_eq!(pending.len(), 2);
@@ -471,7 +473,8 @@ mod tests {
         db.queue_draft_sync(&item).unwrap();
 
         db.mark_draft_sync_syncing("q1").unwrap();
-        db.mark_draft_sync_complete("q1", Some("server-123"), Some("TOK123")).unwrap();
+        db.mark_draft_sync_complete("q1", Some("server-123"), Some("TOK123"))
+            .unwrap();
 
         let found = db.get_draft_sync_item("q1").unwrap().unwrap();
         assert_eq!(found.sync_status, "SYNCED");
@@ -497,8 +500,10 @@ mod tests {
     fn test_count_pending_draft_syncs() {
         let db = setup_db();
 
-        db.queue_draft_sync(&DraftSyncQueueItem::new_create("q1", "d1", "{}")).unwrap();
-        db.queue_draft_sync(&DraftSyncQueueItem::new_create("q2", "d2", "{}")).unwrap();
+        db.queue_draft_sync(&DraftSyncQueueItem::new_create("q1", "d1", "{}"))
+            .unwrap();
+        db.queue_draft_sync(&DraftSyncQueueItem::new_create("q2", "d2", "{}"))
+            .unwrap();
 
         let count = db.count_pending_draft_syncs().unwrap();
         assert_eq!(count, 2);
@@ -508,8 +513,10 @@ mod tests {
     fn test_cleanup_completed_draft_syncs() {
         let db = setup_db();
 
-        db.queue_draft_sync(&DraftSyncQueueItem::new_create("q1", "d1", "{}")).unwrap();
-        db.queue_draft_sync(&DraftSyncQueueItem::new_create("q2", "d2", "{}")).unwrap();
+        db.queue_draft_sync(&DraftSyncQueueItem::new_create("q1", "d1", "{}"))
+            .unwrap();
+        db.queue_draft_sync(&DraftSyncQueueItem::new_create("q2", "d2", "{}"))
+            .unwrap();
 
         db.mark_draft_sync_complete("q1", None, None).unwrap();
 
@@ -526,10 +533,22 @@ mod tests {
         assert_eq!(DraftSyncOperation::Convert.as_str(), "CONVERT");
         assert_eq!(DraftSyncOperation::Delete.as_str(), "DELETE");
 
-        assert_eq!(DraftSyncOperation::from("CREATE"), DraftSyncOperation::Create);
-        assert_eq!(DraftSyncOperation::from("CONVERT"), DraftSyncOperation::Convert);
-        assert_eq!(DraftSyncOperation::from("DELETE"), DraftSyncOperation::Delete);
-        assert_eq!(DraftSyncOperation::from("UNKNOWN"), DraftSyncOperation::Create);
+        assert_eq!(
+            DraftSyncOperation::from("CREATE"),
+            DraftSyncOperation::Create
+        );
+        assert_eq!(
+            DraftSyncOperation::from("CONVERT"),
+            DraftSyncOperation::Convert
+        );
+        assert_eq!(
+            DraftSyncOperation::from("DELETE"),
+            DraftSyncOperation::Delete
+        );
+        assert_eq!(
+            DraftSyncOperation::from("UNKNOWN"),
+            DraftSyncOperation::Create
+        );
     }
 
     #[test]
@@ -551,9 +570,14 @@ mod tests {
     fn test_get_draft_sync_items_by_local_id() {
         let db = setup_db();
 
-        db.queue_draft_sync(&DraftSyncQueueItem::new_create("q1", "draft-1", "{}")).unwrap();
-        db.queue_draft_sync(&DraftSyncQueueItem::new_convert("q2", "draft-1", "s1", "t1")).unwrap();
-        db.queue_draft_sync(&DraftSyncQueueItem::new_create("q3", "draft-2", "{}")).unwrap();
+        db.queue_draft_sync(&DraftSyncQueueItem::new_create("q1", "draft-1", "{}"))
+            .unwrap();
+        db.queue_draft_sync(&DraftSyncQueueItem::new_convert(
+            "q2", "draft-1", "s1", "t1",
+        ))
+        .unwrap();
+        db.queue_draft_sync(&DraftSyncQueueItem::new_create("q3", "draft-2", "{}"))
+            .unwrap();
 
         let items = db.get_draft_sync_items_by_local_id("draft-1").unwrap();
         assert_eq!(items.len(), 2);

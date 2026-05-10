@@ -23,7 +23,7 @@ mod common;
 
 use common::setup_test_db_arc;
 use e2manage_pos_terminal::api::ApiClient;
-use e2manage_pos_terminal::services::{AuthService, SyncService, SyncEvent};
+use e2manage_pos_terminal::services::{AuthService, SyncEvent, SyncService};
 use std::env;
 use std::sync::Arc;
 use tokio::sync::broadcast;
@@ -84,16 +84,19 @@ async fn test_catalog_sync_with_auth_header() {
         api.set_token(token).await;
     } else {
         // Try terminal login
-        let test_terminal_code = env::var("TEST_TERMINAL_CODE")
-            .unwrap_or_else(|_| "TERM-001".to_string());
-        let test_hw_id = env::var("TEST_HARDWARE_ID")
-            .unwrap_or_else(|_| "E2E-TEST-HW-001".to_string());
+        let test_terminal_code =
+            env::var("TEST_TERMINAL_CODE").unwrap_or_else(|_| "TERM-001".to_string());
+        let test_hw_id =
+            env::var("TEST_HARDWARE_ID").unwrap_or_else(|_| "E2E-TEST-HW-001".to_string());
         let test_secret = env::var("TEST_TERMINAL_SECRET")
             .unwrap_or_else(|_| "e2e-test-secret-12345678".to_string());
 
         println!("Attempting terminal login with hw_id: {}", test_hw_id);
 
-        match api.login_terminal(&test_terminal_code, &test_hw_id, &test_secret).await {
+        match api
+            .login_terminal(&test_terminal_code, &test_hw_id, &test_secret)
+            .await
+        {
             Ok(response) => {
                 println!("Terminal authenticated successfully");
                 println!("  Terminal ID: {}", response.terminal_id);
@@ -140,7 +143,10 @@ async fn test_catalog_sync_with_auth_header() {
 
     // Verify we got some data
     if product_count > 0 {
-        println!("\nSUCCESS: Catalog sync retrieved {} products", product_count);
+        println!(
+            "\nSUCCESS: Catalog sync retrieved {} products",
+            product_count
+        );
     } else {
         println!("\nWARNING: No products synced (backend may have empty catalog)");
     }
@@ -178,7 +184,10 @@ async fn test_catalog_sync_fails_without_auth() {
         }
         Err(e) => {
             let error_str = e.to_string();
-            if error_str.contains("401") || error_str.contains("Unauthorized") || error_str.contains("Authorization") {
+            if error_str.contains("401")
+                || error_str.contains("Unauthorized")
+                || error_str.contains("Authorization")
+            {
                 println!("SUCCESS: Sync correctly rejected with 401 Unauthorized");
                 println!("  Error: {}", error_str);
             } else {
@@ -245,7 +254,10 @@ async fn test_catalog_sync_etag_caching() {
 
     // First sync - should get full data
     println!("First sync (should get full data)...");
-    sync_service.sync_all(&tx).await.expect("First sync should succeed");
+    sync_service
+        .sync_all(&tx)
+        .await
+        .expect("First sync should succeed");
 
     let first_count = db.get_product_count().unwrap_or(0);
     println!("  Products after first sync: {}", first_count);
@@ -253,7 +265,10 @@ async fn test_catalog_sync_etag_caching() {
     // Second sync - should use ETag and possibly get 304 Not Modified
     println!("Second sync (should use ETag caching)...");
     let (tx2, mut rx2) = broadcast::channel::<SyncEvent>(16);
-    sync_service.sync_all(&tx2).await.expect("Second sync should succeed");
+    sync_service
+        .sync_all(&tx2)
+        .await
+        .expect("Second sync should succeed");
 
     // Check if we got a NotModified event
     while let Ok(event) = rx2.try_recv() {
@@ -261,8 +276,14 @@ async fn test_catalog_sync_etag_caching() {
             SyncEvent::CatalogNotModified => {
                 println!("  Received CatalogNotModified - ETag caching working!");
             }
-            SyncEvent::CatalogUpdated { products_count, categories_count } => {
-                println!("  Catalog updated: {} products, {} categories", products_count, categories_count);
+            SyncEvent::CatalogUpdated {
+                products_count,
+                categories_count,
+            } => {
+                println!(
+                    "  Catalog updated: {} products, {} categories",
+                    products_count, categories_count
+                );
             }
             _ => {}
         }

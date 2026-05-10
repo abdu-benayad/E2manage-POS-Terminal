@@ -549,7 +549,10 @@ impl ApiClient {
     /// # Returns
     ///
     /// Parked cart with POS token and items
-    pub async fn create_and_park_cart(&self, request: &CreateAndParkCartRequest) -> Result<ParkedCartDetailResponse> {
+    pub async fn create_and_park_cart(
+        &self,
+        request: &CreateAndParkCartRequest,
+    ) -> Result<ParkedCartDetailResponse> {
         self.post_envelope("/api/pos/parking", request).await
     }
 
@@ -592,7 +595,10 @@ impl ApiClient {
     /// # Returns
     ///
     /// The parked cart with items
-    pub async fn get_parked_cart_by_token(&self, pos_token: &str) -> Result<ParkedCartDetailResponse> {
+    pub async fn get_parked_cart_by_token(
+        &self,
+        pos_token: &str,
+    ) -> Result<ParkedCartDetailResponse> {
         let url = format!("/api/pos/parking/token/{}", urlencoding::encode(pos_token));
         self.get_envelope(&url).await
     }
@@ -624,7 +630,11 @@ impl ApiClient {
     /// # Returns
     ///
     /// The recalled cart with items
-    pub async fn recall_parked_cart(&self, id: &str, request: &RecallCartRequest) -> Result<ParkedCartDetailResponse> {
+    pub async fn recall_parked_cart(
+        &self,
+        id: &str,
+        request: &RecallCartRequest,
+    ) -> Result<ParkedCartDetailResponse> {
         let url = format!("/api/pos/parking/{}/recall", urlencoding::encode(id));
         self.post_envelope(&url, request).await
     }
@@ -644,7 +654,10 @@ impl ApiClient {
         pos_token: &str,
         request: &RecallCartRequest,
     ) -> Result<ParkedCartDetailResponse> {
-        let url = format!("/api/pos/parking/token/{}/recall", urlencoding::encode(pos_token));
+        let url = format!(
+            "/api/pos/parking/token/{}/recall",
+            urlencoding::encode(pos_token)
+        );
         self.post_envelope(&url, request).await
     }
 
@@ -656,7 +669,11 @@ impl ApiClient {
     ///
     /// * `id` - Cart UUID to release
     /// * `terminal_id` - Current terminal ID (must match recalling terminal)
-    pub async fn release_parked_cart(&self, id: &str, terminal_id: &str) -> Result<ParkedCartDetailResponse> {
+    pub async fn release_parked_cart(
+        &self,
+        id: &str,
+        terminal_id: &str,
+    ) -> Result<ParkedCartDetailResponse> {
         let url = format!("/api/pos/parking/{}/release", urlencoding::encode(id));
         let body = serde_json::json!({ "terminalId": terminal_id });
         self.post_envelope(&url, &body).await
@@ -668,7 +685,11 @@ impl ApiClient {
     ///
     /// * `id` - Cart UUID to re-park
     /// * `request` - Park request with updated metadata
-    pub async fn repark_cart(&self, id: &str, request: &ParkCartRequest) -> Result<ParkedCartDetailResponse> {
+    pub async fn repark_cart(
+        &self,
+        id: &str,
+        request: &ParkCartRequest,
+    ) -> Result<ParkedCartDetailResponse> {
         let url = format!("/api/pos/parking/{}/repark", urlencoding::encode(id));
         self.post_envelope(&url, request).await
     }
@@ -679,7 +700,11 @@ impl ApiClient {
     ///
     /// * `id` - Cart UUID to park
     /// * `request` - Park request with metadata
-    pub async fn park_cart(&self, id: &str, request: &ParkCartRequest) -> Result<ParkedCartDetailResponse> {
+    pub async fn park_cart(
+        &self,
+        id: &str,
+        request: &ParkCartRequest,
+    ) -> Result<ParkedCartDetailResponse> {
         let url = format!("/api/pos/parking/{}/park", urlencoding::encode(id));
         self.post_envelope(&url, request).await
     }
@@ -835,8 +860,14 @@ mod tests {
         };
 
         let json = serde_json::to_string(&item).unwrap();
-        assert!(json.contains("\"productType\""), "productType field must be present when set");
-        assert!(json.contains("SERVICE"), "productType must serialize to SERVICE");
+        assert!(
+            json.contains("\"productType\""),
+            "productType field must be present when set"
+        );
+        assert!(
+            json.contains("SERVICE"),
+            "productType must serialize to SERVICE"
+        );
 
         // Round-trip
         let deserialized: CartItemDto = serde_json::from_str(&json).unwrap();
@@ -863,7 +894,10 @@ mod tests {
         };
 
         let json = serde_json::to_string(&item).unwrap();
-        assert!(!json.contains("productType"), "productType must be omitted when None");
+        assert!(
+            !json.contains("productType"),
+            "productType must be omitted when None"
+        );
     }
 
     #[test]

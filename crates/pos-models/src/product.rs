@@ -40,7 +40,6 @@ impl ProductType {
             ProductType::RawMaterial => "RAW_MATERIAL",
         }
     }
-
 }
 
 impl From<&str> for ProductType {
@@ -92,7 +91,6 @@ impl ProductNature {
             ProductNature::Hybrid => "HYBRID",
         }
     }
-
 }
 
 impl From<&str> for ProductNature {
@@ -314,7 +312,15 @@ impl ProductUnit {
 
     /// Returns true if this unit typically requires decimal quantities
     pub fn allows_decimal(&self) -> bool {
-        matches!(self, ProductUnit::Kg | ProductUnit::Gram | ProductUnit::Liter | ProductUnit::Ml | ProductUnit::Meter | ProductUnit::Cm)
+        matches!(
+            self,
+            ProductUnit::Kg
+                | ProductUnit::Gram
+                | ProductUnit::Liter
+                | ProductUnit::Ml
+                | ProductUnit::Meter
+                | ProductUnit::Cm
+        )
     }
 }
 
@@ -582,7 +588,8 @@ mod tests {
         assert_eq!("KG".parse::<ProductUnit>().unwrap(), ProductUnit::Kg);
         assert_eq!("kg".parse::<ProductUnit>().unwrap(), ProductUnit::Kg);
         assert_eq!("UNIT".parse::<ProductUnit>().unwrap(), ProductUnit::Unit);
-        assert_eq!("INVALID".parse::<ProductUnit>().unwrap(), ProductUnit::Unit); // Default
+        assert_eq!("INVALID".parse::<ProductUnit>().unwrap(), ProductUnit::Unit);
+        // Default
     }
 
     #[test]
@@ -639,15 +646,9 @@ mod tests {
 
     #[test]
     fn test_product_type_raw_material_from_str() {
-        assert_eq!(
-            ProductType::from("RAW_MATERIAL"),
-            ProductType::RawMaterial
-        );
+        assert_eq!(ProductType::from("RAW_MATERIAL"), ProductType::RawMaterial);
         // Also accepts lowercase and mixed case
-        assert_eq!(
-            ProductType::from("raw_material"),
-            ProductType::RawMaterial
-        );
+        assert_eq!(ProductType::from("raw_material"), ProductType::RawMaterial);
     }
 
     #[test]

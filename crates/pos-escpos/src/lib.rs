@@ -101,7 +101,8 @@ impl EscPos {
     /// Set text alignment
     /// ESC a n (0x1B 0x61 n)
     pub fn align(&mut self, alignment: Alignment) -> &mut Self {
-        self.buffer.extend_from_slice(&[0x1B, 0x61, alignment as u8]);
+        self.buffer
+            .extend_from_slice(&[0x1B, 0x61, alignment as u8]);
         self
     }
 
@@ -162,7 +163,8 @@ impl EscPos {
     /// Set bold text on/off
     /// ESC E n (0x1B 0x45 n)
     pub fn bold(&mut self, on: bool) -> &mut Self {
-        self.buffer.extend_from_slice(&[0x1B, 0x45, if on { 1 } else { 0 }]);
+        self.buffer
+            .extend_from_slice(&[0x1B, 0x45, if on { 1 } else { 0 }]);
         self
     }
 
@@ -203,14 +205,16 @@ impl EscPos {
     /// Set inverse (white on black) printing
     /// GS B n (0x1D 0x42 n)
     pub fn inverse(&mut self, on: bool) -> &mut Self {
-        self.buffer.extend_from_slice(&[0x1D, 0x42, if on { 1 } else { 0 }]);
+        self.buffer
+            .extend_from_slice(&[0x1D, 0x42, if on { 1 } else { 0 }]);
         self
     }
 
     /// Set upside-down mode
     /// ESC { n (0x1B 0x7B n)
     pub fn upside_down(&mut self, on: bool) -> &mut Self {
-        self.buffer.extend_from_slice(&[0x1B, 0x7B, if on { 1 } else { 0 }]);
+        self.buffer
+            .extend_from_slice(&[0x1B, 0x7B, if on { 1 } else { 0 }]);
         self
     }
 
@@ -228,7 +232,8 @@ impl EscPos {
     /// Select international character set
     /// ESC R n (0x1B 0x52 n)
     pub fn international_charset(&mut self, charset: u8) -> &mut Self {
-        self.buffer.extend_from_slice(&[0x1B, 0x52, charset.min(15)]);
+        self.buffer
+            .extend_from_slice(&[0x1B, 0x52, charset.min(15)]);
         self
     }
 
@@ -375,7 +380,8 @@ impl EscPos {
     /// Set barcode width
     /// GS w n (0x1D 0x77 n) - 2 to 6
     pub fn barcode_width(&mut self, width: u8) -> &mut Self {
-        self.buffer.extend_from_slice(&[0x1D, 0x77, width.clamp(2, 6)]);
+        self.buffer
+            .extend_from_slice(&[0x1D, 0x77, width.clamp(2, 6)]);
         self
     }
 
@@ -392,10 +398,14 @@ impl EscPos {
         match format {
             BarcodeFormat::Code39 | BarcodeFormat::Code93 | BarcodeFormat::Code128 => {
                 // Format B: GS k m n d1...dn
-                self.buffer.extend_from_slice(&[0x1D, 0x6B, format as u8, data.len() as u8]);
+                self.buffer
+                    .extend_from_slice(&[0x1D, 0x6B, format as u8, data.len() as u8]);
                 self.buffer.extend_from_slice(data.as_bytes());
             }
-            BarcodeFormat::Ean13 | BarcodeFormat::Ean8 | BarcodeFormat::UpcA | BarcodeFormat::UpcE => {
+            BarcodeFormat::Ean13
+            | BarcodeFormat::Ean8
+            | BarcodeFormat::UpcA
+            | BarcodeFormat::UpcE => {
                 // Format A: GS k m d1...dk NUL
                 self.buffer.extend_from_slice(&[0x1D, 0x6B, format as u8]);
                 self.buffer.extend_from_slice(data.as_bytes());
@@ -427,24 +437,37 @@ impl EscPos {
 
         // Select model (Model 2)
         // GS ( k pL pH cn fn n1 n2
-        self.buffer.extend_from_slice(&[0x1D, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00]);
+        self.buffer
+            .extend_from_slice(&[0x1D, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00]);
 
         // Set size (1-16)
         // GS ( k pL pH cn fn n
-        self.buffer.extend_from_slice(&[0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, size.clamp(1, 16)]);
+        self.buffer.extend_from_slice(&[
+            0x1D,
+            0x28,
+            0x6B,
+            0x03,
+            0x00,
+            0x31,
+            0x43,
+            size.clamp(1, 16),
+        ]);
 
         // Set error correction level (L=48, M=49, Q=50, H=51)
         // GS ( k pL pH cn fn n
-        self.buffer.extend_from_slice(&[0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 0x31]); // M
+        self.buffer
+            .extend_from_slice(&[0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 0x31]); // M
 
         // Store QR code data
         // GS ( k pL pH cn fn m d1...dk
-        self.buffer.extend_from_slice(&[0x1D, 0x28, 0x6B, pl, ph, 0x31, 0x50, 0x30]);
+        self.buffer
+            .extend_from_slice(&[0x1D, 0x28, 0x6B, pl, ph, 0x31, 0x50, 0x30]);
         self.buffer.extend_from_slice(data_bytes);
 
         // Print QR code
         // GS ( k pL pH cn fn m
-        self.buffer.extend_from_slice(&[0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30]);
+        self.buffer
+            .extend_from_slice(&[0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30]);
 
         self
     }
@@ -474,7 +497,8 @@ impl EscPos {
     /// Cut with feed
     /// GS V m n (0x1D 0x56 m n)
     pub fn cut_with_feed(&mut self, feed_lines: u8) -> &mut Self {
-        self.buffer.extend_from_slice(&[0x1D, 0x56, 0x42, feed_lines]);
+        self.buffer
+            .extend_from_slice(&[0x1D, 0x56, 0x42, feed_lines]);
         self
     }
 
@@ -487,13 +511,15 @@ impl EscPos {
     /// Pin 2: m=0, Pin 5: m=1
     pub fn open_drawer(&mut self) -> &mut Self {
         // Pin 2, pulse on-time 25*2ms, pulse off-time 250*2ms
-        self.buffer.extend_from_slice(&[0x1B, 0x70, 0x00, 0x19, 0xFA]);
+        self.buffer
+            .extend_from_slice(&[0x1B, 0x70, 0x00, 0x19, 0xFA]);
         self
     }
 
     /// Open cash drawer (pin 5)
     pub fn open_drawer_pin5(&mut self) -> &mut Self {
-        self.buffer.extend_from_slice(&[0x1B, 0x70, 0x01, 0x19, 0xFA]);
+        self.buffer
+            .extend_from_slice(&[0x1B, 0x70, 0x01, 0x19, 0xFA]);
         self
     }
 
@@ -512,7 +538,8 @@ impl EscPos {
         let yh = (height / 256) as u8;
 
         // GS v 0 m=0 (normal mode)
-        self.buffer.extend_from_slice(&[0x1D, 0x76, 0x30, 0x00, xl, xh, yl, yh]);
+        self.buffer
+            .extend_from_slice(&[0x1D, 0x76, 0x30, 0x00, xl, xh, yl, yh]);
         self.buffer.extend_from_slice(data);
         self
     }
@@ -686,11 +713,14 @@ mod tests {
             .align(Alignment::Right)
             .build();
 
-        assert_eq!(commands, vec![
-            0x1B, 0x61, 0x00, // Left
-            0x1B, 0x61, 0x01, // Center
-            0x1B, 0x61, 0x02, // Right
-        ]);
+        assert_eq!(
+            commands,
+            vec![
+                0x1B, 0x61, 0x00, // Left
+                0x1B, 0x61, 0x01, // Center
+                0x1B, 0x61, 0x02, // Right
+            ]
+        );
     }
 
     #[test]
@@ -701,90 +731,89 @@ mod tests {
             .text_size(3, 1)
             .build();
 
-        assert_eq!(commands, vec![
-            0x1D, 0x21, 0x00, // 1x1
-            0x1D, 0x21, 0x11, // 2x2
-            0x1D, 0x21, 0x20, // 3x1
-        ]);
+        assert_eq!(
+            commands,
+            vec![
+                0x1D, 0x21, 0x00, // 1x1
+                0x1D, 0x21, 0x11, // 2x2
+                0x1D, 0x21, 0x20, // 3x1
+            ]
+        );
     }
 
     #[test]
     fn test_text_size_clamp() {
         let commands = EscPos::new()
-            .text_size(0, 0)  // Should clamp to 1,1
+            .text_size(0, 0) // Should clamp to 1,1
             .text_size(10, 10) // Should clamp to 8,8
             .build();
 
-        assert_eq!(commands, vec![
-            0x1D, 0x21, 0x00, // 1x1 (clamped from 0)
-            0x1D, 0x21, 0x77, // 8x8 (clamped from 10)
-        ]);
+        assert_eq!(
+            commands,
+            vec![
+                0x1D, 0x21, 0x00, // 1x1 (clamped from 0)
+                0x1D, 0x21, 0x77, // 8x8 (clamped from 10)
+            ]
+        );
     }
 
     #[test]
     fn test_bold() {
-        let commands = EscPos::new()
-            .bold(true)
-            .bold(false)
-            .build();
+        let commands = EscPos::new().bold(true).bold(false).build();
 
-        assert_eq!(commands, vec![
-            0x1B, 0x45, 0x01, // Bold on
-            0x1B, 0x45, 0x00, // Bold off
-        ]);
+        assert_eq!(
+            commands,
+            vec![
+                0x1B, 0x45, 0x01, // Bold on
+                0x1B, 0x45, 0x00, // Bold off
+            ]
+        );
     }
 
     #[test]
     fn test_underline() {
-        let commands = EscPos::new()
-            .underline(0)
-            .underline(1)
-            .underline(2)
-            .build();
+        let commands = EscPos::new().underline(0).underline(1).underline(2).build();
 
-        assert_eq!(commands, vec![
-            0x1B, 0x2D, 0x00, // Off
-            0x1B, 0x2D, 0x01, // Single
-            0x1B, 0x2D, 0x02, // Double
-        ]);
+        assert_eq!(
+            commands,
+            vec![
+                0x1B, 0x2D, 0x00, // Off
+                0x1B, 0x2D, 0x01, // Single
+                0x1B, 0x2D, 0x02, // Double
+            ]
+        );
     }
 
     #[test]
     fn test_text_output() {
-        let commands = EscPos::new()
-            .text("Hello")
-            .newline()
-            .build();
+        let commands = EscPos::new().text("Hello").newline().build();
 
-        assert_eq!(commands, vec![
-            b'H', b'e', b'l', b'l', b'o', // Text
-            0x0A, // LF
-        ]);
+        assert_eq!(
+            commands,
+            vec![
+                b'H', b'e', b'l', b'l', b'o', // Text
+                0x0A, // LF
+            ]
+        );
     }
 
     #[test]
     fn test_line() {
-        let commands = EscPos::new()
-            .line("Test")
-            .build();
+        let commands = EscPos::new().line("Test").build();
 
         assert_eq!(commands, vec![b'T', b'e', b's', b't', 0x0A]);
     }
 
     #[test]
     fn test_feed() {
-        let commands = EscPos::new()
-            .feed(3)
-            .build();
+        let commands = EscPos::new().feed(3).build();
 
         assert_eq!(commands, vec![0x1B, 0x64, 0x03]);
     }
 
     #[test]
     fn test_horizontal_rule() {
-        let commands = EscPos::new()
-            .hr(10)
-            .build();
+        let commands = EscPos::new().hr(10).build();
 
         assert_eq!(commands, "----------\n".as_bytes());
     }
@@ -801,27 +830,21 @@ mod tests {
 
     #[test]
     fn test_cut() {
-        let commands = EscPos::new()
-            .cut()
-            .build();
+        let commands = EscPos::new().cut().build();
 
         assert_eq!(commands, vec![0x1D, 0x56, 0x00]);
     }
 
     #[test]
     fn test_partial_cut() {
-        let commands = EscPos::new()
-            .partial_cut()
-            .build();
+        let commands = EscPos::new().partial_cut().build();
 
         assert_eq!(commands, vec![0x1D, 0x56, 0x01]);
     }
 
     #[test]
     fn test_open_drawer() {
-        let commands = EscPos::new()
-            .open_drawer()
-            .build();
+        let commands = EscPos::new().open_drawer().build();
 
         assert_eq!(commands, vec![0x1B, 0x70, 0x00, 0x19, 0xFA]);
     }
@@ -834,11 +857,14 @@ mod tests {
             .barcode_text_position(BarcodeTextPosition::Below)
             .build();
 
-        assert_eq!(commands, vec![
-            0x1D, 0x68, 80,   // Height
-            0x1D, 0x77, 3,    // Width
-            0x1D, 0x48, 0x02, // Text below
-        ]);
+        assert_eq!(
+            commands,
+            vec![
+                0x1D, 0x68, 80, // Height
+                0x1D, 0x77, 3, // Width
+                0x1D, 0x48, 0x02, // Text below
+            ]
+        );
     }
 
     #[test]
@@ -865,9 +891,7 @@ mod tests {
 
     #[test]
     fn test_qr_code() {
-        let commands = EscPos::new()
-            .qr_code("https://example.com", 5)
-            .build();
+        let commands = EscPos::new().qr_code("https://example.com", 5).build();
 
         // Should contain QR code commands
         assert!(!commands.is_empty());
@@ -877,32 +901,21 @@ mod tests {
 
     #[test]
     fn test_inverse() {
-        let commands = EscPos::new()
-            .inverse(true)
-            .inverse(false)
-            .build();
+        let commands = EscPos::new().inverse(true).inverse(false).build();
 
-        assert_eq!(commands, vec![
-            0x1D, 0x42, 0x01,
-            0x1D, 0x42, 0x00,
-        ]);
+        assert_eq!(commands, vec![0x1D, 0x42, 0x01, 0x1D, 0x42, 0x00,]);
     }
 
     #[test]
     fn test_code_page() {
-        let commands = EscPos::new()
-            .code_page(CodePage::Wcp1256)
-            .build();
+        let commands = EscPos::new().code_page(CodePage::Wcp1256).build();
 
         assert_eq!(commands, vec![0x1B, 0x74, 23]);
     }
 
     #[test]
     fn test_raw() {
-        let commands = EscPos::new()
-            .raw(&[0x1B, 0x40])
-            .raw_byte(0x0A)
-            .build();
+        let commands = EscPos::new().raw(&[0x1B, 0x40]).raw_byte(0x0A).build();
 
         assert_eq!(commands, vec![0x1B, 0x40, 0x0A]);
     }

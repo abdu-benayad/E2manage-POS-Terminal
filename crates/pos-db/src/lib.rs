@@ -46,19 +46,19 @@ pub use draft_sync_queue::{
     DraftQueueSyncStatus, DraftSyncOperation, DraftSyncQueueItem, MAX_DRAFT_SYNC_RETRIES,
 };
 pub use drafts::DraftRow;
-pub use shared_drafts::{SharedDraftRow, SharedDraftSyncStatus};
 pub use migrations::{get_schema_version, needs_migration, run_migrations};
 pub use operators::{OperatorPermissions, OperatorRow};
 pub use products::{CategoryRow, ProductRow};
 pub use schema::CURRENT_SCHEMA_VERSION;
+pub use shared_drafts::{SharedDraftRow, SharedDraftSyncStatus};
 pub use shifts::{ShiftRow, ShiftStatus};
 pub use sync_state::{SyncResource, SyncState};
 pub use transactions::{OfflineTransactionRow, SyncStatus, TransactionType};
 pub use z_reports::DayTotals;
 
-use rust_decimal::Decimal;
-use rust_decimal::prelude::*;
 use rusqlite::Result as SqliteResult;
+use rust_decimal::prelude::*;
+use rust_decimal::Decimal;
 use std::path::PathBuf;
 use tracing::{debug, info};
 
@@ -207,7 +207,13 @@ mod tests {
 
         // 3. Start a shift
         let shift = db
-            .start_shift("s1", "SHIFT-001", "op1", Some("TERM-01"), Decimal::from(100))
+            .start_shift(
+                "s1",
+                "SHIFT-001",
+                "op1",
+                Some("TERM-01"),
+                Decimal::from(100),
+            )
             .unwrap();
         assert_eq!(shift.status, "ACTIVE");
 
@@ -234,7 +240,13 @@ mod tests {
         assert!(by_barcode.is_some());
 
         // 7. End shift
-        db.end_shift("s1", Decimal::from(250), Decimal::from(200), Some("Good day")).unwrap();
+        db.end_shift(
+            "s1",
+            Decimal::from(250),
+            Decimal::from(200),
+            Some("Good day"),
+        )
+        .unwrap();
         let ended = db.get_shift_by_id("s1").unwrap().unwrap();
         assert_eq!(ended.status, "CLOSED");
         assert_eq!(ended.variance, Some(Decimal::from(50)));

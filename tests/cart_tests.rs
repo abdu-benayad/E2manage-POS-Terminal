@@ -261,7 +261,9 @@ fn test_apply_item_discount() {
     let product = create_product("p1", "Test Product", Decimal::from(100), Decimal::ZERO);
     let item_id = service.add_item(&product, Decimal::ONE).unwrap();
 
-    service.apply_item_discount(&item_id, Decimal::from(20)).unwrap(); // 20% discount on item
+    service
+        .apply_item_discount(&item_id, Decimal::from(20))
+        .unwrap(); // 20% discount on item
 
     let cart = service.get_cart();
     assert_eq!(cart.discount_total, Decimal::from(20));
@@ -294,7 +296,11 @@ fn test_set_customer() {
     let product = sample_product();
     service.add_item(&product, Decimal::ONE).unwrap();
 
-    service.set_customer(Some("cust-001".to_string()), Some("Test Customer".to_string()), Decimal::ZERO);
+    service.set_customer(
+        Some("cust-001".to_string()),
+        Some("Test Customer".to_string()),
+        Decimal::ZERO,
+    );
 
     let cart = service.get_cart();
     assert_eq!(cart.customer_id, Some("cust-001".to_string()));
@@ -307,7 +313,11 @@ fn test_clear_customer() {
     let product = sample_product();
     service.add_item(&product, Decimal::ONE).unwrap();
 
-    service.set_customer(Some("cust-001".to_string()), Some("Test Customer".to_string()), Decimal::from(1000));
+    service.set_customer(
+        Some("cust-001".to_string()),
+        Some("Test Customer".to_string()),
+        Decimal::from(1000),
+    );
     service.set_customer(None, None, Decimal::ZERO);
 
     let cart = service.get_cart();

@@ -317,7 +317,8 @@ impl ApiClient {
         &self,
         request: &PlatformHeartbeatRequest,
     ) -> Result<PlatformHeartbeatResponse> {
-        self.post_envelope("/api/pos/platform/heartbeat", request).await
+        self.post_envelope("/api/pos/platform/heartbeat", request)
+            .await
     }
 
     /// Gets security policies from the platform
@@ -335,7 +336,8 @@ impl ApiClient {
         &self,
         etag: Option<&str>,
     ) -> Result<super::GetResult<SecurityPoliciesResponse>> {
-        self.get_with_etag_envelope("/api/pos/platform/security-policies", etag).await
+        self.get_with_etag_envelope("/api/pos/platform/security-policies", etag)
+            .await
     }
 
     /// Checks for available updates
@@ -380,7 +382,9 @@ impl ApiClient {
             success: bool,
         }
 
-        let _: Response = self.post_envelope("/api/pos/platform/report-version", &request).await?;
+        let _: Response = self
+            .post_envelope("/api/pos/platform/report-version", &request)
+            .await?;
         Ok(())
     }
 
@@ -402,7 +406,8 @@ impl ApiClient {
         &self,
         request: &RegisterDeviceRequest,
     ) -> Result<RegisterDeviceResponse> {
-        self.post_envelope("/api/pos/platform/register", request).await
+        self.post_envelope("/api/pos/platform/register", request)
+            .await
     }
 
     /// Validates a device license
@@ -435,7 +440,9 @@ impl ApiClient {
             license_key: license_key.to_string(),
         };
 
-        let response: Response = self.post_envelope("/api/pos/platform/validate-license", &request).await?;
+        let response: Response = self
+            .post_envelope("/api/pos/platform/validate-license", &request)
+            .await?;
         Ok(response.valid)
     }
 }
@@ -488,8 +495,14 @@ mod tests {
         let response: PlatformHeartbeatResponse = serde_json::from_str(json).unwrap();
         assert!(response.acknowledged);
         assert_eq!(response.commands.len(), 2);
-        assert_eq!(response.commands[0].command_type, PlatformCommandType::RefreshPolicies);
-        assert_eq!(response.commands[1].command_type, PlatformCommandType::Update);
+        assert_eq!(
+            response.commands[0].command_type,
+            PlatformCommandType::RefreshPolicies
+        );
+        assert_eq!(
+            response.commands[1].command_type,
+            PlatformCommandType::Update
+        );
     }
 
     #[test]

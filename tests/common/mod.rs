@@ -7,7 +7,6 @@
     reason = "shared test helpers consumed by multiple integration test binaries; rustc dead-code analysis runs per test target and cannot see cross-target use"
 )]
 
-
 use e2manage_pos_terminal::api::ApiClient;
 use e2manage_pos_terminal::db::migrations::run_migrations;
 use e2manage_pos_terminal::db::{Database, OperatorRow, ProductRow, ShiftRow};
@@ -19,8 +18,8 @@ use e2manage_pos_terminal::services::draft_service::DraftService;
 use e2manage_pos_terminal::services::offline_service::OfflineService;
 use e2manage_pos_terminal::services::product_service::ProductService;
 use e2manage_pos_terminal::services::shift_service::ShiftService;
-use rust_decimal::Decimal;
 use e2manage_pos_terminal::services::transaction_service::TransactionService;
+use rust_decimal::Decimal;
 use std::sync::Arc;
 
 /// Creates an in-memory test database with migrations applied.
@@ -73,7 +72,10 @@ pub fn create_product(id: &str, name: &str, price: Decimal, tax_rate: Decimal) -
     Product {
         id: id.to_string(),
         sku: format!("SKU-{}", id),
-        barcode: Some(format!("{:013}", id.chars().filter(|c| c.is_numeric()).collect::<String>())),
+        barcode: Some(format!(
+            "{:013}",
+            id.chars().filter(|c| c.is_numeric()).collect::<String>()
+        )),
         name: name.to_string(),
         name_ar: Some(format!("منتج {}", id)),
         price,
@@ -175,8 +177,14 @@ pub fn create_cart_with_item(product: &Product, quantity: Decimal) -> Cart {
 
 /// Creates a shift in the database.
 pub fn create_test_shift(db: &Database, shift_id: &str, operator_id: &str) -> ShiftRow {
-    db.start_shift(shift_id, &format!("SHIFT-{}", shift_id), operator_id, Some("TERM-01"), Decimal::from(100))
-        .expect("Failed to create shift")
+    db.start_shift(
+        shift_id,
+        &format!("SHIFT-{}", shift_id),
+        operator_id,
+        Some("TERM-01"),
+        Decimal::from(100),
+    )
+    .expect("Failed to create shift")
 }
 
 /// Saves a product to the database.
@@ -264,7 +272,9 @@ impl TestApp {
             is_active: true,
             ..Default::default()
         };
-        self.db.save_operator(&operator).expect("Failed to save operator");
+        self.db
+            .save_operator(&operator)
+            .expect("Failed to save operator");
 
         // 2. Create products (no category_id to avoid FK issues)
         for i in 1..=20 {
@@ -283,7 +293,9 @@ impl TestApp {
                 unit: "unit".to_string(),
                 ..Default::default()
             };
-            self.db.save_product(&product).expect("Failed to save product");
+            self.db
+                .save_product(&product)
+                .expect("Failed to save product");
         }
     }
 
@@ -302,7 +314,9 @@ impl TestApp {
             is_active: true,
             ..Default::default()
         };
-        self.db.save_operator(&operator).expect("Failed to save operator");
+        self.db
+            .save_operator(&operator)
+            .expect("Failed to save operator");
 
         // Create 5 products
         for i in 1..=5 {
@@ -321,7 +335,9 @@ impl TestApp {
                 unit: "unit".to_string(),
                 ..Default::default()
             };
-            self.db.save_product(&product).expect("Failed to save product");
+            self.db
+                .save_product(&product)
+                .expect("Failed to save product");
         }
     }
 
@@ -331,7 +347,13 @@ impl TestApp {
     pub fn create_shift(&self, shift_id: &str, operator_id: &str, opening_cash: Decimal) -> String {
         let shift_number = format!("SHIFT-{}", &shift_id[..6.min(shift_id.len())]);
         self.db
-            .start_shift(shift_id, &shift_number, operator_id, Some("TERM-01"), opening_cash)
+            .start_shift(
+                shift_id,
+                &shift_number,
+                operator_id,
+                Some("TERM-01"),
+                opening_cash,
+            )
             .expect("Failed to create shift");
         shift_id.to_string()
     }

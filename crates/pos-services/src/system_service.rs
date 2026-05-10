@@ -6,7 +6,7 @@
 //! - Restart the application
 
 use std::process::Command;
-use tracing::{info, error};
+use tracing::{error, info};
 
 /// System service for machine control
 pub struct SystemService;
@@ -23,9 +23,7 @@ impl SystemService {
         info!("Initiating system shutdown...");
 
         // Try systemctl first (systemd)
-        let result = Command::new("systemctl")
-            .args(["poweroff"])
-            .status();
+        let result = Command::new("systemctl").args(["poweroff"]).status();
 
         match result {
             Ok(status) if status.success() => {
@@ -62,9 +60,7 @@ impl SystemService {
     pub fn shutdown_machine(&self) -> Result<(), String> {
         info!("Initiating system shutdown...");
 
-        let result = Command::new("shutdown")
-            .args(["/s", "/t", "0"])
-            .status();
+        let result = Command::new("shutdown").args(["/s", "/t", "0"]).status();
 
         match result {
             Ok(status) if status.success() => {
@@ -90,9 +86,7 @@ impl SystemService {
         info!("Initiating system restart...");
 
         // Try systemctl first (systemd)
-        let result = Command::new("systemctl")
-            .args(["reboot"])
-            .status();
+        let result = Command::new("systemctl").args(["reboot"]).status();
 
         match result {
             Ok(status) if status.success() => {
@@ -101,9 +95,7 @@ impl SystemService {
             }
             _ => {
                 // Fallback to reboot command
-                let result = Command::new("sudo")
-                    .args(["reboot"])
-                    .status();
+                let result = Command::new("sudo").args(["reboot"]).status();
 
                 match result {
                     Ok(status) if status.success() => {
@@ -129,9 +121,7 @@ impl SystemService {
     pub fn restart_machine(&self) -> Result<(), String> {
         info!("Initiating system restart...");
 
-        let result = Command::new("shutdown")
-            .args(["/r", "/t", "0"])
-            .status();
+        let result = Command::new("shutdown").args(["/r", "/t", "0"]).status();
 
         match result {
             Ok(status) if status.success() => {
@@ -167,8 +157,7 @@ impl SystemService {
         let exe_path = self.get_executable_path()?;
 
         // Spawn new process
-        let result = Command::new(&exe_path)
-            .spawn();
+        let result = Command::new(&exe_path).spawn();
 
         match result {
             Ok(_child) => {
@@ -189,8 +178,7 @@ impl SystemService {
 
         let exe_path = self.get_executable_path()?;
 
-        let result = Command::new(&exe_path)
-            .spawn();
+        let result = Command::new(&exe_path).spawn();
 
         match result {
             Ok(_child) => {

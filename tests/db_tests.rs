@@ -224,7 +224,15 @@ fn test_shift_start() {
     // Create operator first (foreign key)
     create_test_operator(&db, "op-1", "Test Operator");
 
-    let shift = db.start_shift("shift-1", "SHIFT-001", "op-1", Some("TERM-01"), Decimal::from(100)).unwrap();
+    let shift = db
+        .start_shift(
+            "shift-1",
+            "SHIFT-001",
+            "op-1",
+            Some("TERM-01"),
+            Decimal::from(100),
+        )
+        .unwrap();
 
     assert_eq!(shift.id, "shift-1");
     assert_eq!(shift.shift_number, "SHIFT-001");
@@ -238,7 +246,14 @@ fn test_shift_get_by_id() {
     let db = setup_test_db();
     create_test_operator(&db, "op-1", "Test Operator");
 
-    db.start_shift("shift-1", "SHIFT-001", "op-1", Some("TERM-01"), Decimal::from(100)).unwrap();
+    db.start_shift(
+        "shift-1",
+        "SHIFT-001",
+        "op-1",
+        Some("TERM-01"),
+        Decimal::from(100),
+    )
+    .unwrap();
 
     let found = db.get_shift_by_id("shift-1").unwrap();
     assert!(found.is_some());
@@ -250,10 +265,23 @@ fn test_shift_end() {
     let db = setup_test_db();
     create_test_operator(&db, "op-1", "Test Operator");
 
-    db.start_shift("shift-1", "SHIFT-001", "op-1", Some("TERM-01"), Decimal::from(100)).unwrap();
+    db.start_shift(
+        "shift-1",
+        "SHIFT-001",
+        "op-1",
+        Some("TERM-01"),
+        Decimal::from(100),
+    )
+    .unwrap();
 
     // End shift with counted cash
-    db.end_shift("shift-1", Decimal::from(250), Decimal::from(200), Some("Good day")).unwrap();
+    db.end_shift(
+        "shift-1",
+        Decimal::from(250),
+        Decimal::from(200),
+        Some("Good day"),
+    )
+    .unwrap();
 
     let shift = db.get_shift_by_id("shift-1").unwrap().unwrap();
     assert_eq!(shift.status, ShiftStatus::Closed.as_str());
@@ -268,14 +296,22 @@ fn test_shift_active() {
     let db = setup_test_db();
     create_test_operator(&db, "op-1", "Test Operator");
 
-    db.start_shift("shift-1", "SHIFT-001", "op-1", Some("TERM-01"), Decimal::from(100)).unwrap();
+    db.start_shift(
+        "shift-1",
+        "SHIFT-001",
+        "op-1",
+        Some("TERM-01"),
+        Decimal::from(100),
+    )
+    .unwrap();
 
     let active = db.get_active_shift("op-1").unwrap();
     assert!(active.is_some());
     assert_eq!(active.unwrap().id, "shift-1");
 
     // End the shift
-    db.end_shift("shift-1", Decimal::from(100), Decimal::from(100), None).unwrap();
+    db.end_shift("shift-1", Decimal::from(100), Decimal::from(100), None)
+        .unwrap();
 
     let active = db.get_active_shift("op-1").unwrap();
     assert!(active.is_none());
@@ -291,7 +327,17 @@ fn test_draft_create() {
     create_test_operator(&db, "op-1", "Test Operator");
 
     let cart_json = r#"[{"product_id":"p1","qty":2}]"#;
-    let draft = db.create_draft("d1", cart_json, Some("op-1"), Some("shift-1"), None, None, Some(8)).unwrap();
+    let draft = db
+        .create_draft(
+            "d1",
+            cart_json,
+            Some("op-1"),
+            Some("shift-1"),
+            None,
+            None,
+            Some(8),
+        )
+        .unwrap();
 
     assert!(!draft.id.is_empty());
     assert!(draft.name.is_some());
@@ -303,7 +349,17 @@ fn test_draft_get() {
     create_test_operator(&db, "op-1", "Test Operator");
 
     let cart_json = r#"[{"product_id":"p1","qty":2}]"#;
-    let draft = db.create_draft("d1", cart_json, Some("op-1"), Some("shift-1"), None, None, Some(8)).unwrap();
+    let draft = db
+        .create_draft(
+            "d1",
+            cart_json,
+            Some("op-1"),
+            Some("shift-1"),
+            None,
+            None,
+            Some(8),
+        )
+        .unwrap();
 
     let found = db.get_draft_by_id(&draft.id).unwrap();
     assert!(found.is_some());
@@ -315,9 +371,36 @@ fn test_draft_list_by_shift() {
     create_test_operator(&db, "op-1", "Test Operator");
 
     // Create multiple drafts for same shift
-    db.create_draft("d1", r#"[]"#, Some("op-1"), Some("shift-1"), None, None, Some(8)).unwrap();
-    db.create_draft("d2", r#"[]"#, Some("op-1"), Some("shift-1"), None, None, Some(8)).unwrap();
-    db.create_draft("d3", r#"[]"#, Some("op-1"), Some("shift-2"), None, None, Some(8)).unwrap();
+    db.create_draft(
+        "d1",
+        r#"[]"#,
+        Some("op-1"),
+        Some("shift-1"),
+        None,
+        None,
+        Some(8),
+    )
+    .unwrap();
+    db.create_draft(
+        "d2",
+        r#"[]"#,
+        Some("op-1"),
+        Some("shift-1"),
+        None,
+        None,
+        Some(8),
+    )
+    .unwrap();
+    db.create_draft(
+        "d3",
+        r#"[]"#,
+        Some("op-1"),
+        Some("shift-2"),
+        None,
+        None,
+        Some(8),
+    )
+    .unwrap();
 
     let shift1_drafts = db.get_drafts_by_shift("shift-1").unwrap();
     assert_eq!(shift1_drafts.len(), 2);
@@ -331,7 +414,17 @@ fn test_draft_delete() {
     let db = setup_test_db();
     create_test_operator(&db, "op-1", "Test Operator");
 
-    let draft = db.create_draft("d1", r#"[]"#, Some("op-1"), Some("shift-1"), None, None, Some(8)).unwrap();
+    let draft = db
+        .create_draft(
+            "d1",
+            r#"[]"#,
+            Some("op-1"),
+            Some("shift-1"),
+            None,
+            None,
+            Some(8),
+        )
+        .unwrap();
     let draft_id = draft.id.clone();
 
     // Delete
@@ -351,7 +444,14 @@ fn test_offline_transaction_save() {
 
     // Create operator and shift first (foreign keys)
     create_test_operator(&db, "op-001", "Test Operator");
-    db.start_shift("shift-001", "SHIFT-001", "op-001", Some("TERM-01"), Decimal::from(100)).unwrap();
+    db.start_shift(
+        "shift-001",
+        "SHIFT-001",
+        "op-001",
+        Some("TERM-01"),
+        Decimal::from(100),
+    )
+    .unwrap();
 
     let txn = OfflineTransactionRow {
         offline_id: "off-001".to_string(),
@@ -460,7 +560,8 @@ fn test_offline_transaction_mark_synced() {
     assert_eq!(db.get_pending_transaction_count().unwrap(), 1);
 
     // Mark synced
-    db.mark_transaction_synced("off-001", "server-txn-001").unwrap();
+    db.mark_transaction_synced("off-001", "server-txn-001")
+        .unwrap();
 
     // Now 0 pending
     assert_eq!(db.get_pending_transaction_count().unwrap(), 0);
@@ -503,7 +604,8 @@ fn test_offline_transaction_mark_failed() {
     db.save_offline_transaction(&txn).unwrap();
 
     // Mark failed
-    db.mark_transaction_failed("off-001", "Network error").unwrap();
+    db.mark_transaction_failed("off-001", "Network error")
+        .unwrap();
 
     let found = db.get_offline_transaction("off-001").unwrap().unwrap();
     assert_eq!(found.sync_status, SyncStatus::Failed.as_str());
@@ -559,8 +661,22 @@ fn test_offline_transaction_by_shift() {
 
     // Create operators and shifts first (foreign keys)
     create_test_operator(&db, "op-1", "Test Operator");
-    db.start_shift("shift-1", "SHIFT-001", "op-1", Some("TERM-01"), Decimal::from(100)).unwrap();
-    db.start_shift("shift-2", "SHIFT-002", "op-1", Some("TERM-01"), Decimal::from(100)).unwrap();
+    db.start_shift(
+        "shift-1",
+        "SHIFT-001",
+        "op-1",
+        Some("TERM-01"),
+        Decimal::from(100),
+    )
+    .unwrap();
+    db.start_shift(
+        "shift-2",
+        "SHIFT-002",
+        "op-1",
+        Some("TERM-01"),
+        Decimal::from(100),
+    )
+    .unwrap();
 
     // Create transactions for different shifts
     for i in 0..3 {
@@ -657,19 +773,29 @@ fn test_full_database_workflow() {
     create_test_operator(&db, "op1", "Ahmed");
 
     // 3. Start shift
-    let shift = db.start_shift("s1", "SHIFT-001", "op1", Some("TERM-01"), Decimal::from(100)).unwrap();
+    let shift = db
+        .start_shift(
+            "s1",
+            "SHIFT-001",
+            "op1",
+            Some("TERM-01"),
+            Decimal::from(100),
+        )
+        .unwrap();
     assert_eq!(shift.status, ShiftStatus::Active.as_str());
 
     // 4. Create a draft
-    let draft = db.create_draft(
-        "d1",
-        r#"[{"product_id":"p1","qty":2}]"#,
-        Some("op1"),
-        Some("s1"),
-        None,
-        None,
-        Some(8),
-    ).unwrap();
+    let draft = db
+        .create_draft(
+            "d1",
+            r#"[{"product_id":"p1","qty":2}]"#,
+            Some("op1"),
+            Some("s1"),
+            None,
+            None,
+            Some(8),
+        )
+        .unwrap();
     assert!(draft.name.is_some());
 
     // 5. Search products
@@ -684,7 +810,13 @@ fn test_full_database_workflow() {
     db.delete_draft(&draft.id).unwrap();
 
     // 8. End shift
-    db.end_shift("s1", Decimal::from(250), Decimal::from(200), Some("Good day")).unwrap();
+    db.end_shift(
+        "s1",
+        Decimal::from(250),
+        Decimal::from(200),
+        Some("Good day"),
+    )
+    .unwrap();
     let ended = db.get_shift_by_id("s1").unwrap().unwrap();
     assert_eq!(ended.status, ShiftStatus::Closed.as_str());
     assert_eq!(ended.variance, Some(Decimal::from(50)));

@@ -231,7 +231,8 @@ impl Draft {
         if let Some(discount_json) = &row.discount_json {
             if let Ok(discount) = serde_json::from_str::<serde_json::Value>(discount_json) {
                 if let Some(percent) = discount.get("percent").and_then(|v| v.as_f64()) {
-                    cart.cart_discount_percent = Decimal::from_f64(percent).unwrap_or(Decimal::ZERO);
+                    cart.cart_discount_percent =
+                        Decimal::from_f64(percent).unwrap_or(Decimal::ZERO);
                 }
                 if let Some(amount) = discount.get("amount").and_then(|v| v.as_f64()) {
                     cart.cart_discount_amount = Decimal::from_f64(amount).unwrap_or(Decimal::ZERO);
@@ -301,7 +302,13 @@ impl DraftService {
         operator_id: &str,
         shift_id: &str,
     ) -> DraftResult<Draft> {
-        self.save_cart_with_expiry(cart, name, operator_id, shift_id, Some(DEFAULT_DRAFT_EXPIRY_HOURS))
+        self.save_cart_with_expiry(
+            cart,
+            name,
+            operator_id,
+            shift_id,
+            Some(DEFAULT_DRAFT_EXPIRY_HOURS),
+        )
     }
 
     /// Saves a cart as a draft with custom expiry
@@ -507,7 +514,8 @@ mod tests {
         let service = DraftService::new(db);
 
         let cart = create_test_cart();
-        let draft = service.save_cart(&cart, Some("Test Draft".to_string()), "op-1", "shift-1")
+        let draft = service
+            .save_cart(&cart, Some("Test Draft".to_string()), "op-1", "shift-1")
             .unwrap();
 
         assert_eq!(draft.name, Some("Test Draft".to_string()));
@@ -539,7 +547,10 @@ mod tests {
         let recalled_cart = service.recall(&draft.id).unwrap();
 
         assert_eq!(recalled_cart.line_count(), 1);
-        assert_eq!(recalled_cart.customer_name, Some("Test Customer".to_string()));
+        assert_eq!(
+            recalled_cart.customer_name,
+            Some("Test Customer".to_string())
+        );
     }
 
     #[test]
@@ -569,9 +580,15 @@ mod tests {
         let cart = create_test_cart();
 
         // Create drafts for different operators
-        service.save_cart(&cart, Some("Draft 1".to_string()), "op-1", "shift-1").unwrap();
-        service.save_cart(&cart, Some("Draft 2".to_string()), "op-1", "shift-1").unwrap();
-        service.save_cart(&cart, Some("Draft 3".to_string()), "op-2", "shift-1").unwrap();
+        service
+            .save_cart(&cart, Some("Draft 1".to_string()), "op-1", "shift-1")
+            .unwrap();
+        service
+            .save_cart(&cart, Some("Draft 2".to_string()), "op-1", "shift-1")
+            .unwrap();
+        service
+            .save_cart(&cart, Some("Draft 3".to_string()), "op-2", "shift-1")
+            .unwrap();
 
         let op1_drafts = service.list_by_operator("op-1").unwrap();
         let op2_drafts = service.list_by_operator("op-2").unwrap();
@@ -625,7 +642,9 @@ mod tests {
         let cart = create_test_cart();
         let draft = service.save_cart(&cart, None, "op-1", "shift-1").unwrap();
 
-        let renamed = service.rename(&draft.id, Some("New Name".to_string())).unwrap();
+        let renamed = service
+            .rename(&draft.id, Some("New Name".to_string()))
+            .unwrap();
         assert_eq!(renamed.name, Some("New Name".to_string()));
 
         // Verify persistence
@@ -658,7 +677,9 @@ mod tests {
         let cart = create_test_cart();
 
         // Draft with name
-        let draft1 = service.save_cart(&cart, Some("My Draft".to_string()), "op-1", "shift-1").unwrap();
+        let draft1 = service
+            .save_cart(&cart, Some("My Draft".to_string()), "op-1", "shift-1")
+            .unwrap();
         assert_eq!(draft1.display_name(), "My Draft");
 
         // Draft without name
@@ -692,7 +713,9 @@ mod tests {
 
         // Create max drafts
         for i in 0..MAX_DRAFTS_PER_OPERATOR {
-            service.save_cart(&cart, Some(format!("Draft {}", i)), "op-1", "shift-1").unwrap();
+            service
+                .save_cart(&cart, Some(format!("Draft {}", i)), "op-1", "shift-1")
+                .unwrap();
         }
 
         // Try to create one more

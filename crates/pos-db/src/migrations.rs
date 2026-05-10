@@ -5,7 +5,10 @@
 use rusqlite::{Connection, Result as SqliteResult};
 use tracing::{debug, info};
 
-use super::schema::{CURRENT_SCHEMA_VERSION, SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6, SCHEMA_V7, SCHEMA_V8, SCHEMA_V9};
+use super::schema::{
+    CURRENT_SCHEMA_VERSION, SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6,
+    SCHEMA_V7, SCHEMA_V8, SCHEMA_V9,
+};
 
 /// Runs all pending migrations on the database
 pub fn run_migrations(conn: &Connection) -> SqliteResult<()> {
@@ -140,7 +143,10 @@ fn apply_v2(conn: &Connection) -> SqliteResult<()> {
             .unwrap_or(true); // Assume exists if error
 
         if !column_exists {
-            let sql = format!("ALTER TABLE offline_transactions ADD COLUMN {} {}", col_name, col_def);
+            let sql = format!(
+                "ALTER TABLE offline_transactions ADD COLUMN {} {}",
+                col_name, col_def
+            );
             let _ = conn.execute(&sql, []); // Ignore error if column exists
         }
     }
@@ -352,7 +358,10 @@ fn apply_v11(conn: &Connection) -> SqliteResult<()> {
 
         if col_exists == 0 {
             conn.execute(
-                &format!("ALTER TABLE terminal_config ADD COLUMN {} {}", col_name, col_def),
+                &format!(
+                    "ALTER TABLE terminal_config ADD COLUMN {} {}",
+                    col_name, col_def
+                ),
                 [],
             )?;
         }

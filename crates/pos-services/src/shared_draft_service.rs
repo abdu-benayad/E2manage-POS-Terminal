@@ -39,9 +39,8 @@ use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use pos_api::cart::{
-    CartItemDto, CartResponse, CreateCartRequest,
-    CreateAndParkCartRequest, ParkingCartItemDto, RecallCartRequest,
-    ParkedCartResponse, ParkedCartDetailResponse,
+    CartItemDto, CartResponse, CreateAndParkCartRequest, CreateCartRequest,
+    ParkedCartDetailResponse, ParkedCartResponse, ParkingCartItemDto, RecallCartRequest,
 };
 use pos_api::ApiClient;
 use pos_db::draft_sync_queue::{DraftSyncOperation, DraftSyncQueueItem};
@@ -276,7 +275,10 @@ impl SharedDraftService {
             }
             Err(e) => {
                 // Offline or error - create locally with temp token
-                warn!("Failed to create shared draft online: {}, creating locally", e);
+                warn!(
+                    "Failed to create shared draft online: {}, creating locally",
+                    e
+                );
                 self.create_local_draft(cart, name, operator_id, operator_name, &request)
             }
         }
@@ -299,7 +301,9 @@ impl SharedDraftService {
         let items_json = serde_json::to_string(&cart.items)
             .map_err(|e| SharedDraftError::SerializationError(e.to_string()))?;
 
-        let discount_json = if cart.cart_discount_percent > Decimal::ZERO || cart.cart_discount_amount > Decimal::ZERO {
+        let discount_json = if cart.cart_discount_percent > Decimal::ZERO
+            || cart.cart_discount_amount > Decimal::ZERO
+        {
             Some(
                 serde_json::json!({
                     "percent": cart.cart_discount_percent.to_f64().unwrap_or(0.0),
@@ -342,11 +346,8 @@ impl SharedDraftService {
         let payload = serde_json::to_string(request)
             .map_err(|e| SharedDraftError::SerializationError(e.to_string()))?;
 
-        let queue_item = DraftSyncQueueItem::new_create(
-            &Uuid::new_v4().to_string(),
-            &local_id,
-            &payload,
-        );
+        let queue_item =
+            DraftSyncQueueItem::new_create(&Uuid::new_v4().to_string(), &local_id, &payload);
 
         self.db
             .queue_draft_sync(&queue_item)
@@ -593,7 +594,9 @@ impl SharedDraftService {
             .map_err(|e| SharedDraftError::DatabaseError(e.to_string()))?;
 
         // Update local status
-        let _ = self.db.update_shared_draft_status(draft_id, SharedDraftSyncStatus::PendingConvert);
+        let _ = self
+            .db
+            .update_shared_draft_status(draft_id, SharedDraftSyncStatus::PendingConvert);
 
         Ok(())
     }
@@ -641,11 +644,8 @@ impl SharedDraftService {
 
     /// Queues a delete operation for later sync
     fn queue_delete(&self, draft_id: &str) -> SharedDraftResult<()> {
-        let queue_item = DraftSyncQueueItem::new_delete(
-            &Uuid::new_v4().to_string(),
-            draft_id,
-            draft_id,
-        );
+        let queue_item =
+            DraftSyncQueueItem::new_delete(&Uuid::new_v4().to_string(), draft_id, draft_id);
 
         self.db
             .queue_draft_sync(&queue_item)
@@ -676,33 +676,27 @@ impl SharedDraftService {
             let _ = self.db.mark_draft_sync_syncing(&item.id);
 
             match item.operation_type() {
-                DraftSyncOperation::Create => {
-                    match self.process_create_sync(&item).await {
-                        Ok(_) => result.synced += 1,
-                        Err(e) => {
-                            let _ = self.db.mark_draft_sync_failed(&item.id, &e.to_string());
-                            result.failed += 1;
-                        }
+                DraftSyncOperation::Create => match self.process_create_sync(&item).await {
+                    Ok(_) => result.synced += 1,
+                    Err(e) => {
+                        let _ = self.db.mark_draft_sync_failed(&item.id, &e.to_string());
+                        result.failed += 1;
                     }
-                }
-                DraftSyncOperation::Convert => {
-                    match self.process_convert_sync(&item).await {
-                        Ok(_) => result.synced += 1,
-                        Err(e) => {
-                            let _ = self.db.mark_draft_sync_failed(&item.id, &e.to_string());
-                            result.failed += 1;
-                        }
+                },
+                DraftSyncOperation::Convert => match self.process_convert_sync(&item).await {
+                    Ok(_) => result.synced += 1,
+                    Err(e) => {
+                        let _ = self.db.mark_draft_sync_failed(&item.id, &e.to_string());
+                        result.failed += 1;
                     }
-                }
-                DraftSyncOperation::Delete => {
-                    match self.process_delete_sync(&item).await {
-                        Ok(_) => result.synced += 1,
-                        Err(e) => {
-                            let _ = self.db.mark_draft_sync_failed(&item.id, &e.to_string());
-                            result.failed += 1;
-                        }
+                },
+                DraftSyncOperation::Delete => match self.process_delete_sync(&item).await {
+                    Ok(_) => result.synced += 1,
+                    Err(e) => {
+                        let _ = self.db.mark_draft_sync_failed(&item.id, &e.to_string());
+                        result.failed += 1;
                     }
-                }
+                },
             }
         }
 
@@ -732,11 +726,9 @@ impl SharedDraftService {
         }
 
         // Mark queue item complete
-        self.db.mark_draft_sync_complete(
-            &item.id,
-            Some(&response.id),
-            Some(&response.token),
-        ).map_err(|e| anyhow!(e.to_string()))?;
+        self.db
+            .mark_draft_sync_complete(&item.id, Some(&response.id), Some(&response.token))
+            .map_err(|e| anyhow!(e.to_string()))?;
 
         info!("Synced create draft, new token: {}", response.token);
         Ok(())
@@ -744,9 +736,13 @@ impl SharedDraftService {
 
     /// Processes a CONVERT sync operation
     async fn process_convert_sync(&self, item: &DraftSyncQueueItem) -> Result<()> {
-        let server_id = item.server_id.as_ref()
+        let server_id = item
+            .server_id
+            .as_ref()
             .ok_or_else(|| anyhow!("Missing server_id for convert"))?;
-        let transaction_id = item.transaction_id.as_ref()
+        let transaction_id = item
+            .transaction_id
+            .as_ref()
             .ok_or_else(|| anyhow!("Missing transaction_id for convert"))?;
 
         self.api.convert_cart(server_id, transaction_id).await?;
@@ -755,7 +751,8 @@ impl SharedDraftService {
         let _ = self.db.delete_shared_draft(&item.local_draft_id);
 
         // Mark complete
-        self.db.mark_draft_sync_complete(&item.id, None, None)
+        self.db
+            .mark_draft_sync_complete(&item.id, None, None)
             .map_err(|e| anyhow!(e.to_string()))?;
 
         info!("Synced convert draft {}", server_id);
@@ -778,7 +775,8 @@ impl SharedDraftService {
         }
 
         // Mark complete
-        self.db.mark_draft_sync_complete(&item.id, None, None)
+        self.db
+            .mark_draft_sync_complete(&item.id, None, None)
             .map_err(|e| anyhow!(e.to_string()))?;
 
         info!("Synced delete draft");
@@ -842,7 +840,11 @@ impl SharedDraftService {
             created_at: response.created_at.clone(),
             expires_at: response.expires_at.clone(),
             fetched_at: now,
-            sync_status: if is_local { "PENDING".to_string() } else { "SYNCED".to_string() },
+            sync_status: if is_local {
+                "PENDING".to_string()
+            } else {
+                "SYNCED".to_string()
+            },
         };
 
         self.db
@@ -885,8 +887,10 @@ impl SharedDraftService {
                 unit_price: Decimal::from_f64(item_dto.unit_price).unwrap_or(Decimal::ZERO),
                 tax_rate: Decimal::from_f64(item_dto.tax_rate).unwrap_or(Decimal::ZERO),
                 tax_inclusive: item_dto.tax_inclusive,
-                discount_amount: Decimal::from_f64(item_dto.discount_amount.unwrap_or(0.0)).unwrap_or(Decimal::ZERO),
-                discount_percent: Decimal::from_f64(item_dto.discount_percent.unwrap_or(0.0)).unwrap_or(Decimal::ZERO),
+                discount_amount: Decimal::from_f64(item_dto.discount_amount.unwrap_or(0.0))
+                    .unwrap_or(Decimal::ZERO),
+                discount_percent: Decimal::from_f64(item_dto.discount_percent.unwrap_or(0.0))
+                    .unwrap_or(Decimal::ZERO),
                 note: item_dto.note.clone(),
                 product_type: pos_models::product::ProductType::default(),
                 track_inventory: true,
@@ -902,8 +906,10 @@ impl SharedDraftService {
         cart.customer_id = response.customer_id.clone();
         cart.customer_name = response.customer_name.clone();
         cart.note = response.notes.clone();
-        cart.cart_discount_percent = Decimal::from_f64(response.discount_percent.unwrap_or(0.0)).unwrap_or(Decimal::ZERO);
-        cart.cart_discount_amount = Decimal::from_f64(response.discount_amount.unwrap_or(0.0)).unwrap_or(Decimal::ZERO);
+        cart.cart_discount_percent =
+            Decimal::from_f64(response.discount_percent.unwrap_or(0.0)).unwrap_or(Decimal::ZERO);
+        cart.cart_discount_amount =
+            Decimal::from_f64(response.discount_amount.unwrap_or(0.0)).unwrap_or(Decimal::ZERO);
 
         // Recalculate
         for item in &mut cart.items {
@@ -929,7 +935,8 @@ impl SharedDraftService {
         if let Some(ref discount_json) = row.discount_json {
             if let Ok(discount) = serde_json::from_str::<serde_json::Value>(discount_json) {
                 if let Some(percent) = discount.get("percent").and_then(|v| v.as_f64()) {
-                    cart.cart_discount_percent = Decimal::from_f64(percent).unwrap_or(Decimal::ZERO);
+                    cart.cart_discount_percent =
+                        Decimal::from_f64(percent).unwrap_or(Decimal::ZERO);
                 }
                 if let Some(amount) = discount.get("amount").and_then(|v| v.as_f64()) {
                     cart.cart_discount_amount = Decimal::from_f64(amount).unwrap_or(Decimal::ZERO);
@@ -1008,9 +1015,21 @@ impl SharedDraftService {
                 barcode: item.barcode.clone(),
                 quantity: item.quantity.to_f64().unwrap_or(0.0),
                 unit_price: item.unit_price.to_f64().unwrap_or(0.0),
-                tax_rate: if item.tax_rate > Decimal::ZERO { Some(item.tax_rate.to_f64().unwrap_or(0.0)) } else { None },
-                discount_percent: if item.discount_percent > Decimal::ZERO { Some(item.discount_percent.to_f64().unwrap_or(0.0)) } else { None },
-                discount_amount: if item.discount_amount > Decimal::ZERO { Some(item.discount_amount.to_f64().unwrap_or(0.0)) } else { None },
+                tax_rate: if item.tax_rate > Decimal::ZERO {
+                    Some(item.tax_rate.to_f64().unwrap_or(0.0))
+                } else {
+                    None
+                },
+                discount_percent: if item.discount_percent > Decimal::ZERO {
+                    Some(item.discount_percent.to_f64().unwrap_or(0.0))
+                } else {
+                    None
+                },
+                discount_amount: if item.discount_amount > Decimal::ZERO {
+                    Some(item.discount_amount.to_f64().unwrap_or(0.0))
+                } else {
+                    None
+                },
                 notes: item.note.clone(),
             })
             .collect();
@@ -1046,7 +1065,11 @@ impl SharedDraftService {
     ///
     /// Returns all parked and recalled carts for the warehouse.
     pub async fn list_parked_carts(&self) -> SharedDraftResult<Vec<ParkedCartResponse>> {
-        match self.api.list_parked_carts(&self.warehouse_id, None, false).await {
+        match self
+            .api
+            .list_parked_carts(&self.warehouse_id, None, false)
+            .await
+        {
             Ok(carts) => {
                 debug!("Listed {} parked carts", carts.len());
                 Ok(carts)
@@ -1086,7 +1109,11 @@ impl SharedDraftService {
             force,
         };
 
-        match self.api.recall_parked_cart_by_token(pos_token, &request).await {
+        match self
+            .api
+            .recall_parked_cart_by_token(pos_token, &request)
+            .await
+        {
             Ok(response) => {
                 let cart = self.cart_from_parked_response(&response)?;
                 info!("Recalled parked cart {}", pos_token);
@@ -1158,7 +1185,10 @@ impl SharedDraftService {
     }
 
     /// Converts a parked cart detail response to a Cart
-    fn cart_from_parked_response(&self, response: &ParkedCartDetailResponse) -> SharedDraftResult<Cart> {
+    fn cart_from_parked_response(
+        &self,
+        response: &ParkedCartDetailResponse,
+    ) -> SharedDraftResult<Cart> {
         let mut cart = Cart::new();
 
         for item in &response.items {
@@ -1175,7 +1205,8 @@ impl SharedDraftService {
                 tax_rate: Decimal::from_f64(item.tax_rate.unwrap_or(0.0)).unwrap_or(Decimal::ZERO),
                 tax_inclusive: false, // Assume tax-exclusive for now
                 discount_amount: Decimal::from_f64(item.discount_amount).unwrap_or(Decimal::ZERO),
-                discount_percent: Decimal::from_f64(item.discount_percent.unwrap_or(0.0)).unwrap_or(Decimal::ZERO),
+                discount_percent: Decimal::from_f64(item.discount_percent.unwrap_or(0.0))
+                    .unwrap_or(Decimal::ZERO),
                 note: item.notes.clone(),
                 line_subtotal: Decimal::from_f64(item.line_subtotal).unwrap_or(Decimal::ZERO),
                 line_tax: Decimal::from_f64(item.tax_amount).unwrap_or(Decimal::ZERO),

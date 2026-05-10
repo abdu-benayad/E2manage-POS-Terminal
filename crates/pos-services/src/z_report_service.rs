@@ -40,10 +40,18 @@ impl std::fmt::Display for ZReportError {
         match self {
             ZReportError::NoShiftsToClose => write!(f, "No shifts found for today"),
             ZReportError::OpenShiftsExist(count) => {
-                write!(f, "{} shift(s) are still open. Close all shifts before generating Z-Report.", count)
+                write!(
+                    f,
+                    "{} shift(s) are still open. Close all shifts before generating Z-Report.",
+                    count
+                )
             }
             ZReportError::PendingSyncRequired(count) => {
-                write!(f, "{} transactions pending sync. Sync all before closing day.", count)
+                write!(
+                    f,
+                    "{} transactions pending sync. Sync all before closing day.",
+                    count
+                )
             }
             ZReportError::AlreadyClosedToday => write!(f, "Z-Report already generated for today"),
             ZReportError::InvalidState(s) => write!(f, "Invalid state: {}", s),
@@ -126,7 +134,9 @@ impl ZReportService {
         let today = chrono::Local::now().format("%Y-%m-%d").to_string();
 
         // Check database for today's Z-Report
-        let count = self.db.count_z_reports_for_date(terminal_id, &today)
+        let count = self
+            .db
+            .count_z_reports_for_date(terminal_id, &today)
             .map_err(|e| ZReportError::DatabaseError(e.to_string()))?;
 
         Ok(count > 0)
@@ -143,7 +153,9 @@ impl ZReportService {
         }
 
         // Check for open shifts
-        let open_shifts = self.db.count_open_shifts(terminal_id)
+        let open_shifts = self
+            .db
+            .count_open_shifts(terminal_id)
             .map_err(|e| ZReportError::DatabaseError(e.to_string()))?;
 
         if open_shifts > 0 {
@@ -151,7 +163,9 @@ impl ZReportService {
         }
 
         // Check for pending sync transactions
-        let pending = self.db.count_pending_sync()
+        let pending = self
+            .db
+            .count_pending_sync()
             .map_err(|e| ZReportError::DatabaseError(e.to_string()))?;
 
         if pending > 0 {
@@ -159,7 +173,9 @@ impl ZReportService {
         }
 
         // Check for shifts today
-        let shifts_today = self.db.count_shifts_for_date(terminal_id, &today)
+        let shifts_today = self
+            .db
+            .count_shifts_for_date(terminal_id, &today)
             .map_err(|e| ZReportError::DatabaseError(e.to_string()))?;
 
         if shifts_today == 0 {
@@ -176,7 +192,9 @@ impl ZReportService {
         let end_of_day = format!("{} 23:59:59", today);
 
         // Get all closed shifts for today
-        let shifts = self.db.get_shifts_in_range(&start_of_day, &end_of_day)
+        let shifts = self
+            .db
+            .get_shifts_in_range(&start_of_day, &end_of_day)
             .map_err(|e| ZReportError::DatabaseError(e.to_string()))?;
 
         if shifts.is_empty() {
@@ -184,50 +202,52 @@ impl ZReportService {
         }
 
         // Convert to ShiftSummary
-        let shift_summaries: Vec<ShiftSummary> = shifts.iter().map(|row| {
-            ShiftSummary {
-                id: row.id.clone(),
-                shift_number: row.shift_number.clone(),
-                operator_id: row.operator_id.clone(),
-                operator_name: String::new(), // Would need lookup
-                terminal_id: row.terminal_id.clone().unwrap_or_default(),
-                opening_cash: row.opening_cash,
-                expected_cash: row.expected_cash.unwrap_or(row.opening_cash),
-                counted_cash: row.closing_cash,
-                variance: row.variance,
-                variance_status: row.variance.map(VarianceStatus::from_variance),
-                started_at: row.started_at.clone(),
-                ended_at: row.ended_at.clone(),
-                status: pos_models::ShiftStatus::from(row.status.as_str()),
-                transaction_count: 0,
-                cash_sales: Decimal::ZERO,
-                card_sales: Decimal::ZERO,
-                wallet_sales: Decimal::ZERO,
-                returns_total: Decimal::ZERO,
-                discounts_total: Decimal::ZERO,
-                gross_sales: Decimal::ZERO,
-                net_sales: Decimal::ZERO,
-                currency: "LYD".to_string(),
-                note: row.notes.clone(),
-            }
-        }).collect();
+        let shift_summaries: Vec<ShiftSummary> = shifts
+            .iter()
+            .map(|row| {
+                ShiftSummary {
+                    id: row.id.clone(),
+                    shift_number: row.shift_number.clone(),
+                    operator_id: row.operator_id.clone(),
+                    operator_name: String::new(), // Would need lookup
+                    terminal_id: row.terminal_id.clone().unwrap_or_default(),
+                    opening_cash: row.opening_cash,
+                    expected_cash: row.expected_cash.unwrap_or(row.opening_cash),
+                    counted_cash: row.closing_cash,
+                    variance: row.variance,
+                    variance_status: row.variance.map(VarianceStatus::from_variance),
+                    started_at: row.started_at.clone(),
+                    ended_at: row.ended_at.clone(),
+                    status: pos_models::ShiftStatus::from(row.status.as_str()),
+                    transaction_count: 0,
+                    cash_sales: Decimal::ZERO,
+                    card_sales: Decimal::ZERO,
+                    wallet_sales: Decimal::ZERO,
+                    returns_total: Decimal::ZERO,
+                    discounts_total: Decimal::ZERO,
+                    gross_sales: Decimal::ZERO,
+                    net_sales: Decimal::ZERO,
+                    currency: "LYD".to_string(),
+                    note: row.notes.clone(),
+                }
+            })
+            .collect();
 
         // Get transaction totals for today
-        let day_totals = self.db.get_day_totals(terminal_id, &today)
+        let day_totals = self
+            .db
+            .get_day_totals(terminal_id, &today)
             .map_err(|e| ZReportError::DatabaseError(e.to_string()))?;
 
         // Aggregate shift data
         let total_shifts = shift_summaries.len() as u32;
-        let opening_float = shift_summaries.first()
+        let opening_float = shift_summaries
+            .first()
             .map(|s| s.opening_cash)
             .unwrap_or(Decimal::ZERO);
 
-        let total_expected: Decimal = shift_summaries.iter()
-            .map(|s| s.expected_cash)
-            .sum();
-        let total_counted: Decimal = shift_summaries.iter()
-            .filter_map(|s| s.counted_cash)
-            .sum();
+        let total_expected: Decimal = shift_summaries.iter().map(|s| s.expected_cash).sum();
+        let total_counted: Decimal = shift_summaries.iter().filter_map(|s| s.counted_cash).sum();
 
         // Calculate aggregated variance
         let variance = total_counted - total_expected;
@@ -291,11 +311,13 @@ impl ZReportService {
         };
 
         // Save to database
-        self.db.save_z_report(&report)
+        self.db
+            .save_z_report(&report)
             .map_err(|e| ZReportError::DatabaseError(e.to_string()))?;
 
         // Mark day as closed in database
-        self.db.mark_day_closed(terminal_id, &report.report_date)
+        self.db
+            .mark_day_closed(terminal_id, &report.report_date)
             .map_err(|e| ZReportError::DatabaseError(e.to_string()))?;
 
         // Try to sync to server
@@ -304,7 +326,9 @@ impl ZReportService {
                 Ok(server_id) => {
                     report.server_id = Some(server_id.clone());
                     report.synced = true;
-                    let _ = self.db.mark_z_report_synced(&report.report_number, &server_id);
+                    let _ = self
+                        .db
+                        .mark_z_report_synced(&report.report_number, &server_id);
                     info!("Z-Report {} synced to server", report.report_number);
                     true
                 }
@@ -314,7 +338,10 @@ impl ZReportService {
                 }
             }
         } else {
-            info!("Offline - Z-Report {} queued for sync", report.report_number);
+            info!(
+                "Offline - Z-Report {} queued for sync",
+                report.report_number
+            );
             false
         };
 
@@ -334,8 +361,13 @@ impl ZReportService {
     }
 
     /// Gets historical Z-Reports
-    pub fn get_reports_in_range(&self, start_date: &str, end_date: &str) -> ZReportResult<Vec<ZReport>> {
-        self.db.get_z_reports_in_range(start_date, end_date)
+    pub fn get_reports_in_range(
+        &self,
+        start_date: &str,
+        end_date: &str,
+    ) -> ZReportResult<Vec<ZReport>> {
+        self.db
+            .get_z_reports_in_range(start_date, end_date)
             .map_err(|e| ZReportError::DatabaseError(e.to_string()))
     }
 
@@ -348,7 +380,9 @@ impl ZReportService {
         let date_part = today.format("%Y%m%d").to_string();
 
         // Get sequence number for today
-        let seq = self.db.get_next_z_report_sequence(terminal_id, &date_part)
+        let seq = self
+            .db
+            .get_next_z_report_sequence(terminal_id, &date_part)
             .map_err(|e| ZReportError::DatabaseError(e.to_string()))?;
 
         Ok(format!("Z-{}-{}-{:03}", terminal_id, date_part, seq))
@@ -378,10 +412,7 @@ impl ZReportService {
             generated_at: report.generated_at.clone(),
         };
 
-        let response: ZReportResponse = self
-            .api
-            .post("/api/pos/z-reports", &request)
-            .await?;
+        let response: ZReportResponse = self.api.post("/api/pos/z-reports", &request).await?;
 
         Ok(response.id)
     }
@@ -402,9 +433,15 @@ mod tests {
 
     #[test]
     fn test_z_report_format_amount() {
-        assert_eq!(ZReport::format_amount_static(Decimal::new(12345, 1)), "1234.500");
+        assert_eq!(
+            ZReport::format_amount_static(Decimal::new(12345, 1)),
+            "1234.500"
+        );
         assert_eq!(ZReport::format_amount_static(Decimal::ZERO), "0.000");
-        assert_eq!(ZReport::format_amount_static(Decimal::new(100123, 3)), "100.123");
+        assert_eq!(
+            ZReport::format_amount_static(Decimal::new(100123, 3)),
+            "100.123"
+        );
     }
 
     #[test]
@@ -418,7 +455,10 @@ mod tests {
 
     #[test]
     fn test_z_report_variance_status_str() {
-        let mut report = ZReport { variance_status: VarianceStatus::Balanced, ..ZReport::default() };
+        let mut report = ZReport {
+            variance_status: VarianceStatus::Balanced,
+            ..ZReport::default()
+        };
         assert_eq!(report.variance_status_str(), "balanced");
 
         report.variance_status = VarianceStatus::Short;

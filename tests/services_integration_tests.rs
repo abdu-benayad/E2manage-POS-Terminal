@@ -110,7 +110,10 @@ mod support_service_integration {
         let contact = service.get_contact_info();
 
         // Verify all fields are populated
-        assert!(!contact.company_name.is_empty(), "company_name should not be empty");
+        assert!(
+            !contact.company_name.is_empty(),
+            "company_name should not be empty"
+        );
         assert!(!contact.email.is_empty(), "email should not be empty");
         assert!(contact.email.contains('@'), "email should contain @");
         assert!(!contact.phone.is_empty(), "phone should not be empty");
@@ -119,7 +122,10 @@ mod support_service_integration {
             contact.website.starts_with("http"),
             "website should be a URL"
         );
-        assert!(!contact.support_hours.is_empty(), "support_hours should not be empty");
+        assert!(
+            !contact.support_hours.is_empty(),
+            "support_hours should not be empty"
+        );
     }
 
     #[test]

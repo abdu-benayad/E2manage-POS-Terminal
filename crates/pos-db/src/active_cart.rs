@@ -113,7 +113,8 @@ mod tests {
     fn test_clear_active_cart() {
         let db = setup_db();
 
-        db.save_active_cart(Some("op-1"), r#"{"items":[]}"#).unwrap();
+        db.save_active_cart(Some("op-1"), r#"{"items":[]}"#)
+            .unwrap();
         assert!(db.get_active_cart().unwrap().is_some());
 
         db.clear_active_cart().unwrap();

@@ -161,7 +161,10 @@ impl CartService {
                                 if let Some(op) = op_id {
                                     *self.operator_id.write() = Some(op);
                                 }
-                                info!("Restored cart with {} items from previous session", self.line_count());
+                                info!(
+                                    "Restored cart with {} items from previous session",
+                                    self.line_count()
+                                );
                                 return true;
                             }
                         }
@@ -199,10 +202,7 @@ impl CartService {
         let mut cart = self.cart.write();
 
         // Check if product already in cart - find index first
-        let existing_idx = cart
-            .items
-            .iter()
-            .position(|i| i.product_id == product.id);
+        let existing_idx = cart.items.iter().position(|i| i.product_id == product.id);
 
         let item_id = if let Some(idx) = existing_idx {
             let new_qty = cart.items[idx].quantity + quantity;
@@ -783,7 +783,9 @@ mod tests {
         let product = create_test_product("p1", "Test Product", Decimal::from(100));
         let item_id = service.add_item(&product, Decimal::ONE).unwrap();
 
-        service.apply_item_discount(&item_id, Decimal::from(10)).unwrap();
+        service
+            .apply_item_discount(&item_id, Decimal::from(10))
+            .unwrap();
 
         let cart = service.get_cart();
         let item = cart.find_item(&item_id).unwrap();

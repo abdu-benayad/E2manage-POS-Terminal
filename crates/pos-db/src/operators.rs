@@ -193,7 +193,10 @@ impl Database {
     }
 
     /// Gets an operator by employee number
-    pub fn get_operator_by_employee_number(&self, employee_number: &str) -> SqliteResult<Option<OperatorRow>> {
+    pub fn get_operator_by_employee_number(
+        &self,
+        employee_number: &str,
+    ) -> SqliteResult<Option<OperatorRow>> {
         let conn = self.connection();
         let conn = conn.lock();
 

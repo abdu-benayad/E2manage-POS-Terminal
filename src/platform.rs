@@ -81,7 +81,10 @@ impl PlatformServices {
                 match policy.refresh().await {
                     Ok(updated) => {
                         if updated {
-                            info!("Security policies loaded: {} policies", policy.policy_count().await);
+                            info!(
+                                "Security policies loaded: {} policies",
+                                policy.policy_count().await
+                            );
                         } else {
                             debug!("Security policies not modified");
                         }
@@ -139,7 +142,8 @@ impl PlatformServices {
                 let interval = policy
                     .get_heartbeat_interval_seconds()
                     .await
-                    .unwrap_or(DEFAULT_HEARTBEAT_INTERVAL_SECONDS as u32) as u64;
+                    .unwrap_or(DEFAULT_HEARTBEAT_INTERVAL_SECONDS as u32)
+                    as u64;
 
                 info!("Starting heartbeat service with {}s interval", interval);
                 heartbeat.start(interval, heartbeat_tx).await;
@@ -224,7 +228,10 @@ pub fn handle_heartbeat_event(
                 });
             });
         }
-        HeartbeatEvent::UpdateRequested { version, download_url } => {
+        HeartbeatEvent::UpdateRequested {
+            version,
+            download_url,
+        } => {
             warn!(
                 "Platform requested update to version {} (url: {:?})",
                 version, download_url
