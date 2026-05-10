@@ -1,0 +1,148 @@
+import { Theme, Surfaces } from "../../tokens/mod.slint";
+import { Colors, Typography, Spacing, Radius, Animation, Layout, Locale } from "../../theme.slint";
+import { Panel } from "../../components/atomic/mod.slint";
+import { CheckoutCategoryData } from "checkout_types.slint";
+
+// CategoriesRail — leading-edge vertical column of category icons.
+// Width is fixed at 56 dp. The first tile is always "All" (selected by
+// default at startup). Overflow ("⋯") opens a sheet in production; here
+// it is a no-op log.
+//
+// Selection state is owned by the screen above (selected-category-id);
+// the rail emits `category-selected(id)` and `overflow-pressed`.
+export component CategoriesRail inherits Panel {
+    width: 56px;
+    content-padding: Spacing.xs;
+
+    in property <[CheckoutCategoryData]> categories: [];
+    in property <string> selected-id: "all";
+
+    callback category-selected(string);
+    callback overflow-pressed;
+    callback back-pressed;
+    callback settings-pressed;
+
+    VerticalLayout {
+        spacing: Spacing.xs;
+        alignment: start;
+
+        // "All" tile, always present.
+        all-tile := Rectangle {
+            width: 48px;
+            height: 48px;
+            border-radius: Radius.sm;
+            background: root.selected-id == "all" ? Colors.accent-lime : Surfaces.surface-top;
+            border-color: Surfaces.surface-border;
+            border-width: 1px;
+
+            Text {
+                text: "⌗";
+                font-family: Typography.font-family-mono;
+                font-size: Typography.heading;
+                color: root.selected-id == "all" ? #0B0D10 : Colors.text-primary;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+
+            TouchArea {
+                clicked => { root.category-selected("all"); }
+            }
+        }
+
+        // Category tiles (capped at 8 — overflow goes to the sheet).
+        for cat[i] in root.categories: Rectangle {
+            visible: i < 8;
+            width: 48px;
+            height: 48px;
+            border-radius: Radius.sm;
+            background: root.selected-id == cat.id ? cat.accent : Surfaces.surface-top;
+            border-color: Surfaces.surface-border;
+            border-width: 1px;
+
+            Text {
+                text: cat.icon;
+                font-family: Typography.font-family-mono;
+                font-size: Typography.heading;
+                color: root.selected-id == cat.id ? #0B0D10 : Colors.text-primary;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+
+            TouchArea {
+                clicked => { root.category-selected(cat.id); }
+            }
+        }
+
+        // Overflow.
+        Rectangle {
+            visible: root.categories.length > 8;
+            width: 48px;
+            height: 32px;
+            border-radius: Radius.sm;
+            background: Surfaces.surface-top;
+            border-color: Surfaces.surface-border;
+            border-width: 1px;
+
+            Text {
+                text: "⋯";
+                font-family: Typography.font-family;
+                font-size: Typography.heading;
+                color: Colors.text-secondary;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+
+            TouchArea {
+                clicked => { root.overflow-pressed(); }
+            }
+        }
+
+        // Spacer.
+        Rectangle { vertical-stretch: 1; }
+
+        // Pinned bottom: back, settings.
+        Rectangle {
+            width: 48px;
+            height: 40px;
+            border-radius: Radius.sm;
+            background: Surfaces.surface-top;
+            border-color: Surfaces.surface-border;
+            border-width: 1px;
+
+            Text {
+                text: Layout.is-rtl ? "›" : "‹";
+                font-family: Typography.font-family;
+                font-size: Typography.heading;
+                color: Colors.text-secondary;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+
+            TouchArea {
+                clicked => { root.back-pressed(); }
+            }
+        }
+
+        Rectangle {
+            width: 48px;
+            height: 40px;
+            border-radius: Radius.sm;
+            background: Surfaces.surface-top;
+            border-color: Surfaces.surface-border;
+            border-width: 1px;
+
+            Text {
+                text: "⚙";
+                font-family: Typography.font-family;
+                font-size: Typography.heading;
+                color: Colors.text-secondary;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+
+            TouchArea {
+                clicked => { root.settings-pressed(); }
+            }
+        }
+    }
+}
