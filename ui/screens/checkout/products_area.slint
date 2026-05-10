@@ -1,0 +1,109 @@
+import { ScrollView } from "std-widgets.slint";
+import { Theme, Surfaces } from "../../tokens/mod.slint";
+import { Colors, Typography, Spacing, Radius, Animation, Layout, Locale } from "../../theme.slint";
+import { Panel, Button, SearchInput, ProductTile } from "../../components/atomic/mod.slint";
+import { CheckoutTileData } from "checkout_types.slint";
+
+// ProductsArea — central zone. Search row on top, product grid below.
+// State for the search query lives on this component as an in-out string;
+// real filtering will happen in Plan 4 when the screen binds to
+// ProductService.
+export component ProductsArea inherits Panel {
+    content-padding: Spacing.md;
+
+    in property <[CheckoutTileData]> products: [];
+    in-out property <string> query: "";
+
+    callback search-changed(string);
+    callback search-submitted(string);
+    callback product-tapped(string);
+    callback plu-pressed;
+    callback price-check-pressed;
+
+    VerticalLayout {
+        spacing: Spacing.md;
+
+        // Search row. RTL convention §4: `if Layout.is-rtl` to swap order
+        // of [search] ↔ [PLU, Price-check].
+        HorizontalLayout {
+            spacing: Spacing.sm;
+            alignment: stretch;
+
+            if !Layout.is-rtl: SearchInput {
+                horizontal-stretch: 1;
+                placeholder: Locale.current == "ar" ? "ابحث عن المنتجات…" : "Search products…";
+                value <=> root.query;
+                changed(s) => { root.search-changed(s); }
+                submitted(s) => { root.search-submitted(s); }
+            }
+
+            if !Layout.is-rtl: Button {
+                label: Locale.current == "ar" ? "رمز" : "PLU";
+                variant: "secondary";
+                clicked => { root.plu-pressed(); }
+            }
+
+            if !Layout.is-rtl: Button {
+                label: Locale.current == "ar" ? "السعر" : "PRICE?";
+                variant: "secondary";
+                clicked => { root.price-check-pressed(); }
+            }
+
+            // RTL: actions first (visual right edge = leading in RTL? no —
+            // in RTL the leading edge is the visual right, so the search
+            // should still be the wide leading element. Render search last
+            // here so it ends up visually on the right.
+            if Layout.is-rtl: Button {
+                label: Locale.current == "ar" ? "السعر" : "PRICE?";
+                variant: "secondary";
+                clicked => { root.price-check-pressed(); }
+            }
+
+            if Layout.is-rtl: Button {
+                label: Locale.current == "ar" ? "رمز" : "PLU";
+                variant: "secondary";
+                clicked => { root.plu-pressed(); }
+            }
+
+            if Layout.is-rtl: SearchInput {
+                horizontal-stretch: 1;
+                placeholder: Locale.current == "ar" ? "ابحث عن المنتجات…" : "Search products…";
+                value <=> root.query;
+                changed(s) => { root.search-changed(s); }
+                submitted(s) => { root.search-submitted(s); }
+            }
+        }
+
+        // Product grid, scrollable. Four columns at any width above ~720 dp.
+        ScrollView {
+            vertical-stretch: 1;
+            VerticalLayout {
+                spacing: Spacing.sm;
+
+                // Render in rows of 4. Slint has no native 'chunks' iter,
+                // so we render every tile and let the grid wrap by
+                // computing column index. For a skeleton with <= 24 tiles
+                // we hard-render four columns via 6 HorizontalLayouts
+                // bounded by the input length. Simpler: a single
+                // HorizontalLayout with `wrap` is not a Slint primitive,
+                // so we use a GridLayout with explicit `col`/`row`
+                // assignments.
+                GridLayout {
+                    spacing: Spacing.sm;
+                    for prod[i] in root.products: ProductTile {
+                        col: mod(i, 4);
+                        row: floor(i / 4);
+                        height: 120px;
+                        name: prod.name;
+                        price: prod.price;
+                        currency: prod.currency;
+                        category-accent: prod.category_accent;
+                        disabled: prod.disabled;
+                        out-of-stock: prod.out_of_stock;
+                        clicked => { root.product-tapped(prod.id); }
+                    }
+                }
+            }
+        }
+    }
+}
