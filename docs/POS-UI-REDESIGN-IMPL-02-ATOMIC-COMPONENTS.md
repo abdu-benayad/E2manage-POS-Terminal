@@ -69,6 +69,7 @@ These conventions apply to Tasks 3–10. Each task body assumes them.
 5. **Press animation, no hover.** POS is touch-first. `states [ pressed when touch.pressed: { scale: 0.97 } ] animate scale { duration: 80ms; easing: ease-out; }`. Hover is fine to add but never required.
 6. **Naming.** New components keep their plain name (`Panel`, `Button`, `SearchInput`, …) inside `atomic/`. Where a name collides with a legacy component (`Button`, `ProductTile`, `CartItem`/`CartLine`), the new export uses the same name — they are reachable through different module paths (`ui/components/atomic/mod.slint` vs `ui/components/mod.slint`), and only Plan 3 swaps the import sites.
 7. **Gallery slot per component.** Every Task 3–10 also adds one `// === <Component> ===` block to `ui/screens/dev/component_gallery.slint`, instantiating the component with two or three representative prop sets so the operator can eyeball the variants.
+8. **rustfmt is the source of truth for code-block whitespace.** The Rust and Slint code blocks in Tasks 3–10 are written for readability; the active CI gate enforces rustfmt-normalised output. If `cargo fmt --all` reformats a block (e.g. expanding inline `if/else` across lines, alphabetising `mod` declarations, splitting a long `let raw = ... .filter(...).or(...)` chain), the formatter wins. Do not fight it; do not amend the doc to mirror it. Run `cargo fmt --all` after applying any code block and trust the result.
 
 ## Slint binding-generation pattern (project-specific)
 

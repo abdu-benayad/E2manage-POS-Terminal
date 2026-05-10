@@ -1,0 +1,35 @@
+import { Surfaces } from "../../tokens/mod.slint";
+import { Spacing, Radius } from "../../theme.slint";
+
+// Panel — surface tier 2 (rail / products / ops / cart). Shadow + border +
+// 1 px specular top edge applied via a child rectangle. Content goes inside
+// the @children slot.
+export component Panel inherits Rectangle {
+    in property <length> content-padding: Spacing.lg;
+
+    background: Surfaces.panel-top;
+    border-color: Surfaces.panel-border;
+    border-width: 1px;
+    border-radius: Radius.md;
+    drop-shadow-color: Surfaces.panel-shadow;
+    drop-shadow-blur: Surfaces.panel-shadow-blur;
+    drop-shadow-offset-y: Surfaces.panel-shadow-offset-y;
+
+    // Specular highlight — a 1 px line on the top inner edge.
+    Rectangle {
+        x: 1px;
+        y: 1px;
+        width: parent.width - 2px;
+        height: 1px;
+        background: Surfaces.specular-strong;
+        border-radius: parent.border-radius;
+    }
+
+    Rectangle {
+        x: root.content-padding;
+        y: root.content-padding;
+        width: parent.width - 2 * root.content-padding;
+        height: parent.height - 2 * root.content-padding;
+        @children
+    }
+}

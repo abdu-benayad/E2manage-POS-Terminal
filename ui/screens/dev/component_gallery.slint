@@ -1,6 +1,7 @@
 import { Theme, Surfaces } from "../../tokens/mod.slint";
 import { Colors, Typography, Spacing, Radius, Layout, Locale } from "../../theme.slint";
 import { ScrollView } from "std-widgets.slint";
+import { Panel } from "../../components/atomic/mod.slint";
 
 // Component gallery — Plan 2. Hosts every atomic component in light/dark
 // × LTR/RTL × en/ar so visual regressions are obvious. Each Task 3–10
@@ -108,7 +109,42 @@ export component ComponentGallery inherits Rectangle {
 
                 // === COMPONENT SECTIONS START — appended by Plan 2 Tasks 3–10 ===
 
-                // (Task 3) Panel section appended here
+                // === Panel ===
+                Text {
+                    text: "Panel — surface tier 2";
+                    font-family: Typography.font-family;
+                    font-size: Typography.heading;
+                    font-weight: Typography.semi-bold;
+                    color: Colors.text-primary;
+                }
+                HorizontalLayout {
+                    spacing: Spacing.md;
+                    Panel {
+                        width: 240px;
+                        height: 120px;
+                        Text {
+                            text: "Default panel";
+                            font-family: Typography.font-family;
+                            font-size: Typography.body;
+                            color: Colors.text-primary;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+                    Panel {
+                        width: 240px;
+                        height: 120px;
+                        content-padding: Spacing.xl;
+                        Text {
+                            text: "Wide-padding panel";
+                            font-family: Typography.font-family;
+                            font-size: Typography.body;
+                            color: Colors.text-primary;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
                 // (Task 4) Button section appended here
                 // (Task 5) SearchInput section appended here
                 // (Task 6) OpsButton section appended here
