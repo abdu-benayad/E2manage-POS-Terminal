@@ -89,8 +89,8 @@ These are the rules every task in this plan must follow. They are documented her
 - **No globals defined in this plan.** All new state lives as in-out properties on screen components. If a piece of state ends up needed by Plan 4 wiring, Plan 4 introduces the global. We do not pre-introduce one in skeleton mode.
 - **One component per file.** Same rule as Plan 2.
 - **Numerics are pre-formatted strings.** `Decimal` → display string conversion is the binding step's responsibility. In skeleton mode every numeric field on a mock record is a hand-written string like `"12.500"`. The atomic components already accept strings for `price`, `unit-price`, `line-total`, and `total`, so this is consistent.
-- **Locale resolution at the binding boundary, not in components.** Mock `name` fields are switched between Arabic and English in the preview window's mock-data initializer (the same pattern the component gallery uses: `Locale.current == "ar" ? "..." : "..."`). The screen and its sub-components do not branch on `Locale.current` themselves; they consume already-resolved strings.
-- **Per-Task commit.** Every task ends with one commit on `worktree-pos-ui-redesign-foundation`. No squash. Commit subject template: `feat(ui): plan 3 task N — <short description>`. Exception: Task 0 is a fix, subject `fix(ui): tune atomic press opacity to 0.70 for legibility`.
+- **Locale resolution at the binding boundary for data, not chrome.** *Data* fields (product names, category names, cart-line names) are locale-resolved at the binding boundary — in the preview window's mock-data initializer for Plan 3, in the Rust binding layer for Plan 4 — and the screen consumes already-resolved strings. *UI chrome* strings (column captions like "ON SELECTED", totals labels like "Subtotal" / "Tax" / "Total", button labels like "PAY" / "MORE") may branch on `Locale.current` inline at their definition site; passing each one in as a property would explode the screen surface without buying anything. The split keeps domain data out of the component tree while letting chrome stay readable.
+- **Per-Task commit.** Every task ends with one commit on `worktree-pos-ui-redesign-foundation`. No squash. Commit subject template: `feat(ui): plan 3 task N — <short description>`. Exception: Task 0 is a fix, subject `fix(ui): tune atomic press opacity to 0.70 for legibility`. Each commit uses a HEREDOC body explaining the *why* (per Abdu's CLAUDE.md "Commit body: why, not what") and ends with the trailer `Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>` (per repo convention used across Plans 1 and 2). The exact form is shown in each Task's commit step below; do not collapse to `git commit -m "<subject>"`.
 
 ---
 
@@ -249,13 +249,22 @@ Expected: exactly three matches, one per file.
 - [ ] **Step 6: Compile check**
 
 Run: `cargo check -p e2manage-pos-terminal 2>&1 | tail -20`
-Expected: clean exit (warnings about pre-existing 60-file fmt drift are allowed; new warnings from these edits are not).
+Expected: clean exit, no warnings. CI is gated on `cargo fmt --all --check` and `cargo clippy --workspace --all-targets -- -D warnings` both passing with no allow-list as of the Plan 2 cleanup; treat any warning as a real regression introduced by this task.
 
 - [ ] **Step 7: Commit**
 
 ```bash
 git add ui/components/atomic/button.slint ui/components/atomic/ops_button.slint ui/components/atomic/pay_button.slint
-git commit -m "fix(ui): tune atomic press opacity to 0.70 for legibility"
+git commit -m "$(cat <<'EOF'
+fix(ui): tune atomic press opacity to 0.70 for legibility
+
+Plan 2 operator verification reported the pressed dip as too subtle on a
+24-inch cashier display. 0.85/0.88 → 0.70 increases the perceived feedback
+without affecting variant-specific tones.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+EOF
+)"
 git branch --show-current
 ```
 
@@ -331,7 +340,17 @@ Expected: clean. (The file is not yet imported by anything, but Slint's compiler
 
 ```bash
 git add ui/screens/checkout/checkout_types.slint
-git commit -m "feat(ui): plan 3 task 1 — checkout mock-data structs"
+git commit -m "$(cat <<'EOF'
+feat(ui): plan 3 task 1 — checkout mock-data structs
+
+Establishes the data contract between Plan 3 (skeleton) and Plan 4
+(wiring). Field names mirror pos_models::{CartItem, Product, Category} so
+the wiring step is a 1:1 substitution rather than a reshape — the slicing
+decision the operator locked in before this plan started.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+EOF
+)"
 git branch --show-current
 ```
 
@@ -510,7 +529,17 @@ Expected: clean.
 
 ```bash
 git add ui/screens/checkout/categories_rail.slint
-git commit -m "feat(ui): plan 3 task 2 — categories rail"
+git commit -m "$(cat <<'EOF'
+feat(ui): plan 3 task 2 — categories rail
+
+Leading-edge column from §5.1. Width 56 dp lands on the 4 dp grid; the
+"All" tile, up to eight categories, and an overflow trigger stack
+vertically; back and settings tiles pin to the bottom. Selection state is
+owned by the screen above so the rail stays pure.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+EOF
+)"
 git branch --show-current
 ```
 
@@ -648,7 +677,18 @@ Expected: clean. If Slint rejects the inline `mod`/`floor` calls because they ar
 
 ```bash
 git add ui/screens/checkout/products_area.slint
-git commit -m "feat(ui): plan 3 task 3 — products area"
+git commit -m "$(cat <<'EOF'
+feat(ui): plan 3 task 3 — products area
+
+Central zone from §5.1. Search row uses if-gated RTL mirroring per the
+Plan 2 PayButton lesson (visible: false dual-slots interact badly with
+space-between); product grid relies on Slint's GridLayout for the LTR/RTL
+flip. Query state is owned locally; Plan 4 binds the filter to
+ProductService.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+EOF
+)"
 git branch --show-current
 ```
 
@@ -747,7 +787,18 @@ Expected: clean.
 
 ```bash
 git add ui/screens/checkout/ops_column.slint
-git commit -m "feat(ui): plan 3 task 4 — ops column"
+git commit -m "$(cat <<'EOF'
+feat(ui): plan 3 task 4 — ops column
+
+The new operations pattern from §3.3 / §5.1. Button order is sacred per
+§3.8 — +1 / −1 / ×n / % / ✎ / ⌫ — so it lives as positional source order,
+not a configurable array. Disabled state propagates from
+selected-line-id; ops mutations are emitted upward as op-requested and
+performed by the screen (Plan 3: log only; Plan 4: route to CartService).
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+EOF
+)"
 git branch --show-current
 ```
 
@@ -932,7 +983,17 @@ Expected: clean.
 
 ```bash
 git add ui/screens/checkout/cart_panel_area.slint
-git commit -m "feat(ui): plan 3 task 5 — cart panel area"
+git commit -m "$(cat <<'EOF'
+feat(ui): plan 3 task 5 — cart panel area
+
+Trailing-edge zone from §5.1. Width 280 dp (rounded up from spec's
+~250 dp to fit on the 4 dp grid and give 24-char product names room).
+Selection is two-way bound so the ops column can read it without a
+separate global. Pay strip auto-disables when the cart is empty.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+EOF
+)"
 git branch --show-current
 ```
 
@@ -1089,7 +1150,17 @@ Expected: clean.
 
 ```bash
 git add ui/screens/checkout/checkout_chrome.slint
-git commit -m "feat(ui): plan 3 task 6 — checkout header + footer"
+git commit -m "$(cat <<'EOF'
+feat(ui): plan 3 task 6 — checkout header + footer
+
+Full-width chrome strips that flank the four zones. Header carries the
+brand mark, terminal id, operator, online LED, and clock; footer carries
+offline-queue summary and the MORE trigger. Both share the panel surface
+tier and live in one file to keep the chrome layer findable.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+EOF
+)"
 git branch --show-current
 ```
 
@@ -1275,7 +1346,19 @@ Expected: clean.
 
 ```bash
 git add ui/screens/checkout/checkout_v2.slint
-git commit -m "feat(ui): plan 3 task 7 — main checkout screen composition"
+git commit -m "$(cat <<'EOF'
+feat(ui): plan 3 task 7 — main checkout screen composition
+
+Composes header + four-zone middle + footer into the cashier-facing
+layout. RTL is implemented via paired if-gated child trees on the middle
+HorizontalLayout — a deliberately brittle pattern flagged in §10 for
+Plan 4 to consolidate. Mock-data inputs and callbacks are wired but not
+bound to services; cashier app still routes to the legacy
+MainCheckoutScreen until Plan 4.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+EOF
+)"
 git branch --show-current
 ```
 
@@ -1322,6 +1405,14 @@ export component CheckoutPreview inherits Rectangle {
 
     background: Surfaces.bg-bottom;
 
+    // Emoji caveat: the bundled IBM Plex Sans + Sans Arabic fonts (see Plan 1
+    // findings) do not carry emoji glyphs. The pictographs below will render
+    // only via system font fallback. On a workstation without an emoji font
+    // installed (or on the target hardware in production) they will fall back
+    // to tofu boxes. Task 10 visual verification must explicitly check rail
+    // glyph rendering and flag it as a finding if fallback fails; Plan 4
+    // should replace these with either bundled SVG icons or category-specific
+    // ASCII/mono glyphs.
     property <[CheckoutCategoryData]> mock-categories: [
         { id: "coffee",  name: Locale.current == "ar" ? "قهوة" : "Coffee",
           icon: "☕", accent: Colors.cat-coffee },
@@ -1374,6 +1465,16 @@ export component CheckoutPreview inherits Rectangle {
           category_accent: Colors.cat-coffee, disabled: true, out_of_stock: false },
     ];
 
+    // Hand-computed cart. Each line_total = qty * unit_price; the screen-level
+    // subtotal/total properties below must match the sum of line_totals.
+    //   L1: 2 × 12.500 = 25.000
+    //   L2: 1 × 6.000  =  6.000
+    //   L3: 1 × 18.000 = 18.000
+    //   L4: 3 × 1.500  =  4.500
+    //   Σ              = 53.500
+    // If a Worker tweaks any line below, update the subtotal/total in the
+    // MainCheckoutScreenV2 block by the same delta. Plan 4 replaces this with
+    // derived totals from CartService.
     property <[CheckoutLineData]> mock-cart-lines: [
         { id: "L1", product_id: "p1",
           name: Locale.current == "ar" ? "قهوة لاتيه" : "Café Latte",
@@ -1554,7 +1655,18 @@ Expected: clean.
 
 ```bash
 git add ui/screens/dev/checkout_preview.slint ui/screens/dev/checkout_preview_window.slint ui/screens/dev/mod.slint
-git commit -m "feat(ui): plan 3 task 8 — checkout preview window"
+git commit -m "$(cat <<'EOF'
+feat(ui): plan 3 task 8 — checkout preview window
+
+Dev-only wrapper around MainCheckoutScreenV2 with hardcoded mock data
+and a theme/direction/locale toggle bar. Mirrors the
+ComponentGalleryWindow pattern from Plan 2. Cart totals are
+hand-computed; an arithmetic comment in the file documents the math
+because the preview has no service to derive them.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+EOF
+)"
 git branch --show-current
 ```
 
@@ -1661,13 +1773,23 @@ export { CheckoutPreviewWindow } from "screens/dev/mod.slint";
 - [ ] **Step 5: Build check**
 
 Run: `cargo build 2>&1 | tail -20`
-Expected: clean build, with pre-existing fmt drift and the two known pre-existing main.rs clippy warnings (run_startup_sequence args, collapsible_else_if) as the only diagnostics. No new warnings.
+Expected: clean build, no warnings. The Plan 2 cleanup landed a one-shot `cargo fmt` and resolved the two prior `src/main.rs` clippy warnings; treat any diagnostic as a real regression.
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git add src/checkout_preview.rs src/lib.rs src/main.rs ui/main.slint
-git commit -m "feat(ui): plan 3 task 9 — --checkout-preview binary entry"
+git commit -m "$(cat <<'EOF'
+feat(ui): plan 3 task 9 — --checkout-preview binary entry
+
+Adds --checkout-preview alongside --component-gallery and --theme-harness,
+with the same locale-detect-then-toggle pattern. Cashier-facing app
+(cargo run with no flags) remains routed to the legacy MainCheckoutScreen
+until Plan 4 migrates routing.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+EOF
+)"
 git branch --show-current
 ```
 
@@ -1717,6 +1839,7 @@ Tick each item against the relevant screenshot. Any FAIL gets a follow-up Worker
 - Press feedback — tapping any button visibly dims to ~70% opacity, then springs back. Reads on a 24" display.
 - Numerics — every price / total / qty pill renders left-to-right inside RTL containers.
 - Arabic shaping — every Arabic string shows connected letterforms; no isolated-form fallbacks; no missing-glyph boxes.
+- Category-rail emoji glyphs — ☕ 🥐 🧊 🍽 🛠 render via system font fallback (IBM Plex does not carry emoji). PASS if all five tiles show recognisable glyphs; FAIL or PASS-with-caveat if any render as tofu boxes or the renderings disagree between light and dark themes. Either outcome becomes a Plan 4 input.
 
 - [ ] **Step 4: Operator updates findings doc**
 
@@ -1726,7 +1849,16 @@ Append a new section to `docs/POS-UI-REDESIGN-FINDINGS-01-SLINT-RTL.md` modelled
 
 ```bash
 git add docs/POS-UI-REDESIGN-SCREENSHOTS-PLAN-03/ docs/POS-UI-REDESIGN-FINDINGS-01-SLINT-RTL.md
-git commit -m "docs(pos): plan 3 visual verification — 4 configurations captured"
+git commit -m "$(cat <<'EOF'
+docs(pos): plan 3 visual verification — 4 configurations captured
+
+Operator-driven on a workstation; the agent sandbox is headless. Captures
+the light/dark × LTR/RTL × en/ar matrix established by Plan 2
+verification and appends the matrix to the Slint+RTL findings doc.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+EOF
+)"
 git branch --show-current
 ```
 
@@ -1736,7 +1868,7 @@ git branch --show-current
 
 After all tasks land, the following must hold:
 
-- `cargo fmt --all --check` exits 0 for files touched by this plan (the 60-file pre-existing drift carried forward from Plan 1 is allowed to remain, but no new file introduced by Plan 3 contributes to it).
+- `cargo fmt --all --check` exits 0 across the workspace. (CI was gated unconditionally during the Plan 2 cleanup — no allow-list, no carry-forward drift.)
 - `cargo clippy --workspace --all-targets -- -D warnings` exits 0.
 - `cargo test --workspace -- --skip e2e_` exits 0.
 - `cargo run -- --component-gallery` still launches and renders the Plan 2 gallery (no regression).
@@ -1773,4 +1905,6 @@ Listed for the next planning round, so context is not lost:
 4. **Auto-select rule.** §5.1 says "most-recently-added line is auto-selected". Plan 3 hardcodes the last line in the mock array as selected. Plan 4 needs an explicit `CartService` API or a derived property on the screen that picks the line with the latest `id` (or a separate `last_added_at` field — which CartItem does not currently have, so this may require a `pos_models::CartItem` field addition).
 5. **OpsColumn op semantics.** `qty`, `disc`, and `edit` open ambient flows (numeric pad, discount picker, line-edit sheet) in the legacy app. Plan 4 must decide whether the new screen reuses the legacy `NumericKeypad` / `QuantityPad` / `PLUPad` overlays or builds new atomic-component-based replacements.
 6. **Compact-mode breakpoint.** §9 specifies < 1024 px = stacked layout. Plan 3 makes no compact-mode provision. Plan 5+ should treat compact as a separate screen file or a parameterised variant — the four-zone HorizontalLayout used in Plan 3's Task 7 will not gracefully degrade to a stacked layout via responsive properties alone.
+7. **Task 7 zone duplication.** The middle row in `checkout_v2.slint` instantiates each of the four zones twice — once inside `if !Layout.is-rtl: …` and once inside `if Layout.is-rtl: …` in reverse order. Slint's `if` truly removes the inactive branch from the layout, so this is correct, but it is ~80 lines of bidirectional duplication that drifts the moment any zone gains a property. Plan 4 should consolidate, either via positional `x:` based on `Layout.is-rtl` or a single mirroring container helper. Until then, every API change to a zone must update both branches in lockstep.
+8. **Emoji icon strategy.** Plan 3 uses Unicode emoji pictographs (☕ 🥐 🧊 🍽 🛠) as category icons. IBM Plex does not carry emoji glyphs; rendering depends entirely on system font fallback. On target hardware this is unreliable. Plan 4 should pick: bundled SVG icons (asset pipeline work), category-specific mono ASCII glyphs (drops the visual richness), or a curated emoji font registered alongside IBM Plex.
 
