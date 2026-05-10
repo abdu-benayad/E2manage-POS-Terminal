@@ -8,6 +8,7 @@ import { OpsButton } from "../../components/atomic/mod.slint";
 import { StatusLED } from "../../components/atomic/mod.slint";
 import { PayButton } from "../../components/atomic/mod.slint";
 import { ProductTile } from "../../components/atomic/mod.slint";
+import { CartLine } from "../../components/atomic/mod.slint";
 
 // Component gallery — Plan 2. Hosts every atomic component in light/dark
 // × LTR/RTL × en/ar so visual regressions are obvious. Each Task 3–10
@@ -317,7 +318,42 @@ export component ComponentGallery inherits Rectangle {
                         out-of-stock: true;
                     }
                 }
-                // (Task 10) CartLine section appended here
+                // === CartLine ===
+                Text {
+                    text: "CartLine — selected vs default";
+                    font-family: Typography.font-family;
+                    font-size: Typography.heading;
+                    font-weight: Typography.semi-bold;
+                    color: Colors.text-primary;
+                }
+                VerticalLayout {
+                    spacing: Spacing.sm;
+                    CartLine {
+                        width: 360px;
+                        name: Locale.current == "ar" ? "قهوة لاتيه" : "Café Latte";
+                        qty: 2;
+                        unit-price: "12.500";
+                        line-total: "25.000";
+                        currency: "LYD";
+                        selected: true;
+                    }
+                    CartLine {
+                        width: 360px;
+                        name: Locale.current == "ar" ? "كرواسون" : "Croissant";
+                        qty: 1;
+                        unit-price: "6.000";
+                        line-total: "6.000";
+                        currency: "LYD";
+                    }
+                    CartLine {
+                        width: 360px;
+                        name: Locale.current == "ar" ? "ساندويش بالدجاج المشوي والخضار الطازجة" : "Grilled Chicken Sandwich w/ Fresh Veg";
+                        qty: 1;
+                        unit-price: "18.000";
+                        line-total: "18.000";
+                        currency: "LYD";
+                    }
+                }
 
                 // Filler so the gallery is non-empty before any sections land.
                 Text {

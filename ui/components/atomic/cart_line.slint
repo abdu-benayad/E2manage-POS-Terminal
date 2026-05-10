@@ -1,0 +1,135 @@
+import { Surfaces } from "../../tokens/mod.slint";
+import { Colors, Typography, Spacing, Radius, Animation, Layout } from "../../theme.slint";
+
+export component CartLine inherits Rectangle {
+    in property <string> name: "Item";
+    in property <int> qty: 1;
+    in property <string> unit-price: "0.00";
+    in property <string> line-total: "0.00";
+    in property <string> currency: "LYD";
+    in property <bool> selected: false;
+
+    callback clicked;
+
+    height: 64px;
+    border-radius: Radius.md;
+    background: Surfaces.surface-top;
+    border-width: 1px;
+    border-color: root.selected ? Colors.accent-lime : Surfaces.surface-border;
+    drop-shadow-color: root.selected ? Colors.accent-lime : Surfaces.surface-shadow;
+    drop-shadow-blur: root.selected ? 20px : Surfaces.surface-shadow-blur;
+    drop-shadow-offset-y: root.selected ? 0px : Surfaces.surface-shadow-offset-y;
+
+    animate border-color { duration: Animation.normal; easing: ease-out; }
+
+    HorizontalLayout {
+        padding-left: Spacing.md;
+        padding-right: Spacing.md;
+        spacing: Spacing.md;
+
+        // Qty pill on the leading edge. Dual-slot trick: render the pill
+        // first in LTR, render an invisible spacer first in RTL so the pill
+        // is the layout-tail child (which is visually leading in RTL).
+        Rectangle {
+            visible: !Layout.is-rtl;
+            width: 44px;
+            height: 32px;
+            border-radius: 16px;
+            background: Surfaces.inset-top;
+            border-color: Surfaces.inset-border;
+            border-width: 1px;
+            y: (parent.height - self.height) / 2;
+            Text {
+                text: "×" + root.qty;
+                font-family: Typography.font-family-mono;
+                font-size: Typography.body;
+                font-weight: Typography.semi-bold;
+                color: Colors.text-primary;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+
+        // Centre stack: name + unit price line.
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: Spacing.xxs;
+            Text {
+                text: root.name;
+                font-family: Typography.font-family;
+                font-size: Typography.body;
+                font-weight: Typography.semi-bold;
+                color: Colors.text-primary;
+                horizontal-alignment: Layout.is-rtl ? right : left;
+                wrap: no-wrap;
+                overflow: elide;
+            }
+            HorizontalLayout {
+                spacing: Spacing.xs;
+                alignment: Layout.is-rtl ? end : start;
+                Text {
+                    text: "@";
+                    font-family: Typography.font-family;
+                    font-size: Typography.caption;
+                    color: Colors.text-secondary;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: root.unit-price;
+                    font-family: Typography.font-family-mono;
+                    font-size: Typography.caption;
+                    color: Colors.text-secondary;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        // Line total on the trailing edge.
+        HorizontalLayout {
+            spacing: Spacing.xs;
+            alignment: center;
+            Text {
+                text: root.line-total;
+                font-family: Typography.font-family-mono;
+                font-size: Typography.body;
+                font-weight: Typography.bold;
+                color: Colors.text-primary;
+                vertical-alignment: center;
+            }
+            Text {
+                text: root.currency;
+                font-family: Typography.font-family;
+                font-size: Typography.tiny;
+                color: Colors.text-secondary;
+                vertical-alignment: bottom;
+            }
+        }
+
+        // RTL qty pill slot — fires when Layout.is-rtl. Last child = visual
+        // leading edge in RTL.
+        Rectangle {
+            visible: Layout.is-rtl;
+            width: 44px;
+            height: 32px;
+            border-radius: 16px;
+            background: Surfaces.inset-top;
+            border-color: Surfaces.inset-border;
+            border-width: 1px;
+            y: (parent.height - self.height) / 2;
+            Text {
+                text: "×" + root.qty;
+                font-family: Typography.font-family-mono;
+                font-size: Typography.body;
+                font-weight: Typography.semi-bold;
+                color: Colors.text-primary;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
