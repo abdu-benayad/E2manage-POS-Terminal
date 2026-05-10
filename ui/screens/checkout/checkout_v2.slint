@@ -1,0 +1,157 @@
+import { Theme, Surfaces } from "../../tokens/mod.slint";
+import { Colors, Typography, Spacing, Radius, Animation, Layout, Locale } from "../../theme.slint";
+import {
+    CheckoutLineData,
+    CheckoutTileData,
+    CheckoutCategoryData,
+} from "checkout_types.slint";
+import { CategoriesRail } from "categories_rail.slint";
+import { ProductsArea } from "products_area.slint";
+import { OpsColumn } from "ops_column.slint";
+import { CartPanelArea } from "cart_panel_area.slint";
+import { CheckoutHeader, CheckoutFooter } from "checkout_chrome.slint";
+
+// MainCheckoutScreenV2 — Plan 3 skeleton. The legacy MainCheckoutScreen
+// in ui/screens/checkout/main.slint is unchanged and remains the
+// production routing target until Plan 4 migrates.
+export component MainCheckoutScreenV2 inherits Rectangle {
+    background: @linear-gradient(180deg, Surfaces.bg-top 0%, Surfaces.bg-bottom 100%);
+
+    // === Inputs (mock data, supplied by the preview window) ===
+    in property <[CheckoutCategoryData]> categories: [];
+    in property <[CheckoutTileData]> products: [];
+    in property <[CheckoutLineData]> cart-lines: [];
+
+    in property <string> brand: "E2Manage POS";
+    in property <string> terminal-id: "T-001";
+    in property <string> operator-name: "—";
+    in property <string> clock: "00:00";
+    in property <string> network-state: "online";
+
+    in property <string> subtotal: "0.000";
+    in property <string> tax: "0.000";
+    in property <string> total: "0.000";
+    in property <string> currency: "LYD";
+    in property <string> customer-name: "";
+
+    in property <string> queue-summary: "";
+    in property <bool> queue-visible: false;
+
+    // === Internal state ===
+    in-out property <string> selected-category-id: "all";
+    in-out property <string> selected-line-id: "";
+
+    // === Callbacks (Plan 4 wires these to services) ===
+    callback category-selected(string);
+    callback product-tapped(string);
+    callback op-requested(string /* op */, string /* line-id */);
+    callback pay-pressed;
+    callback plu-pressed;
+    callback price-check-pressed;
+    callback more-pressed;
+    callback back-pressed;
+    callback settings-pressed;
+    callback overflow-pressed;
+    callback search-changed(string);
+    callback search-submitted(string);
+
+    VerticalLayout {
+        padding: Spacing.md;
+        spacing: Spacing.md;
+
+        // Header.
+        CheckoutHeader {
+            brand: root.brand;
+            terminal-id: root.terminal-id;
+            operator-name: root.operator-name;
+            clock: root.clock;
+            network-state: root.network-state;
+        }
+
+        // Middle: four zones. RTL convention §4 — `if` to flip order.
+        HorizontalLayout {
+            spacing: Spacing.md;
+            vertical-stretch: 1;
+
+            if !Layout.is-rtl: CategoriesRail {
+                categories: root.categories;
+                selected-id: root.selected-category-id;
+                category-selected(id) => {
+                    root.selected-category-id = id;
+                    root.category-selected(id);
+                }
+                overflow-pressed => { root.overflow-pressed(); }
+                back-pressed => { root.back-pressed(); }
+                settings-pressed => { root.settings-pressed(); }
+            }
+            if !Layout.is-rtl: ProductsArea {
+                horizontal-stretch: 1;
+                products: root.products;
+                search-changed(s) => { root.search-changed(s); }
+                search-submitted(s) => { root.search-submitted(s); }
+                product-tapped(id) => { root.product-tapped(id); }
+                plu-pressed => { root.plu-pressed(); }
+                price-check-pressed => { root.price-check-pressed(); }
+            }
+            if !Layout.is-rtl: OpsColumn {
+                selected-line-id: root.selected-line-id;
+                op-requested(op, line) => { root.op-requested(op, line); }
+                more-pressed => { root.more-pressed(); }
+            }
+            if !Layout.is-rtl: CartPanelArea {
+                lines: root.cart-lines;
+                subtotal: root.subtotal;
+                tax: root.tax;
+                total: root.total;
+                currency: root.currency;
+                customer-name: root.customer-name;
+                selected-line-id <=> root.selected-line-id;
+                pay-pressed => { root.pay-pressed(); }
+            }
+
+            // RTL order: cart, ops, products, rail.
+            if Layout.is-rtl: CartPanelArea {
+                lines: root.cart-lines;
+                subtotal: root.subtotal;
+                tax: root.tax;
+                total: root.total;
+                currency: root.currency;
+                customer-name: root.customer-name;
+                selected-line-id <=> root.selected-line-id;
+                pay-pressed => { root.pay-pressed(); }
+            }
+            if Layout.is-rtl: OpsColumn {
+                selected-line-id: root.selected-line-id;
+                op-requested(op, line) => { root.op-requested(op, line); }
+                more-pressed => { root.more-pressed(); }
+            }
+            if Layout.is-rtl: ProductsArea {
+                horizontal-stretch: 1;
+                products: root.products;
+                search-changed(s) => { root.search-changed(s); }
+                search-submitted(s) => { root.search-submitted(s); }
+                product-tapped(id) => { root.product-tapped(id); }
+                plu-pressed => { root.plu-pressed(); }
+                price-check-pressed => { root.price-check-pressed(); }
+            }
+            if Layout.is-rtl: CategoriesRail {
+                categories: root.categories;
+                selected-id: root.selected-category-id;
+                category-selected(id) => {
+                    root.selected-category-id = id;
+                    root.category-selected(id);
+                }
+                overflow-pressed => { root.overflow-pressed(); }
+                back-pressed => { root.back-pressed(); }
+                settings-pressed => { root.settings-pressed(); }
+            }
+        }
+
+        // Footer.
+        CheckoutFooter {
+            queue-summary: root.queue-summary;
+            queue-visible: root.queue-visible;
+            more-pressed => { root.more-pressed(); }
+        }
+    }
+}
