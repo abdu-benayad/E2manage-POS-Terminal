@@ -670,10 +670,6 @@ impl ShiftService {
         Ok(response.id)
     }
 
-    #[expect(
-        clippy::await_holding_lock,
-        reason = "parking_lot RwLock guard on cash_count is held across the API .await; reshaping (drop guard, await, re-acquire) needs concurrency design review and is out of scope for clippy cleanup"
-    )]
     async fn sync_shift_end(
         &self,
         shift_id: &str,
@@ -682,8 +678,7 @@ impl ShiftService {
         variance: Decimal,
         note: Option<&str>,
     ) -> Result<()> {
-        let cash_count = self.cash_count.read();
-        let denomination_breakdown = cash_count.as_ref().map(|cc| {
+        let denomination_breakdown = self.cash_count.read().as_ref().map(|cc| {
             cc.denominations
                 .iter()
                 .filter(|d| d.count > 0)
