@@ -1,0 +1,26 @@
+# Sibling playground app for the abdu-slint-ui library.
+# Renders an interactive catalog of every public component with live
+# property controls and a global token toolbar.
+#
+# Standalone workspace — does not participate in the parent
+# e2manage-pos-terminal workspace until Phase 4.
+[workspace]
+
+[package]
+name = "abdu-slint-ui-playground"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Interactive catalog for abdu-slint-ui components"
+authors = ["Abdu Benayad <abdu.benayad@gmail.com>"]
+
+[[bin]]
+name = "playground"
+path = "src/main.rs"
+
+[dependencies]
+slint = { version = "1.14", default-features = false, features = ["backend-winit", "renderer-femtovg", "compat-1-2", "std"] }
+abdu-slint-ui = { path = "../abdu-slint-ui" }
+
+[build-dependencies]
+slint-build = "1.14"
