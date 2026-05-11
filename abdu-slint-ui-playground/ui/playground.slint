@@ -3,29 +3,28 @@
 // Layout:
 //   ┌──────────┬─────────────────────────────────────────────┐
 //   │          │ Toolbar (global tokens)                      │
-//   │ Sidebar  ├─────────────────────────────┬────────────────┤
-//   │          │ Preview pane                │ Property panel │
-//   │ component│ (live abdu-slint-ui render) │ + code snippet │
-//   │   list   │                             │                │
-//   └──────────┴─────────────────────────────┴────────────────┘
+//   │ Sidebar  ├─────────────────────────────────────────────┤
+//   │          │ Section preview (live + property panel)     │
+//   └──────────┴─────────────────────────────────────────────┘
 //
-// The playground's chrome (sidebar/toolbar/property-panel) uses std-widgets
-// so a bug in abdu-slint-ui can be debugged without breaking the harness.
-// The preview pane renders abdu-slint-ui components directly.
+// The playground's chrome (sidebar/toolbar) uses std-widgets so a bug in
+// abdu-slint-ui can be debugged without breaking the harness. Each section
+// renders abdu-slint-ui components directly in its own preview pane.
 
 import { Theme, Locale, IconFont, IconFamily } from "@abdu-slint-ui";
 import { ComboBox, CheckBox, HorizontalBox, VerticalBox, ListView, StandardListView, StandardButton, ScrollView } from "std-widgets.slint";
+import { ButtonSection } from "sections/button.slint";
 
 export component PlaygroundWindow inherits Window {
     title: "abdu-slint-ui Playground";
     preferred-width: 1280px;
     preferred-height: 800px;
-    min-width: 960px;
+    min-width: 1024px;
     min-height: 640px;
     background: Theme.background;
 
-    // Currently-selected component section. Empty string = no section.
-    in-out property <string> selected-section: "";
+    // Currently-selected component section.
+    in-out property <string> selected-section: "button";
 
     // --- Global token state, mirrored to abdu-slint-ui globals. ---
     in-out property <string> tok-button-shape: "pill";
@@ -36,7 +35,6 @@ export component PlaygroundWindow inherits Window {
     in-out property <bool>   tok-rtl: false;
     in-out property <string> tok-icon-family: "phosphor";
 
-    // Propagate token changes to the abdu-slint-ui globals.
     changed tok-button-shape       => { Theme.button-shape       = self.tok-button-shape; }
     changed tok-icon-button-shape  => { Theme.icon-button-shape  = self.tok-icon-button-shape; }
     changed tok-card-shape         => { Theme.card-shape         = self.tok-card-shape; }
@@ -51,9 +49,6 @@ export component PlaygroundWindow inherits Window {
         Rectangle {
             width: 240px;
             background: #f8fafc;
-            border-color: #e2e8f0;
-            border-width: 0px;
-            // Right border only.
             Rectangle {
                 x: parent.width - 1px;
                 width: 1px;
@@ -61,28 +56,60 @@ export component PlaygroundWindow inherits Window {
             }
 
             VerticalBox {
+                padding: 16px;
+                spacing: 4px;
+                alignment: start;
+
                 Text {
-                    text: "Components";
-                    font-size: 12px;
-                    font-weight: 600;
-                    color: #64748b;
+                    text: "abdu-slint-ui";
+                    font-size: 16px;
+                    font-weight: 700;
                 }
                 Text {
-                    text: "(none yet — sections appear here as components land)";
-                    font-size: 13px;
+                    text: "Playground";
+                    font-size: 12px;
+                    color: #64748b;
+                }
+                Rectangle { height: 12px; }
+                Text {
+                    text: "COMPONENTS";
+                    font-size: 11px;
+                    font-weight: 600;
+                    color: #94a3b8;
+                }
+
+                button-tile := Rectangle {
+                    height: 36px;
+                    background: root.selected-section == "button" ? #e2e8f0 : transparent;
+                    border-radius: 6px;
+                    Text {
+                        x: 12px;
+                        text: "Button";
+                        font-size: 13px;
+                        vertical-alignment: center;
+                        color: #0f172a;
+                    }
+                    TouchArea {
+                        clicked => { root.selected-section = "button"; }
+                        mouse-cursor: pointer;
+                    }
+                }
+
+                Text {
+                    text: "(IconButton, Toggle, Card, KeyValueRow appear here as their sections land)";
+                    font-size: 11px;
                     color: #94a3b8;
                     wrap: word-wrap;
                 }
             }
         }
 
-        // --- Right column: toolbar over (preview | property panel) ----
+        // --- Right column: toolbar over section ----
         VerticalLayout {
             // Toolbar
             Rectangle {
                 height: 56px;
                 background: Theme.surface;
-                border-color: Theme.border;
                 Rectangle {
                     y: parent.height - 1px;
                     height: 1px;
@@ -97,7 +124,6 @@ export component PlaygroundWindow inherits Window {
 
                     HorizontalBox {
                         spacing: 6px;
-                        alignment: start;
                         Text { text: "Button shape:"; vertical-alignment: center; font-size: 12px; }
                         ComboBox {
                             model: ["rounded", "pill", "square"];
@@ -161,52 +187,15 @@ export component PlaygroundWindow inherits Window {
                 }
             }
 
-            // Preview pane | Property panel
-            HorizontalLayout {
-                // Preview pane
-                Rectangle {
-                    background: Theme.surface-muted;
-                    ScrollView {
-                        VerticalBox {
-                            padding: 24px;
-                            spacing: 16px;
-                            Text {
-                                text: root.selected-section == ""
-                                    ? "← Select a component from the sidebar."
-                                    : "Section: " + root.selected-section;
-                                font-size: 14px;
-                                color: Theme.muted-foreground;
-                            }
-                            Text {
-                                text: "Once Button, IconButton, Toggle, Card, and KeyValueRow land in §1.6 of the plan, their sections will populate the sidebar and render here.";
-                                wrap: word-wrap;
-                                color: Theme.muted-foreground;
-                                font-size: 13px;
-                            }
-                        }
-                    }
-                }
-
-                // Property panel
-                Rectangle {
-                    width: 320px;
-                    background: Theme.surface;
-                    Rectangle {
-                        x: 0;
-                        width: 1px;
-                        background: Theme.border;
-                    }
-                    VerticalBox {
-                        padding: 16px;
-                        spacing: 8px;
-                        Text { text: "Properties"; font-weight: 600; font-size: 14px; }
-                        Text {
-                            text: "Per-section controls will appear here.";
-                            color: Theme.muted-foreground;
-                            font-size: 12px;
-                            wrap: word-wrap;
-                        }
-                    }
+            // Section pane
+            if root.selected-section == "button": ButtonSection { }
+            if root.selected-section != "button": Rectangle {
+                background: Theme.surface-muted;
+                Text {
+                    x: 32px;
+                    y: 32px;
+                    text: "Section '" + root.selected-section + "' not yet implemented. Select Button from the sidebar.";
+                    color: Theme.muted-foreground;
                 }
             }
         }

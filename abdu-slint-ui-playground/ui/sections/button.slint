@@ -1,0 +1,216 @@
+// Button playground section.
+//
+// Self-contained: holds the live property state, renders the Button in the
+// preview pane, and emits a code-snippet string for the property panel.
+// The playground.slint window mounts this section when the user selects
+// "Button" in the sidebar.
+
+import { Button, ButtonVariant, ButtonSize, Shape, Tone, Theme, Typography, Spacing } from "@abdu-slint-ui";
+import { ComboBox, CheckBox, LineEdit, HorizontalBox, VerticalBox, ScrollView } from "std-widgets.slint";
+
+export component ButtonSection inherits Rectangle {
+    // ===== Live property state ===========================================
+    in-out property <string> v-label: "Click me";
+    in-out property <string> v-icon-leading: "";
+    in-out property <string> v-icon-trailing: "";
+    in-out property <string> v-variant: "default";
+    in-out property <string> v-size: "md";
+    in-out property <string> v-shape: "default";
+    in-out property <string> v-tone: "default";
+    in-out property <bool>   v-disabled: false;
+    in-out property <bool>   v-loading: false;
+    in-out property <bool>   v-full-width: false;
+    in-out property <bool>   v-checkable: false;
+    in-out property <bool>   v-checked: false;
+    in-out property <string> v-tooltip: "";
+    in-out property <string> v-aria-label: "";
+
+    // ===== Derived enum values ==========================================
+    property <ButtonVariant> variant-enum:
+          v-variant == "destructive" ? ButtonVariant.destructive
+        : v-variant == "outline"     ? ButtonVariant.outline
+        : v-variant == "secondary"   ? ButtonVariant.secondary
+        : v-variant == "ghost"       ? ButtonVariant.ghost
+        : v-variant == "link"        ? ButtonVariant.link
+        : ButtonVariant.default;
+
+    property <ButtonSize> size-enum:
+          v-size == "xs" ? ButtonSize.xs
+        : v-size == "sm" ? ButtonSize.sm
+        : v-size == "lg" ? ButtonSize.lg
+        : v-size == "xl" ? ButtonSize.xl
+        : v-size == "icon" ? ButtonSize.icon
+        : ButtonSize.md;
+
+    property <Shape> shape-enum:
+          v-shape == "rounded" ? Shape.rounded
+        : v-shape == "pill"    ? Shape.pill
+        : v-shape == "square"  ? Shape.square
+        : Shape.default;
+
+    property <Tone> tone-enum:
+          v-tone == "primary"     ? Tone.primary
+        : v-tone == "success"     ? Tone.success
+        : v-tone == "warning"     ? Tone.warning
+        : v-tone == "destructive" ? Tone.destructive
+        : v-tone == "info"        ? Tone.info
+        : v-tone == "muted"       ? Tone.muted
+        : Tone.default;
+
+    background: transparent;
+
+    HorizontalLayout {
+        // --- Preview pane ------------------------------------------------
+        Rectangle {
+            background: Theme.surface-muted;
+            VerticalBox {
+                padding: 32px;
+                spacing: Spacing.lg;
+                alignment: center;
+                Text {
+                    text: "Live preview";
+                    font-size: Typography.text-sm;
+                    color: Theme.muted-foreground;
+                }
+                HorizontalLayout {
+                    alignment: center;
+                    Button {
+                        label: root.v-label;
+                        icon-leading: root.v-icon-leading;
+                        icon-trailing: root.v-icon-trailing;
+                        variant: root.variant-enum;
+                        size: root.size-enum;
+                        shape: root.shape-enum;
+                        tone: root.tone-enum;
+                        disabled: root.v-disabled;
+                        loading: root.v-loading;
+                        full-width: root.v-full-width;
+                        checkable: root.v-checkable;
+                        checked: root.v-checked;
+                        tooltip: root.v-tooltip;
+                        aria-label: root.v-aria-label;
+                    }
+                }
+
+                // Code snippet panel.
+                Rectangle {
+                    background: #0f172a;
+                    border-radius: 8px;
+                    height: 220px;
+                    ScrollView {
+                        Text {
+                            x: 16px;
+                            y: 12px;
+                            text:
+                                  "Button {\n"
+                                + (root.v-label != "" ? "    label: \"" + root.v-label + "\";\n" : "")
+                                + (root.v-icon-leading != "" ? "    icon-leading: \"" + root.v-icon-leading + "\";\n" : "")
+                                + (root.v-icon-trailing != "" ? "    icon-trailing: \"" + root.v-icon-trailing + "\";\n" : "")
+                                + (root.v-variant != "default"  ? "    variant: ButtonVariant." + root.v-variant + ";\n" : "")
+                                + (root.v-size != "md"          ? "    size: ButtonSize." + root.v-size + ";\n" : "")
+                                + (root.v-shape != "default"    ? "    shape: Shape." + root.v-shape + ";\n" : "")
+                                + (root.v-tone != "default"     ? "    tone: Tone." + root.v-tone + ";\n" : "")
+                                + (root.v-disabled    ? "    disabled: true;\n" : "")
+                                + (root.v-loading     ? "    loading: true;\n" : "")
+                                + (root.v-full-width  ? "    full-width: true;\n" : "")
+                                + (root.v-checkable   ? "    checkable: true;\n" : "")
+                                + (root.v-checked     ? "    checked: true;\n" : "")
+                                + (root.v-tooltip != ""    ? "    tooltip: \"" + root.v-tooltip + "\";\n" : "")
+                                + (root.v-aria-label != "" ? "    aria-label: \"" + root.v-aria-label + "\";\n" : "")
+                                + "}";
+                            color: #f8fafc;
+                            font-family: "monospace";
+                            font-size: 12px;
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- Property panel ----------------------------------------------
+        Rectangle {
+            width: 320px;
+            background: Theme.surface;
+            Rectangle { width: 1px; background: Theme.border; }
+
+            ScrollView {
+                VerticalBox {
+                    padding: 16px;
+                    spacing: 10px;
+
+                    Text { text: "Properties"; font-weight: 600; font-size: 14px; }
+
+                    Text { text: "label"; font-size: 12px; color: Theme.muted-foreground; }
+                    LineEdit {
+                        text: root.v-label;
+                        edited(s) => { root.v-label = s; }
+                    }
+
+                    Text { text: "icon-leading"; font-size: 12px; color: Theme.muted-foreground; }
+                    LineEdit {
+                        text: root.v-icon-leading;
+                        placeholder-text: "e.g. plus, check, arrow-right";
+                        edited(s) => { root.v-icon-leading = s; }
+                    }
+
+                    Text { text: "icon-trailing"; font-size: 12px; color: Theme.muted-foreground; }
+                    LineEdit {
+                        text: root.v-icon-trailing;
+                        edited(s) => { root.v-icon-trailing = s; }
+                    }
+
+                    Text { text: "variant"; font-size: 12px; color: Theme.muted-foreground; }
+                    ComboBox {
+                        model: ["default", "destructive", "outline", "secondary", "ghost", "link"];
+                        current-value: root.v-variant;
+                        selected(v) => { root.v-variant = v; }
+                    }
+
+                    Text { text: "size"; font-size: 12px; color: Theme.muted-foreground; }
+                    ComboBox {
+                        model: ["xs", "sm", "md", "lg", "xl", "icon"];
+                        current-value: root.v-size;
+                        selected(v) => { root.v-size = v; }
+                    }
+
+                    Text { text: "shape"; font-size: 12px; color: Theme.muted-foreground; }
+                    ComboBox {
+                        model: ["default", "rounded", "pill", "square"];
+                        current-value: root.v-shape;
+                        selected(v) => { root.v-shape = v; }
+                    }
+
+                    Text { text: "tone"; font-size: 12px; color: Theme.muted-foreground; }
+                    ComboBox {
+                        model: ["default", "primary", "success", "warning", "destructive", "info", "muted"];
+                        current-value: root.v-tone;
+                        selected(v) => { root.v-tone = v; }
+                    }
+
+                    CheckBox { text: "disabled";   checked: root.v-disabled;   toggled => { root.v-disabled = self.checked; } }
+                    CheckBox { text: "loading";    checked: root.v-loading;    toggled => { root.v-loading = self.checked; } }
+                    CheckBox { text: "full-width"; checked: root.v-full-width; toggled => { root.v-full-width = self.checked; } }
+                    CheckBox { text: "checkable";  checked: root.v-checkable;  toggled => { root.v-checkable = self.checked; } }
+                    CheckBox {
+                        text: "checked";
+                        enabled: root.v-checkable;
+                        checked: root.v-checked;
+                        toggled => { root.v-checked = self.checked; }
+                    }
+
+                    Text { text: "tooltip"; font-size: 12px; color: Theme.muted-foreground; }
+                    LineEdit {
+                        text: root.v-tooltip;
+                        edited(s) => { root.v-tooltip = s; }
+                    }
+
+                    Text { text: "aria-label"; font-size: 12px; color: Theme.muted-foreground; }
+                    LineEdit {
+                        text: root.v-aria-label;
+                        edited(s) => { root.v-aria-label = s; }
+                    }
+                }
+            }
+        }
+    }
+}
