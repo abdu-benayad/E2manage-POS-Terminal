@@ -1,0 +1,22 @@
+import { CheckoutPreview } from "checkout_preview.slint";
+
+// Window wrapper so Rust (slint::ComponentHandle) can construct it directly.
+// Slint only generates Rust bindings for components that inherit Window.
+export component CheckoutPreviewWindow inherits Window {
+    title: "POS Checkout Preview";
+    preferred-width: 1280px;
+    preferred-height: 900px;
+
+    in-out property <string> mode <=> preview.mode;
+    in-out property <bool> rtl <=> preview.rtl;
+    in-out property <string> locale <=> preview.locale;
+
+    callback toggle-theme <=> preview.toggle-theme;
+    callback toggle-rtl <=> preview.toggle-rtl;
+    callback cycle-locale <=> preview.cycle-locale;
+
+    preview := CheckoutPreview {
+        width: 100%;
+        height: 100%;
+    }
+}

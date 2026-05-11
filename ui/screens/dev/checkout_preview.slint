@@ -1,0 +1,215 @@
+import { Theme, Surfaces } from "../../tokens/mod.slint";
+import { Colors, Typography, Spacing, Radius, Layout, Locale } from "../../theme.slint";
+import {
+    CheckoutLineData,
+    CheckoutTileData,
+    CheckoutCategoryData,
+} from "../checkout/checkout_types.slint";
+import { MainCheckoutScreenV2 } from "../checkout/checkout_v2.slint";
+
+// CheckoutPreview — wraps MainCheckoutScreenV2 with a toolbar (theme,
+// direction, locale) and a hardcoded mock-data set. Runs behind
+// `--checkout-preview`. Not part of the cashier flow.
+export component CheckoutPreview inherits Rectangle {
+    in-out property <string> mode <=> Theme.mode;
+    in-out property <bool> rtl <=> Layout.rtl;
+    in-out property <string> locale <=> Locale.current;
+
+    callback toggle-theme;
+    callback toggle-rtl;
+    callback cycle-locale;
+
+    background: Surfaces.bg-bottom;
+
+    // Emoji caveat: the bundled IBM Plex Sans + Sans Arabic fonts (see Plan 1
+    // findings) do not carry emoji glyphs. The pictographs below will render
+    // only via system font fallback. On a workstation without an emoji font
+    // installed (or on the target hardware in production) they will fall back
+    // to tofu boxes. Task 10 visual verification must explicitly check rail
+    // glyph rendering and flag it as a finding if fallback fails; Plan 4
+    // should replace these with either bundled SVG icons or category-specific
+    // ASCII/mono glyphs.
+    property <[CheckoutCategoryData]> mock-categories: [
+        { id: "coffee",  name: Locale.current == "ar" ? "قهوة" : "Coffee",
+          icon: "☕", accent: Colors.cat-coffee },
+        { id: "bakery",  name: Locale.current == "ar" ? "مخبوزات" : "Bakery",
+          icon: "🥐", accent: Colors.cat-bakery },
+        { id: "cold",    name: Locale.current == "ar" ? "مشروبات باردة" : "Cold",
+          icon: "🧊", accent: Colors.cat-cold },
+        { id: "food",    name: Locale.current == "ar" ? "طعام" : "Food",
+          icon: "🍽", accent: Colors.cat-food },
+        { id: "service", name: Locale.current == "ar" ? "خدمة" : "Service",
+          icon: "🛠", accent: Colors.cat-coffee },
+    ];
+
+    property <[CheckoutTileData]> mock-products: [
+        { id: "p1",  name: Locale.current == "ar" ? "قهوة لاتيه" : "Café Latte",
+          price: "12.500", currency: "LYD", category_id: "coffee",
+          category_accent: Colors.cat-coffee, disabled: false, out_of_stock: false },
+        { id: "p2",  name: Locale.current == "ar" ? "كابتشينو" : "Cappuccino",
+          price: "11.000", currency: "LYD", category_id: "coffee",
+          category_accent: Colors.cat-coffee, disabled: false, out_of_stock: false },
+        { id: "p3",  name: Locale.current == "ar" ? "إسبريسو" : "Espresso",
+          price: "8.500",  currency: "LYD", category_id: "coffee",
+          category_accent: Colors.cat-coffee, disabled: false, out_of_stock: false },
+        { id: "p4",  name: Locale.current == "ar" ? "كرواسون" : "Croissant",
+          price: "6.000",  currency: "LYD", category_id: "bakery",
+          category_accent: Colors.cat-bakery, disabled: false, out_of_stock: false },
+        { id: "p5",  name: Locale.current == "ar" ? "كعك بالشوكولاتة" : "Chocolate Muffin",
+          price: "7.500",  currency: "LYD", category_id: "bakery",
+          category_accent: Colors.cat-bakery, disabled: false, out_of_stock: false },
+        { id: "p6",  name: Locale.current == "ar" ? "خبز قمح" : "Wheat Loaf",
+          price: "4.000",  currency: "LYD", category_id: "bakery",
+          category_accent: Colors.cat-bakery, disabled: false, out_of_stock: true },
+        { id: "p7",  name: Locale.current == "ar" ? "ماء بارد" : "Cold Water",
+          price: "1.500",  currency: "LYD", category_id: "cold",
+          category_accent: Colors.cat-cold, disabled: false, out_of_stock: false },
+        { id: "p8",  name: Locale.current == "ar" ? "عصير برتقال" : "Orange Juice",
+          price: "5.500",  currency: "LYD", category_id: "cold",
+          category_accent: Colors.cat-cold, disabled: false, out_of_stock: false },
+        { id: "p9",  name: Locale.current == "ar" ? "ساندويش" : "Sandwich",
+          price: "18.000", currency: "LYD", category_id: "food",
+          category_accent: Colors.cat-food, disabled: false, out_of_stock: false },
+        { id: "p10", name: Locale.current == "ar" ? "سلطة سيزر" : "Caesar Salad",
+          price: "22.000", currency: "LYD", category_id: "food",
+          category_accent: Colors.cat-food, disabled: false, out_of_stock: false },
+        { id: "p11", name: Locale.current == "ar" ? "بيتزا مارجريتا" : "Margherita Pizza",
+          price: "28.000", currency: "LYD", category_id: "food",
+          category_accent: Colors.cat-food, disabled: false, out_of_stock: false },
+        { id: "p12", name: Locale.current == "ar" ? "كيس حمل" : "Carrier Bag",
+          price: "0.500",  currency: "LYD", category_id: "service",
+          category_accent: Colors.cat-coffee, disabled: true, out_of_stock: false },
+    ];
+
+    // Hand-computed cart. Each line_total = qty * unit_price; the screen-level
+    // subtotal/total properties below must match the sum of line_totals.
+    //   L1: 2 × 12.500 = 25.000
+    //   L2: 1 × 6.000  =  6.000
+    //   L3: 1 × 18.000 = 18.000
+    //   L4: 3 × 1.500  =  4.500
+    //   Σ              = 53.500
+    // If a Worker tweaks any line below, update the subtotal/total in the
+    // MainCheckoutScreenV2 block by the same delta. Plan 4 replaces this with
+    // derived totals from CartService.
+    property <[CheckoutLineData]> mock-cart-lines: [
+        { id: "L1", product_id: "p1",
+          name: Locale.current == "ar" ? "قهوة لاتيه" : "Café Latte",
+          qty: 2, unit_price: "12.500", line_total: "25.000", currency: "LYD" },
+        { id: "L2", product_id: "p4",
+          name: Locale.current == "ar" ? "كرواسون" : "Croissant",
+          qty: 1, unit_price: "6.000",  line_total: "6.000",  currency: "LYD" },
+        { id: "L3", product_id: "p9",
+          name: Locale.current == "ar" ? "ساندويش بالدجاج المشوي" : "Grilled Chicken Sandwich",
+          qty: 1, unit_price: "18.000", line_total: "18.000", currency: "LYD" },
+        { id: "L4", product_id: "p7",
+          name: Locale.current == "ar" ? "ماء بارد" : "Cold Water",
+          qty: 3, unit_price: "1.500",  line_total: "4.500",  currency: "LYD" },
+    ];
+
+    VerticalLayout {
+        spacing: 0;
+
+        // Toolbar — identical pattern to ComponentGallery.
+        Rectangle {
+            height: 48px;
+            background: Surfaces.panel-top;
+            border-color: Surfaces.panel-border;
+            border-width: 1px;
+            border-radius: Radius.md;
+
+            HorizontalLayout {
+                padding-left: Spacing.lg;
+                padding-right: Spacing.lg;
+                spacing: Spacing.md;
+                alignment: center;
+
+                Text {
+                    text: "POS — Checkout Preview (Plan 3 skeleton)";
+                    font-family: Typography.font-family;
+                    font-size: Typography.heading;
+                    font-weight: Typography.semi-bold;
+                    color: Colors.text-primary;
+                    horizontal-stretch: 1;
+                    vertical-alignment: center;
+                }
+
+                Rectangle {
+                    width: 110px; height: 32px;
+                    background: Surfaces.surface-top;
+                    border-color: Surfaces.surface-border;
+                    border-width: 1px;
+                    border-radius: Radius.sm;
+                    TouchArea { clicked => { root.toggle-theme(); } }
+                    Text {
+                        text: "Theme: " + Theme.mode;
+                        font-family: Typography.font-family;
+                        font-size: Typography.caption;
+                        color: Colors.text-primary;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+                Rectangle {
+                    width: 110px; height: 32px;
+                    background: Surfaces.surface-top;
+                    border-color: Surfaces.surface-border;
+                    border-width: 1px;
+                    border-radius: Radius.sm;
+                    TouchArea { clicked => { root.toggle-rtl(); } }
+                    Text {
+                        text: Layout.is-rtl ? "Dir: RTL" : "Dir: LTR";
+                        font-family: Typography.font-family;
+                        font-size: Typography.caption;
+                        color: Colors.text-primary;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+                Rectangle {
+                    width: 110px; height: 32px;
+                    background: Surfaces.surface-top;
+                    border-color: Surfaces.surface-border;
+                    border-width: 1px;
+                    border-radius: Radius.sm;
+                    TouchArea { clicked => { root.cycle-locale(); } }
+                    Text {
+                        text: "Lang: " + Locale.current;
+                        font-family: Typography.font-family;
+                        font-size: Typography.caption;
+                        color: Colors.text-primary;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+
+        // The screen.
+        MainCheckoutScreenV2 {
+            vertical-stretch: 1;
+            categories: root.mock-categories;
+            products: root.mock-products;
+            cart-lines: root.mock-cart-lines;
+
+            brand: "E2Manage POS";
+            terminal-id: "T-001";
+            operator-name: Locale.current == "ar" ? "عبدو" : "Abdu";
+            clock: "14:18";
+            network-state: "online";
+
+            subtotal: "53.500";
+            tax: "0.000";
+            total: "53.500";
+            currency: "LYD";
+            customer-name: "";
+
+            queue-summary: Locale.current == "ar"
+                ? "٣ معاملات في قائمة الانتظار · آخر مزامنة ١٤:١٨"
+                : "3 transactions queued · last sync 14:18";
+            queue-visible: false;
+
+            // Pre-select the most-recently-added line per §5.1 ("auto-select").
+            selected-line-id: "L4";
+        }
+    }
+}
