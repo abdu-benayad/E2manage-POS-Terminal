@@ -1,0 +1,355 @@
+// Button — the foundation interactive primitive.
+//
+// Variants and sizes mirror shadcn/ui; convenience features (loading,
+// icon-leading/trailing, checkable, tooltip) mirror Material UI / Mantine.
+// Reads all visual tokens from the global environment — consumers never
+// pass theme, locale, or font props on every instance.
+
+import { ButtonVariant, ButtonSize, Shape, Tone } from "../enums.slint";
+import { Theme } from "../globals/theme.slint";
+import { Typography } from "../globals/typography.slint";
+import { Sizes } from "../globals/sizes.slint";
+import { Radius } from "../globals/radius.slint";
+import { Spacing } from "../globals/spacing.slint";
+import { Animation } from "../globals/animation.slint";
+import { Locale } from "../globals/locale.slint";
+import { IconFont } from "../globals/icon-font.slint";
+
+export component Button inherits Rectangle {
+    // ===== Public API =====================================================
+
+    /// The visible button text. Empty renders an icon-only button — prefer
+    /// `IconButton` for that case to get the correct square aspect.
+    in property <string> label: "";
+
+    /// Icon name (or codepoint/emoji fallback) shown on the reading-start side.
+    in property <string> icon-leading: "";
+
+    /// Icon name shown on the reading-end side.
+    in property <string> icon-trailing: "";
+
+    /// Visual variant. `default` is the primary action style.
+    in property <ButtonVariant> variant: ButtonVariant.default;
+
+    /// Vertical scale. `md` is the default; `icon` produces a square button.
+    in property <ButtonSize> size: ButtonSize.md;
+
+    /// Corner shape. `default` follows `Theme.button-shape`.
+    in property <Shape> shape: Shape.default;
+
+    /// Optional accent tone — used by callers who want a colored outline or
+    /// ghost button without switching the whole variant.
+    in property <Tone> tone: Tone.default;
+
+    /// Visually muted; blocks click and keyboard activation.
+    in property <bool> disabled: false;
+
+    /// Replaces the label with a spinner and blocks `clicked` while true.
+    /// Width is preserved so the button does not jump when loading toggles.
+    in property <bool> loading: false;
+
+    /// When true, the button stretches to its parent's available width.
+    in property <bool> full-width: false;
+
+    /// When true, the button behaves as a toggle and `checked` controls its
+    /// pressed visual.
+    in property <bool> checkable: false;
+
+    /// Controlled checked state for toggle buttons.
+    in-out property <bool> checked: false;
+
+    /// Hover text shown after a brief delay. Empty disables the tooltip.
+    in property <string> tooltip: "";
+
+    /// Lower bound on button width. `0px` means hug content.
+    /// Named `min-content-width` to avoid shadowing Rectangle's built-in
+    /// `min-width` layout property.
+    in property <length> min-content-width: 0px;
+
+    /// Accessibility label — required when `label` is empty.
+    in property <string> aria-label: "";
+
+    // ===== Callbacks ======================================================
+
+    /// Fires on tap, click, or Enter/Space when focused.
+    callback clicked();
+
+    /// Fires when the physical press state transitions.
+    callback pressed-changed(bool);
+
+    /// Fires when the mouse enters / leaves the button.
+    callback hover-changed(bool);
+
+    /// Fires when keyboard focus is gained or lost.
+    callback focus-changed(bool);
+
+    // ===== Internal derived state =========================================
+
+    // Resolve `Shape.default` against the theme token.
+    property <string> resolved-shape:
+          root.shape == Shape.default ? Theme.button-shape
+        : root.shape == Shape.rounded ? "rounded"
+        : root.shape == Shape.pill    ? "pill"
+        : root.shape == Shape.square  ? "square"
+        : root.shape == Shape.circle  ? "pill"  // circle on a non-square button is treated as pill
+        : Theme.button-shape;
+
+    // Effective height by size.
+    property <length> resolved-height:
+          root.size == ButtonSize.xs   ? Sizes.button-xs
+        : root.size == ButtonSize.sm   ? Sizes.button-sm
+        : root.size == ButtonSize.md   ? Sizes.button-md
+        : root.size == ButtonSize.lg   ? Sizes.button-lg
+        : root.size == ButtonSize.xl   ? Sizes.button-xl
+        : root.size == ButtonSize.icon ? Sizes.icon-button-square
+        : Sizes.button-md;
+
+    // Effective font size by size.
+    property <length> resolved-font-size:
+          root.size == ButtonSize.xs ? Typography.text-xs
+        : root.size == ButtonSize.sm ? Typography.text-sm
+        : root.size == ButtonSize.md ? Typography.text-sm
+        : root.size == ButtonSize.lg ? Typography.text-base
+        : root.size == ButtonSize.xl ? Typography.text-base
+        : Typography.text-sm;
+
+    // Horizontal padding by size. Icon size buttons have no horizontal padding.
+    property <length> resolved-padding:
+          root.size == ButtonSize.icon ? 0px
+        : root.size == ButtonSize.xs   ? Spacing.sm
+        : root.size == ButtonSize.sm   ? Spacing.md
+        : root.size == ButtonSize.md   ? Spacing.lg
+        : root.size == ButtonSize.lg   ? Spacing.xl
+        : root.size == ButtonSize.xl   ? Spacing.xl
+        : Spacing.lg;
+
+    // Effective corner radius from `resolved-shape`.
+    property <length> resolved-radius:
+          root.resolved-shape == "pill"    ? root.resolved-height / 2
+        : root.resolved-shape == "rounded" ? Radius.md
+        : root.resolved-shape == "square"  ? 0px
+        : root.resolved-height / 2;
+
+    // Effective icon glyph size, tracking the font scale.
+    property <length> resolved-icon-size:
+          root.size == ButtonSize.xs ? Sizes.icon-xs
+        : root.size == ButtonSize.sm ? Sizes.icon-sm
+        : root.size == ButtonSize.md ? Sizes.icon-sm
+        : root.size == ButtonSize.lg ? Sizes.icon-md
+        : root.size == ButtonSize.xl ? Sizes.icon-md
+        : Sizes.icon-sm;
+
+    // Variant → color contracts. Outline and ghost get a border or none.
+    property <color> base-bg:
+          root.variant == ButtonVariant.default     ? Theme.primary
+        : root.variant == ButtonVariant.destructive ? Theme.destructive
+        : root.variant == ButtonVariant.secondary   ? Theme.secondary
+        : root.variant == ButtonVariant.outline     ? Theme.surface
+        : root.variant == ButtonVariant.ghost       ? transparent
+        : root.variant == ButtonVariant.link        ? transparent
+        : Theme.primary;
+
+    property <color> hover-bg:
+          root.variant == ButtonVariant.default     ? Theme.primary-hover
+        : root.variant == ButtonVariant.destructive ? Theme.destructive-hover
+        : root.variant == ButtonVariant.secondary   ? Theme.secondary-hover
+        : root.variant == ButtonVariant.outline     ? Theme.accent
+        : root.variant == ButtonVariant.ghost       ? Theme.accent
+        : root.variant == ButtonVariant.link        ? transparent
+        : Theme.primary-hover;
+
+    property <color> foreground-color:
+          root.variant == ButtonVariant.default     ? Theme.primary-foreground
+        : root.variant == ButtonVariant.destructive ? Theme.destructive-foreground
+        : root.variant == ButtonVariant.secondary   ? Theme.secondary-foreground
+        : root.variant == ButtonVariant.outline     ? Theme.foreground
+        : root.variant == ButtonVariant.ghost       ? Theme.foreground
+        : root.variant == ButtonVariant.link        ? Theme.primary
+        : Theme.primary-foreground;
+
+    property <color> resolved-border-color:
+          root.variant == ButtonVariant.outline ? Theme.border : transparent;
+
+    // Effective held-down look from `checked`/`checkable` + physical press.
+    property <bool> visually-pressed: (root.checkable && root.checked) || touch.pressed;
+
+    // Active (currently-rendered) background — drives the animation.
+    property <color> active-bg:
+          root.disabled                  ? root.base-bg
+        : root.visually-pressed          ? root.hover-bg
+        : touch.has-hover                ? root.hover-bg
+        : root.base-bg;
+
+    // ===== Visual layer ===================================================
+
+    // Width strategy: by default, hug content (preferred size = label + padding).
+    // When `full-width` is requested, expand in the enclosing layout via
+    // horizontal-stretch. Consumers placing a Button outside a layout can set
+    // an explicit width at the use-site.
+    horizontal-stretch: root.full-width ? 1.0 : 0.0;
+    preferred-width: root.size == ButtonSize.icon
+        ? root.resolved-height
+        : max(content.preferred-width + 2 * root.resolved-padding, root.min-content-width);
+    height: root.resolved-height;
+    background: root.active-bg;
+    border-radius: root.resolved-radius;
+    border-width: root.variant == ButtonVariant.outline ? Sizes.border-thin : 0px;
+    border-color: root.resolved-border-color;
+    opacity: root.disabled ? 0.5 : 1.0;
+
+    animate background { duration: Animation.fast; easing: ease-out; }
+    animate opacity    { duration: Animation.fast; easing: ease-out; }
+    animate border-color { duration: Animation.fast; easing: ease-out; }
+
+    // Focus ring (drawn outside the button via a slightly larger Rectangle).
+    Rectangle {
+        x: -Sizes.focus-ring-offset;
+        y: -Sizes.focus-ring-offset;
+        width: parent.width + 2 * Sizes.focus-ring-offset;
+        height: parent.height + 2 * Sizes.focus-ring-offset;
+        border-radius: parent.border-radius + Sizes.focus-ring-offset;
+        border-color: Theme.ring;
+        border-width: focus-scope.has-focus ? Sizes.focus-ring : 0px;
+        background: transparent;
+    }
+
+    // Content row: [leading icon] [label] [trailing icon] OR spinner.
+    content := HorizontalLayout {
+        x: root.resolved-padding;
+        y: 0;
+        width: parent.width - 2 * root.resolved-padding;
+        height: parent.height;
+        spacing: Spacing.sm;
+        alignment: center;
+
+        // RTL reverses physical order of leading/trailing.
+        // Slint's HorizontalLayout follows reading direction via Window's
+        // layout-direction; we use explicit if-blocks to keep the API stable.
+
+        if !root.loading && root.icon-leading != "" && !Locale.rtl: Text {
+            text: IconFont.resolve(root.icon-leading);
+            font-family: IconFont.font-family-name();
+            font-size: root.resolved-icon-size;
+            color: root.foreground-color;
+            vertical-alignment: center;
+            horizontal-alignment: center;
+        }
+        if !root.loading && root.icon-trailing != "" && Locale.rtl: Text {
+            text: IconFont.resolve(root.icon-trailing);
+            font-family: IconFont.font-family-name();
+            font-size: root.resolved-icon-size;
+            color: root.foreground-color;
+            vertical-alignment: center;
+            horizontal-alignment: center;
+        }
+
+        if !root.loading && root.label != "": Text {
+            text: root.label;
+            font-family: Locale.current == "ar" ? Typography.font-family-ar : Typography.font-family;
+            font-size: root.resolved-font-size;
+            font-weight: Typography.weight-medium;
+            color: root.foreground-color;
+            vertical-alignment: center;
+            horizontal-alignment: center;
+        }
+
+        if !root.loading && root.icon-trailing != "" && !Locale.rtl: Text {
+            text: IconFont.resolve(root.icon-trailing);
+            font-family: IconFont.font-family-name();
+            font-size: root.resolved-icon-size;
+            color: root.foreground-color;
+            vertical-alignment: center;
+            horizontal-alignment: center;
+        }
+        if !root.loading && root.icon-leading != "" && Locale.rtl: Text {
+            text: IconFont.resolve(root.icon-leading);
+            font-family: IconFont.font-family-name();
+            font-size: root.resolved-icon-size;
+            color: root.foreground-color;
+            vertical-alignment: center;
+            horizontal-alignment: center;
+        }
+
+        // Loading spinner. A rotating glyph would be ideal but Text has no
+        // transform-rotation in 1.14; an opacity pulse is the visual fallback.
+        if root.loading: Rectangle {
+            width: root.resolved-icon-size;
+            height: root.resolved-icon-size;
+            Text {
+                text: IconFont.resolve("loader");
+                font-family: IconFont.font-family-name();
+                font-size: root.resolved-icon-size;
+                color: root.foreground-color;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                opacity: pulse.value;
+            }
+            pulse := Timer {
+                interval: 80ms;
+                running: root.loading;
+                triggered => {
+                    self.direction = self.value >= 1.0 ? -1 : self.value <= 0.35 ? 1 : self.direction;
+                    self.value = clamp(self.value + self.direction * 0.08, 0.35, 1.0);
+                }
+                property <float> value: 1.0;
+                property <int> direction: -1;
+            }
+        }
+    }
+
+    // Link variant — underline on hover.
+    if root.variant == ButtonVariant.link && touch.has-hover: Rectangle {
+        x: root.resolved-padding;
+        y: parent.height - 2px;
+        width: parent.width - 2 * root.resolved-padding;
+        height: 1px;
+        background: root.foreground-color;
+    }
+
+    // ===== Interaction layer =============================================
+
+    touch := TouchArea {
+        enabled: !root.disabled && !root.loading;
+        mouse-cursor: root.disabled || root.loading ? MouseCursor.default : MouseCursor.pointer;
+
+        clicked => {
+            if (root.checkable) { root.checked = !root.checked; }
+            root.clicked();
+        }
+
+        changed has-hover => { root.hover-changed(self.has-hover); }
+        changed pressed   => { root.pressed-changed(self.pressed); }
+    }
+
+    focus-scope := FocusScope {
+        enabled: !root.disabled && !root.loading;
+        key-pressed(event) => {
+            if (event.text == " " || event.text == "\n") {
+                if (root.checkable) { root.checked = !root.checked; }
+                root.clicked();
+                return accept;
+            }
+            return reject;
+        }
+        changed has-focus => { root.focus-changed(self.has-focus); }
+    }
+
+    // ===== Tooltip ========================================================
+
+    if root.tooltip != "" && touch.has-hover && !root.disabled: Rectangle {
+        x: 0;
+        y: parent.height + 4px;
+        width: tooltip-text.preferred-width + 16px;
+        height: tooltip-text.preferred-height + 8px;
+        background: #1e293b;
+        border-radius: Radius.sm;
+        opacity: 0.95;
+        tooltip-text := Text {
+            x: 8px;
+            y: 4px;
+            text: root.tooltip;
+            color: #f8fafc;
+            font-size: Typography.text-xs;
+        }
+    }
+}

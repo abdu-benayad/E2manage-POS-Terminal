@@ -1,0 +1,156 @@
+// Button preview — every variant × size × shape × state × locale in one window.
+// Run: `slint-viewer abdu-slint-ui/previews/button.slint`
+
+import { Button } from "../components/button.slint";
+import { ButtonVariant, ButtonSize, Shape } from "../enums.slint";
+import { Theme } from "../globals/theme.slint";
+import { Locale } from "../globals/locale.slint";
+import { Spacing } from "../globals/spacing.slint";
+import { Typography } from "../globals/typography.slint";
+
+// Bundle the icon fonts so the preview can render glyphs standalone.
+import "../assets/phosphor.ttf";
+import "../assets/lucide.ttf";
+
+component Section inherits VerticalLayout {
+    in property <string> title;
+    spacing: Spacing.sm;
+    Text {
+        text: root.title;
+        font-size: Typography.text-sm;
+        font-weight: Typography.weight-semibold;
+        color: Theme.muted-foreground;
+    }
+}
+
+export component ButtonPreview inherits Window {
+    title: "Button — preview";
+    preferred-width: 1100px;
+    preferred-height: 920px;
+    background: Theme.background;
+
+    in-out property <bool> rtl-toggle: false;
+    changed rtl-toggle => { Locale.rtl = self.rtl-toggle; }
+
+    VerticalLayout {
+        padding: Spacing.xl;
+        spacing: Spacing.xl;
+
+        Text {
+            text: "Button";
+            font-size: Typography.text-xxl;
+            font-weight: Typography.weight-bold;
+            color: Theme.foreground;
+        }
+        Text {
+            text: "Foundation interactive primitive. Variants from shadcn/ui; loading, icon-leading/trailing, checkable, tooltip from Material/Mantine convention.";
+            font-size: Typography.text-sm;
+            color: Theme.muted-foreground;
+            wrap: word-wrap;
+        }
+
+        // --- Variants ----------------------------------------------------
+        Section {
+            title: "Variants";
+            HorizontalLayout {
+                spacing: Spacing.md;
+                Button { label: "Default"; variant: ButtonVariant.default; }
+                Button { label: "Destructive"; variant: ButtonVariant.destructive; }
+                Button { label: "Outline"; variant: ButtonVariant.outline; }
+                Button { label: "Secondary"; variant: ButtonVariant.secondary; }
+                Button { label: "Ghost"; variant: ButtonVariant.ghost; }
+                Button { label: "Link"; variant: ButtonVariant.link; }
+            }
+        }
+
+        // --- Sizes -------------------------------------------------------
+        Section {
+            title: "Sizes";
+            HorizontalLayout {
+                spacing: Spacing.md;
+                alignment: start;
+                Button { label: "xs"; size: ButtonSize.xs; }
+                Button { label: "sm"; size: ButtonSize.sm; }
+                Button { label: "md"; size: ButtonSize.md; }
+                Button { label: "lg"; size: ButtonSize.lg; }
+                Button { label: "xl"; size: ButtonSize.xl; }
+                Button { size: ButtonSize.icon; icon-leading: "check"; aria-label: "Confirm"; }
+            }
+        }
+
+        // --- Shapes ------------------------------------------------------
+        Section {
+            title: "Shapes";
+            HorizontalLayout {
+                spacing: Spacing.md;
+                Button { label: "Rounded"; shape: Shape.rounded; }
+                Button { label: "Pill (default)"; shape: Shape.pill; }
+                Button { label: "Square"; shape: Shape.square; }
+            }
+        }
+
+        // --- With icon ---------------------------------------------------
+        Section {
+            title: "With icon";
+            HorizontalLayout {
+                spacing: Spacing.md;
+                Button { label: "Leading"; icon-leading: "plus"; }
+                Button { label: "Trailing"; icon-trailing: "arrow-right"; }
+                Button { label: "Both"; icon-leading: "search"; icon-trailing: "chevron-down"; }
+                Button { icon-leading: "settings"; size: ButtonSize.icon; aria-label: "Settings"; variant: ButtonVariant.outline; }
+            }
+        }
+
+        // --- States ------------------------------------------------------
+        Section {
+            title: "States";
+            HorizontalLayout {
+                spacing: Spacing.md;
+                Button { label: "Rest"; }
+                Button { label: "Disabled"; disabled: true; }
+                Button { label: "Loading"; loading: true; }
+                Button { label: "Destructive disabled"; variant: ButtonVariant.destructive; disabled: true; }
+                Button { label: "Outline loading"; variant: ButtonVariant.outline; loading: true; }
+            }
+        }
+
+        // --- Checkable ---------------------------------------------------
+        Section {
+            title: "Checkable";
+            HorizontalLayout {
+                spacing: Spacing.md;
+                Button { label: "Bold"; variant: ButtonVariant.outline; checkable: true; }
+                Button { label: "Italic (checked)"; variant: ButtonVariant.outline; checkable: true; checked: true; }
+            }
+        }
+
+        // --- Tooltip -----------------------------------------------------
+        Section {
+            title: "Tooltip — hover over the button";
+            HorizontalLayout {
+                spacing: Spacing.md;
+                Button { label: "Hover me"; tooltip: "I am a tooltip"; }
+                Button { icon-leading: "info"; size: ButtonSize.icon; aria-label: "Info"; tooltip: "Icon button tooltip"; }
+            }
+        }
+
+        // --- RTL toggle --------------------------------------------------
+        Section {
+            title: "RTL toggle — icons swap to the reading-end side";
+            HorizontalLayout {
+                spacing: Spacing.md;
+                alignment: start;
+                Button {
+                    label: rtl-toggle ? "RTL على" : "LTR on";
+                    icon-leading: "plus";
+                    icon-trailing: "arrow-right";
+                }
+                Button {
+                    label: rtl-toggle ? "أوقف RTL" : "Toggle RTL";
+                    variant: ButtonVariant.outline;
+                    clicked => { rtl-toggle = !rtl-toggle; }
+                }
+            }
+        }
+    }
+}
