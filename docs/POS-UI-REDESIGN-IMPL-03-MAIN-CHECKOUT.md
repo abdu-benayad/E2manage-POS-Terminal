@@ -198,8 +198,7 @@ ui/components/atomic/pay_button.slint (Task 0, opacity 0.85 → 0.70)
 
 ui/screens/dev/mod.slint              (Task 8, add 2 exports)
 ui/main.slint                         (Task 9, add 1 export re-shipment)
-src/main.rs                           (Task 9, add `--checkout-preview` argv branch)
-src/lib.rs                            (Task 9, declare `pub mod checkout_preview;`)
+src/main.rs                           (Task 9, declare `mod checkout_preview;` + add `--checkout-preview` argv branch)
 
 docs/POS-UI-REDESIGN-FINDINGS-01-SLINT-RTL.md (Task 10, append verification matrix)
 ```
@@ -1674,11 +1673,10 @@ git branch --show-current
 
 ### Task 9: Rust binary entry — `--checkout-preview`
 
-Add a Rust module `src/checkout_preview.rs` that constructs `CheckoutPreviewWindow`, wires the three toolbar callbacks (theme/rtl/locale cycle, same pattern as `component_gallery.rs`), and runs it. Hook the argv branch in `src/main.rs`. Re-export the window component from `ui/main.slint`. Declare the module in `src/lib.rs`.
+Add a Rust module `src/checkout_preview.rs` that constructs `CheckoutPreviewWindow`, wires the three toolbar callbacks (theme/rtl/locale cycle, same pattern as `component_gallery.rs`), and runs it. Hook the argv branch in `src/main.rs`. Re-export the window component from `ui/main.slint`. Declare the module in `src/main.rs` (binary crate), **not** in `src/lib.rs` — the existing `component_gallery` and `dev_harness` modules are declared in `src/main.rs:7-9`, and the new module must follow the same pattern because `src/checkout_preview.rs` references `crate::CheckoutPreviewWindow` (produced by `slint::include_modules!()` at `src/main.rs:5`) and `crate::locale_detect::detect_locale` (the path that resolves from the binary crate root). Placing the module in `src/lib.rs` would orphan those `crate::` paths.
 
 **Files:**
 - Create: `src/checkout_preview.rs`
-- Modify: `src/lib.rs`
 - Modify: `src/main.rs`
 - Modify: `ui/main.slint`
 
@@ -1737,14 +1735,18 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-- [ ] **Step 2: Declare the module in `src/lib.rs`**
+- [ ] **Step 2: Declare the module in `src/main.rs`**
 
-Find the existing `pub mod component_gallery;` declaration and add the new one directly below it:
+Find the existing `mod component_gallery;` / `mod dev_harness;` / `mod locale_detect;` block near lines 7–9 and add the new module declaration directly below them:
 
 ```rust
-pub mod component_gallery;
-pub mod checkout_preview;
+mod component_gallery;
+mod dev_harness;
+mod locale_detect;
+mod checkout_preview;
 ```
+
+Do **not** add a corresponding `pub mod checkout_preview;` to `src/lib.rs`. The library crate has no use for this module — it is binary-crate-only, same as `component_gallery` and `dev_harness`.
 
 - [ ] **Step 3: Wire the argv branch in `src/main.rs`**
 
@@ -1778,7 +1780,7 @@ Expected: clean build, no warnings. The Plan 2 cleanup landed a one-shot `cargo 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/checkout_preview.rs src/lib.rs src/main.rs ui/main.slint
+git add src/checkout_preview.rs src/main.rs ui/main.slint
 git commit -m "$(cat <<'EOF'
 feat(ui): plan 3 task 9 — --checkout-preview binary entry
 
