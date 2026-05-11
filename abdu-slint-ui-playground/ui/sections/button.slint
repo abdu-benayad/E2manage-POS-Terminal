@@ -24,6 +24,8 @@ export component ButtonSection inherits Rectangle {
     in-out property <bool>   v-checked: false;
     in-out property <string> v-tooltip: "";
     in-out property <string> v-aria-label: "";
+    in-out property <string> v-bg-color: "none";   // "none" | "red" | "green" | "blue" | "amber" | "purple"
+    in-out property <bool>   v-elevated: true;
 
     // ===== Derived enum values ==========================================
     property <ButtonVariant> variant-enum:
@@ -47,6 +49,18 @@ export component ButtonSection inherits Rectangle {
         : v-shape == "pill"    ? Shape.pill
         : v-shape == "square"  ? Shape.square
         : Shape.default;
+
+    // bg-color preset palette. A real color picker would be richer; the
+    // playground exposes a curated palette as a discoverable starting point.
+    property <color> bg-color-resolved:
+          v-bg-color == "red"    ? #ef4444
+        : v-bg-color == "green"  ? #10b981
+        : v-bg-color == "blue"   ? #3b82f6
+        : v-bg-color == "amber"  ? #f59e0b
+        : v-bg-color == "purple" ? #8b5cf6
+        : v-bg-color == "pink"   ? #ec4899
+        : v-bg-color == "slate"  ? #475569
+        : transparent;
 
     property <Tone> tone-enum:
           v-tone == "primary"     ? Tone.primary
@@ -89,6 +103,8 @@ export component ButtonSection inherits Rectangle {
                         checked: root.v-checked;
                         tooltip: root.v-tooltip;
                         aria-label: root.v-aria-label;
+                        bg-color: root.bg-color-resolved;
+                        elevated: root.v-elevated;
                     }
                 }
 
@@ -117,6 +133,8 @@ export component ButtonSection inherits Rectangle {
                                 + (root.v-checked     ? "    checked: true;\n" : "")
                                 + (root.v-tooltip != ""    ? "    tooltip: \"" + root.v-tooltip + "\";\n" : "")
                                 + (root.v-aria-label != "" ? "    aria-label: \"" + root.v-aria-label + "\";\n" : "")
+                                + (root.v-bg-color != "none" ? "    bg-color: " + root.v-bg-color + ";  // preset\n" : "")
+                                + (!root.v-elevated ? "    elevated: false;\n" : "")
                                 + "}";
                             color: #f8fafc;
                             font-family: "monospace";
@@ -209,6 +227,21 @@ export component ButtonSection inherits Rectangle {
                         text: root.v-aria-label;
                         edited(s) => { root.v-aria-label = s; }
                     }
+
+                    Text { text: "bg-color (override)"; font-size: 12px; color: Theme.muted-foreground; }
+                    ComboBox {
+                        model: ["none", "red", "green", "blue", "amber", "purple", "pink", "slate"];
+                        current-index: root.v-bg-color == "red"    ? 1
+                                     : root.v-bg-color == "green"  ? 2
+                                     : root.v-bg-color == "blue"   ? 3
+                                     : root.v-bg-color == "amber"  ? 4
+                                     : root.v-bg-color == "purple" ? 5
+                                     : root.v-bg-color == "pink"   ? 6
+                                     : root.v-bg-color == "slate"  ? 7 : 0;
+                        selected(v) => { root.v-bg-color = v; }
+                    }
+
+                    CheckBox { text: "elevated (shadow)"; checked: root.v-elevated; toggled => { root.v-elevated = self.checked; } }
                 }
             }
         }

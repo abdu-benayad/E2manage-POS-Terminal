@@ -11,7 +11,7 @@
 // abdu-slint-ui can be debugged without breaking the harness. Each section
 // renders abdu-slint-ui components directly in its own preview pane.
 
-import { Theme, Locale, IconFont, IconFamily } from "@abdu-slint-ui";
+import { Theme, Locale, IconFont, IconFamily, CurrencyFormat } from "@abdu-slint-ui";
 import { ComboBox, CheckBox, HorizontalBox, VerticalBox, ListView, StandardListView, StandardButton, ScrollView } from "std-widgets.slint";
 import { ButtonSection } from "sections/button.slint";
 
@@ -26,22 +26,33 @@ export component PlaygroundWindow inherits Window {
     // Currently-selected component section.
     in-out property <string> selected-section: "button";
 
-    // --- Global token state, mirrored to abdu-slint-ui globals. ---
-    in-out property <string> tok-button-shape: "pill";
-    in-out property <string> tok-icon-button-shape: "circle";
-    in-out property <string> tok-card-shape: "rounded";
-    in-out property <string> tok-density: "default";
-    in-out property <string> tok-currency: "USD";
-    in-out property <bool>   tok-rtl: false;
-    in-out property <string> tok-icon-family: "phosphor";
+    // Toolbar ComboBoxes write directly to globals via `selected()` and read
+    // back via `current-index`. The previous intermediate-property pattern
+    // hit a stale-value race: when the user picks a value equal to the
+    // intermediate's current value, `changed` does not fire and the global
+    // is never updated.
 
-    changed tok-button-shape       => { Theme.button-shape       = self.tok-button-shape; }
-    changed tok-icon-button-shape  => { Theme.icon-button-shape  = self.tok-icon-button-shape; }
-    changed tok-card-shape         => { Theme.card-shape         = self.tok-card-shape; }
-    changed tok-density            => { Theme.density            = self.tok-density; }
-    changed tok-rtl                => { Locale.rtl               = self.tok-rtl; }
-    changed tok-icon-family => {
-        IconFont.family = self.tok-icon-family == "lucide" ? IconFamily.lucide : IconFamily.phosphor;
+    function button-shape-index() -> int {
+        return Theme.button-shape == "rounded" ? 0
+             : Theme.button-shape == "square"  ? 2
+             : 1; // "pill"
+    }
+    function icon-button-shape-index() -> int {
+        return Theme.icon-button-shape == "rounded" ? 0
+             : Theme.icon-button-shape == "pill"    ? 1
+             : Theme.icon-button-shape == "square"  ? 3
+             : 2; // "circle"
+    }
+    function card-shape-index() -> int {
+        return Theme.card-shape == "square" ? 1 : 0; // "rounded"
+    }
+    function density-index() -> int {
+        return Theme.density == "compact"     ? 0
+             : Theme.density == "comfortable" ? 2
+             : 1; // "default"
+    }
+    function icon-family-index() -> int {
+        return IconFont.family == IconFamily.lucide ? 1 : 0; // phosphor
     }
 
     HorizontalLayout {
@@ -127,8 +138,8 @@ export component PlaygroundWindow inherits Window {
                         Text { text: "Button shape:"; vertical-alignment: center; font-size: 12px; }
                         ComboBox {
                             model: ["rounded", "pill", "square"];
-                            current-value: root.tok-button-shape;
-                            selected(v) => { root.tok-button-shape = v; }
+                            current-index: root.button-shape-index();
+                            selected(v) => { Theme.button-shape = v; }
                         }
                     }
                     HorizontalBox {
@@ -136,8 +147,8 @@ export component PlaygroundWindow inherits Window {
                         Text { text: "Icon-btn:"; vertical-alignment: center; font-size: 12px; }
                         ComboBox {
                             model: ["rounded", "pill", "circle", "square"];
-                            current-value: root.tok-icon-button-shape;
-                            selected(v) => { root.tok-icon-button-shape = v; }
+                            current-index: root.icon-button-shape-index();
+                            selected(v) => { Theme.icon-button-shape = v; }
                         }
                     }
                     HorizontalBox {
@@ -145,8 +156,8 @@ export component PlaygroundWindow inherits Window {
                         Text { text: "Card:"; vertical-alignment: center; font-size: 12px; }
                         ComboBox {
                             model: ["rounded", "square"];
-                            current-value: root.tok-card-shape;
-                            selected(v) => { root.tok-card-shape = v; }
+                            current-index: root.card-shape-index();
+                            selected(v) => { Theme.card-shape = v; }
                         }
                     }
                     HorizontalBox {
@@ -154,8 +165,8 @@ export component PlaygroundWindow inherits Window {
                         Text { text: "Density:"; vertical-alignment: center; font-size: 12px; }
                         ComboBox {
                             model: ["compact", "default", "comfortable"];
-                            current-value: root.tok-density;
-                            selected(v) => { root.tok-density = v; }
+                            current-index: root.density-index();
+                            selected(v) => { Theme.density = v; }
                         }
                     }
                     HorizontalBox {
@@ -163,8 +174,10 @@ export component PlaygroundWindow inherits Window {
                         Text { text: "Currency:"; vertical-alignment: center; font-size: 12px; }
                         ComboBox {
                             model: ["USD", "EUR", "SAR", "MAD"];
-                            current-value: root.tok-currency;
-                            selected(v) => { root.tok-currency = v; }
+                            current-index: CurrencyFormat.currency == "EUR" ? 1
+                                         : CurrencyFormat.currency == "SAR" ? 2
+                                         : CurrencyFormat.currency == "MAD" ? 3 : 0;
+                            selected(v) => { CurrencyFormat.currency = v; }
                         }
                     }
                     HorizontalBox {
@@ -172,16 +185,18 @@ export component PlaygroundWindow inherits Window {
                         Text { text: "Icons:"; vertical-alignment: center; font-size: 12px; }
                         ComboBox {
                             model: ["phosphor", "lucide"];
-                            current-value: root.tok-icon-family;
-                            selected(v) => { root.tok-icon-family = v; }
+                            current-index: root.icon-family-index();
+                            selected(v) => {
+                                IconFont.family = v == "lucide" ? IconFamily.lucide : IconFamily.phosphor;
+                            }
                         }
                     }
                     HorizontalBox {
                         spacing: 6px;
                         CheckBox {
                             text: "RTL";
-                            checked: root.tok-rtl;
-                            toggled => { root.tok-rtl = self.checked; }
+                            checked: Locale.rtl;
+                            toggled => { Locale.rtl = self.checked; }
                         }
                     }
                 }

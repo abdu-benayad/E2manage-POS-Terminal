@@ -69,6 +69,17 @@ export component Button inherits Rectangle {
     /// Accessibility label — required when `label` is empty.
     in property <string> aria-label: "";
 
+    /// Custom background color override. When not transparent, replaces the
+    /// variant's resolved background. The variant still controls border and
+    /// text color, so consumers can override one channel without rewriting
+    /// the whole color story. Use `tone` for preset color schemes.
+    in property <color> bg-color: transparent;
+
+    /// Drop-shadow elevation on solid variants (default/destructive/secondary).
+    /// `true` adds Theme.shadow-sm at rest and a slightly deeper shadow on
+    /// hover. Outline/ghost/link variants ignore this property.
+    in property <bool> elevated: true;
+
     // ===== Callbacks ======================================================
 
     /// Fires on tap, click, or Enter/Space when focused.
@@ -139,8 +150,31 @@ export component Button inherits Rectangle {
         : root.size == ButtonSize.xl ? Sizes.icon-md
         : Sizes.icon-sm;
 
+    // Tone resolves to a single color family that overrides the variant's
+    // default palette. `default` means "use the variant's normal colors".
+    property <color> tone-color:
+          root.tone == Tone.primary     ? Theme.primary
+        : root.tone == Tone.success     ? Theme.success
+        : root.tone == Tone.warning     ? Theme.warning
+        : root.tone == Tone.destructive ? Theme.destructive
+        : root.tone == Tone.info        ? Theme.info
+        : root.tone == Tone.muted       ? Theme.muted-foreground
+        : transparent; // sentinel: tone is `default`, no override
+
+    property <color> tone-foreground:
+          root.tone == Tone.primary     ? Theme.primary-foreground
+        : root.tone == Tone.success     ? Theme.success-foreground
+        : root.tone == Tone.warning     ? Theme.warning-foreground
+        : root.tone == Tone.destructive ? Theme.destructive-foreground
+        : root.tone == Tone.info        ? Theme.info-foreground
+        : root.tone == Tone.muted       ? Theme.surface
+        : transparent;
+
+    property <bool> tone-active: root.tone != Tone.default;
+
     // Variant → color contracts. Outline and ghost get a border or none.
-    property <color> base-bg:
+    // When a tone is set, tone-color replaces the variant's primary fill.
+    property <color> variant-base-bg:
           root.variant == ButtonVariant.default     ? Theme.primary
         : root.variant == ButtonVariant.destructive ? Theme.destructive
         : root.variant == ButtonVariant.secondary   ? Theme.secondary
@@ -149,7 +183,7 @@ export component Button inherits Rectangle {
         : root.variant == ButtonVariant.link        ? transparent
         : Theme.primary;
 
-    property <color> hover-bg:
+    property <color> variant-hover-bg:
           root.variant == ButtonVariant.default     ? Theme.primary-hover
         : root.variant == ButtonVariant.destructive ? Theme.destructive-hover
         : root.variant == ButtonVariant.secondary   ? Theme.secondary-hover
@@ -158,7 +192,7 @@ export component Button inherits Rectangle {
         : root.variant == ButtonVariant.link        ? transparent
         : Theme.primary-hover;
 
-    property <color> foreground-color:
+    property <color> variant-foreground:
           root.variant == ButtonVariant.default     ? Theme.primary-foreground
         : root.variant == ButtonVariant.destructive ? Theme.destructive-foreground
         : root.variant == ButtonVariant.secondary   ? Theme.secondary-foreground
@@ -167,18 +201,69 @@ export component Button inherits Rectangle {
         : root.variant == ButtonVariant.link        ? Theme.primary
         : Theme.primary-foreground;
 
+    // Solid-fill variants take the tone as their bg; outline/ghost/link
+    // borrow the tone for border/text so the consumer can get a colored
+    // outline button via `variant: outline; tone: success;`.
+    property <bool> variant-is-solid:
+        root.variant == ButtonVariant.default
+        || root.variant == ButtonVariant.destructive
+        || root.variant == ButtonVariant.secondary;
+
+    property <color> base-bg:
+          !root.tone-active            ? root.variant-base-bg
+        : root.variant-is-solid        ? root.tone-color
+        : root.variant == ButtonVariant.outline ? Theme.surface
+        : transparent;
+
+    property <color> hover-bg:
+          !root.tone-active            ? root.variant-hover-bg
+        : root.variant-is-solid        ? root.tone-color.darker(15%)
+        : root.tone-color.with-alpha(0.12);
+
+    property <color> foreground-color:
+          !root.tone-active                              ? root.variant-foreground
+        : root.variant-is-solid                          ? root.tone-foreground
+        : root.variant == ButtonVariant.link             ? root.tone-color
+        : root.tone-color; // outline + ghost text matches tone
+
     property <color> resolved-border-color:
-          root.variant == ButtonVariant.outline ? Theme.border : transparent;
+          root.variant != ButtonVariant.outline ? transparent
+        : root.tone-active                      ? root.tone-color
+        : Theme.border;
 
     // Effective held-down look from `checked`/`checkable` + physical press.
     property <bool> visually-pressed: (root.checkable && root.checked) || touch.pressed;
 
     // Active (currently-rendered) background — drives the animation.
-    property <color> active-bg:
+    // `bg-color` overrides the resolved bg when set to anything non-transparent.
+    property <color> active-bg-resolved:
           root.disabled                  ? root.base-bg
         : root.visually-pressed          ? root.hover-bg
         : touch.has-hover                ? root.hover-bg
         : root.base-bg;
+    // Color equality isn't a Slint primitive — checking alpha is the
+    // idiomatic way to test whether a color property was set.
+    property <bool>  bg-override-active: root.bg-color.alpha > 0;
+    property <color> active-bg:
+          !root.bg-override-active ? root.active-bg-resolved
+        : root.disabled            ? root.bg-color
+        : (root.visually-pressed || touch.has-hover) ? root.bg-color.darker(12%)
+        : root.bg-color;
+
+    // Elevation: solid variants get a subtle drop shadow that deepens on hover.
+    property <bool>   shadow-applies: root.elevated && root.variant-is-solid && !root.disabled;
+    property <length> active-shadow-blur:
+        !root.shadow-applies ? 0px
+        : touch.has-hover    ? Theme.shadow-md-blur
+        : Theme.shadow-sm-blur;
+    property <length> active-shadow-y:
+        !root.shadow-applies ? 0px
+        : touch.has-hover    ? Theme.shadow-md-y
+        : Theme.shadow-sm-y;
+    property <color> active-shadow-color:
+        !root.shadow-applies ? transparent
+        : touch.has-hover    ? Theme.shadow-md-color
+        : Theme.shadow-sm-color;
 
     // ===== Visual layer ===================================================
 
@@ -195,11 +280,15 @@ export component Button inherits Rectangle {
     border-radius: root.resolved-radius;
     border-width: root.variant == ButtonVariant.outline ? Sizes.border-thin : 0px;
     border-color: root.resolved-border-color;
+    drop-shadow-blur:  root.active-shadow-blur;
+    drop-shadow-offset-y: root.active-shadow-y;
+    drop-shadow-color: root.active-shadow-color;
     opacity: root.disabled ? 0.5 : 1.0;
 
-    animate background { duration: Animation.fast; easing: ease-out; }
-    animate opacity    { duration: Animation.fast; easing: ease-out; }
-    animate border-color { duration: Animation.fast; easing: ease-out; }
+    animate background       { duration: Animation.fast; easing: ease-out; }
+    animate opacity          { duration: Animation.fast; easing: ease-out; }
+    animate border-color     { duration: Animation.fast; easing: ease-out; }
+    animate drop-shadow-blur { duration: Animation.fast; easing: ease-out; }
 
     // Focus ring (drawn outside the button via a slightly larger Rectangle).
     Rectangle {
@@ -337,19 +426,25 @@ export component Button inherits Rectangle {
     // ===== Tooltip ========================================================
 
     if root.tooltip != "" && touch.has-hover && !root.disabled: Rectangle {
-        x: 0;
-        y: parent.height + 4px;
+        // Render above the button. Tooltips below tend to collide with
+        // adjacent layout siblings (forms, panels) and z-order behind them.
+        x: (parent.width - self.width) / 2;
+        y: -self.height - 6px;
         width: tooltip-text.preferred-width + 16px;
         height: tooltip-text.preferred-height + 8px;
-        background: #1e293b;
+        background: Theme.tooltip-background;
         border-radius: Radius.sm;
-        opacity: 0.95;
+        drop-shadow-blur: Theme.shadow-md-blur;
+        drop-shadow-offset-y: Theme.shadow-md-y;
+        drop-shadow-color: Theme.shadow-md-color;
+        opacity: 0.96;
         tooltip-text := Text {
             x: 8px;
             y: 4px;
             text: root.tooltip;
-            color: #f8fafc;
+            color: Theme.tooltip-foreground;
             font-size: Typography.text-xs;
+            font-family: Typography.font-family;
         }
     }
 }
