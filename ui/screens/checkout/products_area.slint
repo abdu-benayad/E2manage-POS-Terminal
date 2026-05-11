@@ -75,33 +75,36 @@ export component ProductsArea inherits Panel {
         }
 
         // Product grid, scrollable. Four columns at any width above ~720 dp.
+        // Slint 1.14 forbids `for`/`if` directly under GridLayout, so we host
+        // the iteration inside a plain Rectangle and compute each tile's
+        // x / y from its index. Container `min-height` grows with row count
+        // so the surrounding ScrollView can size its scrolling extent.
         ScrollView {
             vertical-stretch: 1;
-            VerticalLayout {
-                spacing: Spacing.sm;
+            Rectangle {
+                property <length> tile-spacing: Spacing.sm;
+                property <length> tile-height: 120px;
+                property <int> col-count: 4;
+                property <length> tile-width: (self.width - (col-count - 1) * tile-spacing) / col-count;
+                // Integer ceiling: (n + col-count - 1) / col-count.
+                property <int> row-count: (root.products.length + col-count - 1) / col-count;
 
-                // Render in rows of 4. Slint has no native 'chunks' iter,
-                // so we render every tile and let the grid wrap by
-                // computing column index. For a skeleton with <= 24 tiles
-                // we hard-render four columns via 6 HorizontalLayouts
-                // bounded by the input length. Simpler: a single
-                // HorizontalLayout with `wrap` is not a Slint primitive,
-                // so we use a GridLayout with explicit `col`/`row`
-                // assignments.
-                GridLayout {
-                    spacing: Spacing.sm;
-                    for prod[i] in root.products: ProductTile {
-                        col: mod(i, 4);
-                        row: floor(i / 4);
-                        height: 120px;
-                        name: prod.name;
-                        price: prod.price;
-                        currency: prod.currency;
-                        category-accent: prod.category_accent;
-                        disabled: prod.disabled;
-                        out-of-stock: prod.out_of_stock;
-                        clicked => { root.product-tapped(prod.id); }
-                    }
+                min-height: row-count > 0
+                    ? row-count * (tile-height + tile-spacing) - tile-spacing
+                    : 0px;
+
+                for prod[i] in root.products: ProductTile {
+                    x: mod(i, parent.col-count) * (parent.tile-width + parent.tile-spacing);
+                    y: floor(i / parent.col-count) * (parent.tile-height + parent.tile-spacing);
+                    width: parent.tile-width;
+                    height: parent.tile-height;
+                    name: prod.name;
+                    price: prod.price;
+                    currency: prod.currency;
+                    category-accent: prod.category_accent;
+                    disabled: prod.disabled;
+                    out-of-stock: prod.out_of_stock;
+                    clicked => { root.product-tapped(prod.id); }
                 }
             }
         }
