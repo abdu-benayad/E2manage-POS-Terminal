@@ -1,0 +1,27 @@
+// Typography — font families, sizes, and weights.
+//
+// Consumers may override `font-family` and `font-family-ar` at startup
+// to match the host application's bundled fonts. The scale and weights
+// are fixed tokens shared across components.
+
+export global Typography {
+    // --- Font families (consumer-configurable) ---
+    in-out property <string> font-family: "Inter, system-ui, -apple-system, sans-serif";
+    in-out property <string> font-family-ar: "Cairo, Tajawal, Noto Sans Arabic, sans-serif";
+
+    // --- Size scale ---
+    out property <length> text-xs: 12px;
+    out property <length> text-sm: 14px;
+    out property <length> text-base: 16px;
+    out property <length> text-lg: 18px;
+    out property <length> text-xl: 20px;
+    out property <length> text-xxl: 24px;       // doc-table "text-2xl"
+    out property <length> text-xxxl: 32px;      // doc-table "text-3xl"
+    out property <length> text-display: 48px;
+
+    // --- Weights ---
+    out property <int> weight-regular: 400;
+    out property <int> weight-medium: 500;
+    out property <int> weight-semibold: 600;
+    out property <int> weight-bold: 700;
+}

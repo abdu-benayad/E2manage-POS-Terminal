@@ -1,0 +1,14 @@
+// Animation — duration tokens.
+//
+// Easings are Slint built-ins (`ease-out`, `ease-in`, `ease-in-out`,
+// `ease`). Components use `ease-out` for discrete state changes and
+// `ease-in-out` for continuous animations (pulses, transitions).
+
+export global Animation {
+    out property <duration> instant: 0ms;
+    out property <duration> fast: 120ms;
+    out property <duration> normal: 200ms;
+    out property <duration> slow: 300ms;
+    out property <duration> slower: 500ms;
+    out property <duration> pulse: 1500ms;
+}

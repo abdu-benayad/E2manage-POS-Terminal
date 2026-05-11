@@ -1,0 +1,27 @@
+// abdu-slint-ui — public API entry point.
+// Consumers import everything from this single file:
+//   import { Button, Toggle, Theme, Locale } from "abdu-slint-ui/lib.slint";
+
+// Bundled icon fonts. Slint's compile-time font import registers them
+// under their TTF name-table family names ("Phosphor", "lucide").
+import "assets/phosphor.ttf";
+import "assets/lucide.ttf";
+
+// Enums
+export { ButtonVariant, ButtonSize, Shape, Tone, Elevation, Density, Emphasis, ToggleSize, TonalSurface, IconFamily } from "enums.slint";
+
+// Globals
+export { Theme } from "globals/theme.slint";
+export { Typography } from "globals/typography.slint";
+export { Spacing } from "globals/spacing.slint";
+export { Radius } from "globals/radius.slint";
+export { Sizes } from "globals/sizes.slint";
+export { Animation } from "globals/animation.slint";
+export { Locale } from "globals/locale.slint";
+export { CurrencyFormat } from "globals/currency-format.slint";
+export { IconFont } from "globals/icon-font.slint";
+
+// Components — added as each lands in §1.3
+
+// Placeholder retained until at least one real component is exported.
+export component _LibPlaceholder { }

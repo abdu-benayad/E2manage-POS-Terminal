@@ -1,0 +1,14 @@
+// CurrencyFormat — locale-independent currency formatting tokens.
+//
+// Consumers populate at startup. The Money/MoneyInput primitives (Phase 2)
+// read every property here. Components rendering numeric+unit pairs
+// (`Money`, `Quantity`, `MoneyInput`) compose them as LTR sub-flows
+// regardless of `Locale.rtl` — see README §Numeric content rendering.
+
+export global CurrencyFormat {
+    in-out property <string> currency: "USD";              // ISO 4217 or symbol
+    in-out property <string> symbol-position: "leading";   // "leading" | "trailing"
+    in-out property <int>    decimals: 2;
+    in-out property <string> grouping: ",";                // thousands separator
+    in-out property <string> decimal-mark: ".";
+}

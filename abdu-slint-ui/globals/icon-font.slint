@@ -1,0 +1,156 @@
+// IconFont — dual-family icon resolution.
+//
+// Two icon fonts ship bundled: Phosphor (regular weight, MIT) and Lucide (ISC).
+// Consumers flip `family` at runtime to compare visually; components read
+// `font-family-name()` for the Text element's font-family property, and
+// `resolve(name)` for the codepoint string of a library-canonical icon name.
+//
+// Library-canonical icon names are documented in icons-supported.md.
+// Names not in the canonical set fall through and are returned as-is — so
+// consumers can pass a raw codepoint or an emoji as a last resort.
+//
+// The Rust consumer must register both font files with Slint at startup
+// before any window is shown. The library exposes
+// `abdu_slint_ui::register_fonts()` for this purpose.
+
+import { IconFamily } from "../enums.slint";
+
+export global IconFont {
+    in-out property <IconFamily> family: IconFamily.phosphor;
+
+    pure public function font-family-name() -> string {
+        return family == IconFamily.lucide ? "lucide" : "Phosphor";
+    }
+
+    pure public function resolve(name: string) -> string {
+        return family == IconFamily.lucide ? lucide-codepoint(name) : phosphor-codepoint(name);
+    }
+
+    pure public function phosphor-codepoint(name: string) -> string {
+        return
+              name == "check" ? "\u{e182}"
+            : name == "x" ? "\u{e4f6}"
+            : name == "close" ? "\u{e4f6}"
+            : name == "chevron-left" ? "\u{e138}"
+            : name == "chevron-right" ? "\u{e13a}"
+            : name == "chevron-up" ? "\u{e13c}"
+            : name == "chevron-down" ? "\u{e136}"
+            : name == "arrow-left" ? "\u{e058}"
+            : name == "arrow-right" ? "\u{e06c}"
+            : name == "arrow-up" ? "\u{e08e}"
+            : name == "arrow-down" ? "\u{e03e}"
+            : name == "plus" ? "\u{e3d4}"
+            : name == "minus" ? "\u{e32a}"
+            : name == "search" ? "\u{e30c}"
+            : name == "menu" ? "\u{e2f0}"
+            : name == "more-horizontal" ? "\u{e1fe}"
+            : name == "more-vertical" ? "\u{e208}"
+            : name == "settings" ? "\u{e272}"
+            : name == "user" ? "\u{e4c2}"
+            : name == "users" ? "\u{e4d6}"
+            : name == "home" ? "\u{e2c2}"
+            : name == "mail" ? "\u{e214}"
+            : name == "phone" ? "\u{e3b8}"
+            : name == "message-circle" ? "\u{e168}"
+            : name == "heart" ? "\u{e2a8}"
+            : name == "star" ? "\u{e46a}"
+            : name == "bell" ? "\u{e0ce}"
+            : name == "lock" ? "\u{e2fa}"
+            : name == "unlock" ? "\u{e306}"
+            : name == "eye" ? "\u{e220}"
+            : name == "eye-off" ? "\u{e224}"
+            : name == "trash" ? "\u{e4a6}"
+            : name == "edit" ? "\u{e3b4}"
+            : name == "copy" ? "\u{e1ca}"
+            : name == "info" ? "\u{e2ce}"
+            : name == "help-circle" ? "\u{e3e8}"
+            : name == "alert-triangle" ? "\u{e4e0}"
+            : name == "alert-circle" ? "\u{e4e2}"
+            : name == "shopping-cart" ? "\u{e420}"
+            : name == "credit-card" ? "\u{e1d2}"
+            : name == "receipt" ? "\u{e3ec}"
+            : name == "calendar" ? "\u{e108}"
+            : name == "clock" ? "\u{e19a}"
+            : name == "globe" ? "\u{e288}"
+            : name == "log-in" ? "\u{e428}"
+            : name == "log-out" ? "\u{e42a}"
+            : name == "refresh" ? "\u{e094}"
+            : name == "loader" ? "\u{eb44}"
+            : name == "moon" ? "\u{e330}"
+            : name == "sun" ? "\u{e472}"
+            : name == "printer" ? "\u{e3dc}"
+            : name == "qr-code" ? "\u{e3e6}"
+            : name == "filter" ? "\u{e266}"
+            : name == "list" ? "\u{e2f4}"
+            : name == "grid" ? "\u{e296}"
+            : name == "chevrons-left" ? "\u{e128}"
+            : name == "chevrons-right" ? "\u{e12a}"
+            : name == "check-circle" ? "\u{e184}"
+            : name == "x-circle" ? "\u{e4f8}"
+            : name;
+    }
+
+    pure public function lucide-codepoint(name: string) -> string {
+        return
+              name == "check" ? "\u{e06c}"
+            : name == "x" ? "\u{e1b2}"
+            : name == "close" ? "\u{e1b2}"
+            : name == "chevron-left" ? "\u{e06e}"
+            : name == "chevron-right" ? "\u{e06f}"
+            : name == "chevron-up" ? "\u{e070}"
+            : name == "chevron-down" ? "\u{e06d}"
+            : name == "arrow-left" ? "\u{e048}"
+            : name == "arrow-right" ? "\u{e049}"
+            : name == "arrow-up" ? "\u{e04a}"
+            : name == "arrow-down" ? "\u{e042}"
+            : name == "plus" ? "\u{e13d}"
+            : name == "minus" ? "\u{e11c}"
+            : name == "search" ? "\u{e151}"
+            : name == "menu" ? "\u{e115}"
+            : name == "more-horizontal" ? "\u{e0b6}"
+            : name == "more-vertical" ? "\u{e0b7}"
+            : name == "settings" ? "\u{e154}"
+            : name == "user" ? "\u{e19f}"
+            : name == "users" ? "\u{e1a4}"
+            : name == "home" ? "\u{e0f5}"
+            : name == "mail" ? "\u{e10f}"
+            : name == "phone" ? "\u{e133}"
+            : name == "message-circle" ? "\u{e116}"
+            : name == "heart" ? "\u{e0f2}"
+            : name == "star" ? "\u{e176}"
+            : name == "bell" ? "\u{e059}"
+            : name == "lock" ? "\u{e10b}"
+            : name == "unlock" ? "\u{e10c}"
+            : name == "eye" ? "\u{e0ba}"
+            : name == "eye-off" ? "\u{e0bb}"
+            : name == "trash" ? "\u{e18e}"
+            : name == "edit" ? "\u{e1f9}"
+            : name == "copy" ? "\u{e09e}"
+            : name == "info" ? "\u{e0f9}"
+            : name == "help-circle" ? "\u{e082}"
+            : name == "alert-triangle" ? "\u{e193}"
+            : name == "alert-circle" ? "\u{e077}"
+            : name == "shopping-cart" ? "\u{e15c}"
+            : name == "credit-card" ? "\u{e0aa}"
+            : name == "receipt" ? "\u{e3d3}"
+            : name == "calendar" ? "\u{e063}"
+            : name == "clock" ? "\u{e087}"
+            : name == "globe" ? "\u{e0e8}"
+            : name == "log-in" ? "\u{e10d}"
+            : name == "log-out" ? "\u{e10e}"
+            : name == "refresh" ? "\u{e145}"
+            : name == "loader" ? "\u{e109}"
+            : name == "moon" ? "\u{e11e}"
+            : name == "sun" ? "\u{e178}"
+            : name == "printer" ? "\u{e141}"
+            : name == "qr-code" ? "\u{e1df}"
+            : name == "filter" ? "\u{e0dc}"
+            : name == "list" ? "\u{e106}"
+            : name == "grid" ? "\u{e4ff}"
+            : name == "chevrons-left" ? "\u{e072}"
+            : name == "chevrons-right" ? "\u{e073}"
+            : name == "check-circle" ? "\u{e226}"
+            : name == "x-circle" ? "\u{e084}"
+            : name;
+    }
+}

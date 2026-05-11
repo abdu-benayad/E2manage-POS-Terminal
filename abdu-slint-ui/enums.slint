@@ -1,0 +1,77 @@
+// Public enum definitions shared across components.
+// Variants follow CLAUDE.md naming: kebab-case or lowercase.
+
+export enum ButtonVariant {
+    default,        // primary action — solid near-black
+    destructive,    // red, for destructive actions
+    outline,        // bordered, transparent background
+    secondary,      // muted background, dark foreground
+    ghost,          // transparent until hover
+    link,           // text-only, underline on hover
+}
+
+export enum ButtonSize {
+    xs,    // h-7, text-xs
+    sm,    // h-9, text-sm
+    md,    // h-10, text-sm (default)
+    lg,    // h-11, text-base
+    xl,    // h-12, text-base
+    icon,  // square (h-10 w-10), icon-only
+}
+
+export enum Shape {
+    default,   // sentinel — follows theme token
+    rounded,   // Radius.md
+    pill,      // height/2 — capsule
+    square,    // 0 radius
+    circle,    // 1:1 + pill — for icon variants only
+}
+
+export enum Tone {
+    default,
+    primary,
+    success,
+    warning,
+    destructive,
+    info,
+    muted,
+}
+
+export enum Elevation {
+    none,
+    sm,    // subtle, e.g. cards at rest
+    md,    // hovered cards, sticky surfaces
+    lg,    // dialogs, popovers
+    xl,    // toasts, top-level overlays
+}
+
+export enum Density {
+    compact,        // tighter padding/heights
+    default,        // standard
+    comfortable,    // looser padding/heights
+}
+
+export enum Emphasis {
+    subtle,
+    normal,
+    strong,
+    total,    // for grand totals / final values
+}
+
+export enum ToggleSize {
+    sm,
+    md,
+    lg,
+}
+
+export enum TonalSurface {
+    on-surface,
+    on-primary,
+    on-dark,
+    on-light,
+}
+
+export enum IconFamily {
+    phosphor,
+    lucide,
+}

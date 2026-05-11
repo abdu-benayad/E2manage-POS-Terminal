@@ -1,0 +1,23 @@
+# Declare a standalone workspace so cargo doesn't try to include this
+# crate in the parent e2manage-pos-terminal workspace. Until Phase 4,
+# abdu-slint-ui evolves in isolation.
+[workspace]
+
+[package]
+name = "abdu-slint-ui"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Modern, environment-aware Slint UI primitives for Rust applications"
+authors = ["Abdu Benayad <abdu.benayad@gmail.com>"]
+keywords = ["slint", "ui", "components", "design-system", "rtl"]
+categories = ["gui"]
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+slint = { version = "1.14", default-features = false, features = ["backend-winit", "renderer-femtovg", "compat-1-2"] }
+
+[build-dependencies]
+slint-build = "1.14"

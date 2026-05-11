@@ -1,0 +1,37 @@
+// Sizes — component heights, icon sizes, and border/focus dimensions.
+//
+// `touch-target` is the WCAG-recommended minimum tap target on POS-class
+// hardware. Component-specific heights derive from this scale.
+
+export global Sizes {
+    // Accessibility / tap targets
+    out property <length> touch-target: 48px;
+
+    // Button heights (per ButtonSize variant)
+    out property <length> button-xs: 28px;
+    out property <length> button-sm: 36px;
+    out property <length> button-md: 40px;
+    out property <length> button-lg: 44px;
+    out property <length> button-xl: 48px;
+
+    // Icon-button square edge
+    out property <length> icon-button-square: 40px;
+
+    // Input heights
+    out property <length> input-sm: 36px;
+    out property <length> input-md: 40px;
+    out property <length> input-lg: 48px;
+
+    // Icon glyph sizes
+    out property <length> icon-xs: 12px;
+    out property <length> icon-sm: 16px;
+    out property <length> icon-md: 20px;
+    out property <length> icon-lg: 24px;
+    out property <length> icon-xl: 32px;
+
+    // Borders & focus indicators
+    out property <length> border-thin: 1px;
+    out property <length> border-medium: 2px;
+    out property <length> focus-ring: 2px;
+    out property <length> focus-ring-offset: 2px;
+}

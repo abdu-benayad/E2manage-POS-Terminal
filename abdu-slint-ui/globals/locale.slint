@@ -1,0 +1,24 @@
+// Locale — directional layout and locale code.
+//
+// `rtl` is the single source of truth for layout direction.
+// Components reading from this global arrange content based on `rtl`
+// regardless of the locale string. The helper functions return the
+// correct directional glyph for arrows and chevrons.
+
+export global Locale {
+    in-out property <string> current: "en";  // ISO 639-1
+    in-out property <bool> rtl: false;
+
+    pure public function arrow-start() -> string {
+        return rtl ? "→" : "←";
+    }
+    pure public function arrow-end() -> string {
+        return rtl ? "←" : "→";
+    }
+    pure public function chevron-start() -> string {
+        return rtl ? "›" : "‹";
+    }
+    pure public function chevron-end() -> string {
+        return rtl ? "‹" : "›";
+    }
+}
