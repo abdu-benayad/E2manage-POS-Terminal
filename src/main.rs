@@ -7,6 +7,7 @@ slint::include_modules!();
 mod component_gallery;
 mod dev_harness;
 mod locale_detect;
+mod checkout_preview;
 
 use e2manage_pos_terminal::api::ApiClient;
 use e2manage_pos_terminal::api::PairingStatus;
@@ -47,6 +48,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if std::env::args().any(|a| a == "--component-gallery") {
         return component_gallery::run();
+    }
+
+    if std::env::args().any(|a| a == "--checkout-preview") {
+        return checkout_preview::run();
     }
 
     info!("===========================================");
