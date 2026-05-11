@@ -1,0 +1,235 @@
+// =============================================================================
+// Spike: shadcn/ui Button ported to Slint
+// =============================================================================
+// Purpose: prove Slint can produce a modern, polished button using shadcn/ui's
+// token system. Self-contained — does not depend on the main theme.
+//
+// View it (no Rust rebuild needed):
+//   cargo install slint-viewer    # one-time
+//   slint-viewer ui/spike/shadcn_button.slint
+//
+// What to evaluate: typography weight, radius, color restraint, hover smoothness,
+// outline weight, spacing rhythm. If this looks modern, the framework was never
+// the problem.
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// Design tokens — shadcn/ui default light theme (HSL → hex)
+// -----------------------------------------------------------------------------
+
+global ShadcnTokens {
+    // Surfaces
+    out property <color> background: #ffffff;
+    out property <color> foreground: #020817;
+
+    // Primary — near-black, the shadcn signature
+    out property <color> primary: #0f172a;
+    out property <color> primary-hover: #1e293b;
+    out property <color> primary-foreground: #f8fafc;
+
+    // Destructive — red
+    out property <color> destructive: #ef4444;
+    out property <color> destructive-hover: #dc2626;
+    out property <color> destructive-foreground: #f8fafc;
+
+    // Secondary — light gray surface with dark text
+    out property <color> secondary: #f1f5f9;
+    out property <color> secondary-hover: #e2e8f0;
+    out property <color> secondary-foreground: #0f172a;
+
+    // Accent — hover surface for outline/ghost variants
+    out property <color> accent: #f1f5f9;
+
+    // Border, ring, muted text
+    out property <color> border: #e2e8f0;
+    out property <color> ring: #94a3b8;
+    out property <color> muted-foreground: #64748b;
+
+    // Geometry
+    out property <length> radius: 6px;
+
+    // Typography
+    out property <string> font-family: "Inter, system-ui, -apple-system, sans-serif";
+    out property <length> text-sm: 14px;
+    out property <int> font-medium: 500;
+
+    // Motion
+    out property <duration> transition: 150ms;
+}
+
+// -----------------------------------------------------------------------------
+// The Button itself
+// -----------------------------------------------------------------------------
+
+export component ShadcnButton inherits Rectangle {
+    // Public API — narrow on purpose
+    in property <string> label;
+    in property <string> icon;
+    in property <string> variant: "default";  // default | destructive | outline | secondary | ghost
+    in property <string> size: "default";     // default | sm | lg | icon
+    in property <bool> disabled: false;
+
+    callback clicked();
+
+    // Geometry derived from `size`
+    height: size == "sm" ? 36px : size == "lg" ? 44px : 40px;
+    min-width: size == "icon" ? 40px : size == "sm" ? 0px : 64px;
+
+    property <length> pad-h: size == "sm" ? 12px
+                          : size == "lg" ? 32px
+                          : size == "icon" ? 0px
+                          : 16px;
+
+    // Per-variant color resolution
+    property <color> bg-rest: variant == "default" ? ShadcnTokens.primary
+                           : variant == "destructive" ? ShadcnTokens.destructive
+                           : variant == "secondary" ? ShadcnTokens.secondary
+                           : ShadcnTokens.background;          // outline & ghost
+
+    property <color> bg-hover: variant == "default" ? ShadcnTokens.primary-hover
+                             : variant == "destructive" ? ShadcnTokens.destructive-hover
+                             : variant == "secondary" ? ShadcnTokens.secondary-hover
+                             : ShadcnTokens.accent;            // outline & ghost
+
+    property <color> fg: variant == "default" ? ShadcnTokens.primary-foreground
+                       : variant == "destructive" ? ShadcnTokens.destructive-foreground
+                       : ShadcnTokens.foreground;              // secondary, outline, ghost
+
+    property <bool> has-border: variant == "outline";
+
+    background: touch.has-hover && !disabled ? bg-hover : bg-rest;
+    border-radius: ShadcnTokens.radius;
+    border-width: has-border ? 1px : 0px;
+    border-color: ShadcnTokens.border;
+    opacity: disabled ? 0.5 : 1.0;
+
+    animate background { duration: ShadcnTokens.transition; easing: ease-out; }
+
+    HorizontalLayout {
+        padding-left: pad-h;
+        padding-right: pad-h;
+        spacing: 8px;
+        alignment: center;
+
+        if icon != "": Text {
+            text: icon;
+            font-family: ShadcnTokens.font-family;
+            font-size: ShadcnTokens.text-sm;
+            color: fg;
+            vertical-alignment: center;
+            horizontal-alignment: center;
+        }
+
+        if label != "": Text {
+            text: label;
+            font-family: ShadcnTokens.font-family;
+            font-size: ShadcnTokens.text-sm;
+            font-weight: ShadcnTokens.font-medium;
+            color: fg;
+            vertical-alignment: center;
+        }
+    }
+
+    touch := TouchArea {
+        mouse-cursor: disabled ? default : pointer;
+        enabled: !disabled;
+        clicked => { root.clicked(); }
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Tiny helpers for the preview layout
+// -----------------------------------------------------------------------------
+
+component SectionLabel inherits Text {
+    font-family: ShadcnTokens.font-family;
+    font-size: 13px;
+    font-weight: ShadcnTokens.font-medium;
+    color: ShadcnTokens.muted-foreground;
+}
+
+component Divider inherits Rectangle {
+    height: 1px;
+    background: ShadcnTokens.border;
+}
+
+// -----------------------------------------------------------------------------
+// Preview window — what slint-viewer renders
+// -----------------------------------------------------------------------------
+
+export component PreviewWindow inherits Window {
+    title: "Shadcn Button — Slint Spike";
+    background: ShadcnTokens.background;
+    preferred-width: 880px;
+    preferred-height: 720px;
+
+    VerticalLayout {
+        padding: 40px;
+        spacing: 24px;
+
+        Text {
+            text: "Button";
+            font-family: ShadcnTokens.font-family;
+            font-size: 28px;
+            font-weight: 700;
+            color: ShadcnTokens.foreground;
+        }
+
+        Text {
+            text: "Displays a button or a component that looks like a button.";
+            font-family: ShadcnTokens.font-family;
+            font-size: ShadcnTokens.text-sm;
+            color: ShadcnTokens.muted-foreground;
+        }
+
+        Divider {}
+
+        SectionLabel { text: "Variants"; }
+        HorizontalLayout {
+            spacing: 12px;
+            alignment: start;
+            ShadcnButton { label: "Default"; }
+            ShadcnButton { label: "Destructive"; variant: "destructive"; }
+            ShadcnButton { label: "Outline"; variant: "outline"; }
+            ShadcnButton { label: "Secondary"; variant: "secondary"; }
+            ShadcnButton { label: "Ghost"; variant: "ghost"; }
+        }
+
+        Divider {}
+
+        SectionLabel { text: "Sizes"; }
+        HorizontalLayout {
+            spacing: 12px;
+            alignment: start;
+            ShadcnButton { label: "Small"; size: "sm"; }
+            ShadcnButton { label: "Default"; }
+            ShadcnButton { label: "Large"; size: "lg"; }
+            ShadcnButton { icon: "★"; size: "icon"; }
+        }
+
+        Divider {}
+
+        SectionLabel { text: "With icon"; }
+        HorizontalLayout {
+            spacing: 12px;
+            alignment: start;
+            ShadcnButton { label: "Save changes"; icon: "✓"; }
+            ShadcnButton { label: "Delete"; icon: "🗑"; variant: "destructive"; }
+            ShadcnButton { label: "Cancel"; variant: "outline"; }
+            ShadcnButton { label: "Settings"; icon: "⚙"; variant: "ghost"; }
+        }
+
+        Divider {}
+
+        SectionLabel { text: "Disabled"; }
+        HorizontalLayout {
+            spacing: 12px;
+            alignment: start;
+            ShadcnButton { label: "Default"; disabled: true; }
+            ShadcnButton { label: "Destructive"; variant: "destructive"; disabled: true; }
+            ShadcnButton { label: "Outline"; variant: "outline"; disabled: true; }
+        }
+
+        Rectangle { vertical-stretch: 1; }  // push content up
+    }
+}
