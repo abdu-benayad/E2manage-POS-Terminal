@@ -10,5 +10,9 @@ export global Animation {
     out property <duration> normal: 200ms;
     out property <duration> slow: 300ms;
     out property <duration> slower: 500ms;
-    out property <duration> pulse: 1500ms;
+
+    // Duration of one full revolution for indeterminate loading spinners.
+    // Components reading this: Button, IconButton. Tune once at startup
+    // to slow or quicken every spinner in the app at once.
+    in-out property <duration> spinner-period: 1200ms;
 }

@@ -153,7 +153,7 @@ These are non-obvious. Document them so we don't relearn:
 
 2. **`min-width` and `border-color` collide with Rectangle's built-ins.** Naming a custom property `min-width` on a Rectangle-inheriting component fails to compile. Use distinct names (`min-content-width`, `resolved-border-color`).
 
-3. **`Text` has no `transform-rotation` in 1.14.** No way to rotate text/icons. Spinners must use opacity pulse or a Path-based rotation via SVG.
+3. ~~**`Text` has no `transform-rotation` in 1.14.**~~ **CORRECTION:** Text *does* support rotation via `transform-rotation` (aliased to `rotation-angle` on the `SimpleText` base). For continuous rotation, bind to `mod(animation-tick(), 1s) / 1s * 360deg` — `animation-tick()` ticks every frame, no Timer needed. **Gotcha:** the default `transform-origin` is `(0, 0)` (top-left corner), so without setting it the glyph orbits its corner instead of spinning in place. Always set `transform-origin: { x: self.width / 2, y: self.height / 2 }` for spin-in-place rotation. The original opacity-pulse fallback shipped on Button v1 was unnecessary and replaced by the rotating-glyph approach.
 
 4. **`parent.width / parent.height` in root property bindings is rejected.** `full-width` via `width: parent.width` fails on a component root. **Workaround:** `horizontal-stretch: 1.0` in an enclosing layout.
 

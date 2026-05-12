@@ -517,30 +517,25 @@ export component Button inherits Rectangle {
             horizontal-alignment: center;
         }
 
-        // Loading spinner. A rotating glyph would be ideal but Text has no
-        // transform-rotation in 1.14; an opacity pulse is the visual fallback.
-        if root.loading: Rectangle {
-            width: root.resolved-icon-size;
-            height: root.resolved-icon-size;
-            Text {
-                text: IconFont.resolve("loader");
-                font-family: IconFont.font-family-name();
-                font-size: root.resolved-icon-size;
-                color: root.foreground-color;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-                opacity: pulse.value;
-            }
-            pulse := Timer {
-                interval: 80ms;
-                running: root.loading;
-                triggered => {
-                    self.direction = self.value >= 1.0 ? -1 : self.value <= 0.35 ? 1 : self.direction;
-                    self.value = clamp(self.value + self.direction * 0.08, 0.35, 1.0);
-                }
-                property <float> value: 1.0;
-                property <int> direction: -1;
-            }
+        // Loading spinner — continuous rotation driven by Slint's
+        // animation-tick(). Revolution period read from the global
+        // `Animation.spinner-period` so every spinner in the app stays
+        // in sync; consumers retune once at startup. Lays out
+        // identically to icon-leading/icon-trailing (no explicit width
+        // or height — Text sizes intrinsically from font-size, the
+        // HorizontalLayout's alignment: center vertically centers it).
+        // transform-origin pinned to the glyph's center; Slint's
+        // default (top-left corner) would make the glyph orbit instead
+        // of spinning in place.
+        if root.loading: Text {
+            text: IconFont.resolve("loader");
+            font-family: IconFont.font-family-name();
+            font-size: root.resolved-icon-size;
+            color: root.foreground-color;
+            vertical-alignment: center;
+            horizontal-alignment: center;
+            transform-rotation: mod(animation-tick(), Animation.spinner-period) / Animation.spinner-period * 360deg;
+            transform-origin: { x: self.width / 2, y: self.height / 2 };
         }
             }   // close content HorizontalLayout
         }       // close face Rectangle
