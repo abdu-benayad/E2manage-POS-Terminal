@@ -96,13 +96,19 @@ export component Button inherits Rectangle {
     /// light from the left. Any integer in [0, 359].
     in property <int> shadow-direction: 0;
 
-    /// Visible thickness. When positive, the bottom edge of the button
-    /// shows a darker stripe of this height — the "side wall" of an
-    /// extruded shape. Combined with the existing top highlight and
-    /// drop shadow, it gives the button real 3D depth. `0px` is flat
-    /// (default). 2–6px reads as tactile; values above ~10px start to
-    /// look exaggerated.
+    /// Visible thickness. When positive, the button is rendered as a
+    /// two-layer extruded shape: a darker base of this height plus a
+    /// gradient face on top. `0px` is flat (default). 2–6px reads as
+    /// tactile; values above ~10px start to look exaggerated.
     in property <length> thickness: 0px;
+
+    /// Controls the "press into the base" face-slide animation. When
+    /// true (default), pressing the button slides the face down by 70%
+    /// of `thickness` and back up on release — the button feels
+    /// physically depressed. Set to `false` to keep the extrusion
+    /// visual but suppress the slide on press (the opacity dim and
+    /// stripe collapse still happen).
+    in property <bool> press-animation: true;
 
     /// Custom height override. `0px` means "use the `size` preset". Any
     /// positive value replaces the preset's height; font size, icon size,
@@ -449,7 +455,7 @@ export component Button inherits Rectangle {
         // the bottom, so the button reads as physically depressed.
         face := Rectangle {
             x: 0;
-            y: root.visually-pressed ? root.thickness * 0.7 : 0px;
+            y: (root.visually-pressed && root.press-animation) ? root.thickness * 0.7 : 0px;
             width: parent.width;
             height: parent.height - root.thickness;
             background:
