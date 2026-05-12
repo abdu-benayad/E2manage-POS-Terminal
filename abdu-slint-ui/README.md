@@ -1,8 +1,8 @@
 # abdu-slint-ui
 
-Modern, environment-aware Slint UI primitives for Rust applications.
+Modern, environment-aware Slint UI primitives for Rust applications. Touch-first, tablet-class hardware in mind; iOS / SwiftUI–inspired design language.
 
-> **Status — design draft (v0).** No code yet. This document is the contract. Read it, push back, iterate. Components land only after the architecture is settled.
+> **Status — Phase 1 in progress.** Foundation shipped (10 globals, dual icon font, design-token system). Two of five Phase 1 primitives built: `Button` and `IconButton`, each with a preview and an interactive playground section. `Toggle`, `Card`, `KeyValueRow`, and a smoke-test screen still to land before Phase 1 closes. See [HANDOVER.md](./HANDOVER.md) for current state and [IMPL.md](./IMPL.md) for the implementation playbook.
 
 ---
 
@@ -10,36 +10,37 @@ Modern, environment-aware Slint UI primitives for Rust applications.
 
 A library of *living* UI components for Slint apps. Each component:
 
-- Reads its environment — theme, locale, currency format — from globals the consumer populates once at startup
-- Exposes a narrow public API, usually 3–6 properties per component
-- Owns its internal state (hover, focus, press, animation, state machines) so callers don't have to manage it
+- Reads its environment — theme, locale, currency format, depth physics — from globals the consumer populates once at startup
+- Exposes a rich public API (interactive components ship 15–25 properties — the textbook range for design-system primitives)
+- Owns its internal state (hover, focus, press, animation, state machines, accessibility-name resolution) so callers don't have to manage it
 - Composes into screens with structural code, not inline `Rectangle + TouchArea + Text` rebuilds
 
-If your screens are restating border-radius, drop-shadow, locale ternaries, currency concatenations, and toggle-knob layouts inline, you're missing this layer.
+If your screens are restating border-radius, drop-shadow, locale ternaries, currency concatenations, accessibility wiring, and toggle-knob layouts inline, you're missing this layer.
 
 ## What this is not
 
 - **Not a fork of `std-widgets.slint`.** It does not wrap or extend Slint's stock components.
 - **Not coupled to any domain.** Zero references to `Cart`, `Product`, `Operator`, `Transaction`, or any app type. The library could be dropped into a logistics kiosk, a clinic intake form, or a warehouse scanner unchanged.
 - **Not a translation library.** Components take pre-localized strings as input. The library provides RTL-aware layout, never copy.
-- **Not theme-agnostic.** One opinionated theme (shadcn-derived). Consumers customize via token overrides, not by forking components.
+- **Not theme-agnostic.** One opinionated theme — iOS / SwiftUI–derived: systemBlue primary, system color palette, soft drop shadows tuned for tablet viewing distance, Apple-HIG-compliant tap targets (44px minimum). Consumers customize via token overrides, not by forking components.
 - **Not yet stable.** Until v1, expect API churn. Consumers should pin a specific commit.
 
 ## License & distribution
 
 Licensed under **MIT OR Apache-2.0** (Rust ecosystem convention). Consumers may choose either license. Two `LICENSE-*` files ship in the crate root.
 
-The library bundles an icon font (Phosphor or Lucide — final choice in Phase 1) for use across all icon-bearing components. The font is open-source (MIT or SIL-OFL) and embedded via Slint's `@import` mechanism. No runtime Rust setup required for icons.
+The library bundles **both** Phosphor and Lucide icon fonts (each open-source under MIT / SIL-OFL), runtime-switchable via `IconFont.family`. Components accept a canonical icon name; the global resolves to the codepoint for the active family. No runtime Rust setup required for icons.
 
 ## Design philosophy
 
-1. **Narrow APIs.** If a component has more than ~8 properties, it's two components.
-2. **Environment over plumbing.** Components read shared context from globals; callers don't pass `currency`, `locale`, `theme-color` to every instance.
-3. **Composition over kitchen sinks.** A button with a loading spinner is `Button` wrapped in `LoadingState`, not a `Button` with `Loading`/`LoadingText`/`LoadingColor`/`LoadingPosition` properties.
+1. **Rich, curated APIs.** Interactive primitives ship 15–25 properties — the textbook range for design-system components (Material UI, Mantine, Ant). Discoverability and call-site ergonomics matter for a library; the narrow-API rule belongs in *application* code where each component is tied to one use site.
+2. **Environment over plumbing.** Components read shared context — theme, typography, depth physics, locale, currency, animation pacing — from globals; callers don't pass `currency`, `locale`, `theme-color`, or shadow-elevation to every instance.
+3. **Common patterns are first-class properties, not wrappers.** A button with a loading spinner is `Button { loading: true }`, not `LoadingWrapper { Button {…} }`. Built-in conveniences for any interactive primitive: `loading`, `icon-leading` / `icon-trailing`, `disabled`, `tooltip`, `checkable`, `aria-label`. Composition still applies for uncommon combinations.
 4. **No domain knowledge.** Library code references only its own primitives and the Slint standard library.
 5. **No user-facing copy.** All visible text comes in as a property. The library does not own a translation table.
-6. **Internal state, narrow events.** Hover, focus, press, animation, transitions all live inside. Callers receive typed callbacks (`clicked()`, `value-changed(string)`), never raw `pointer-event`s.
+6. **Internal state, narrow events.** Hover, focus, press, animation, transitions, accessibility-name resolution all live inside. Callers receive typed callbacks (`clicked()`, `value-changed(string)`), never raw `pointer-event`s.
 7. **Pre-formatted strings cross the boundary.** Slint never computes domain values. Rust formats money, dates, percentages; the lib displays and lays them out.
+8. **Accessibility is the component's job, not the caller's.** Every interactive primitive wires Slint's `accessible-*` properties to the platform AT tree. A name cascade (`aria-label → tooltip → label/icon → fallback`) ensures consumers who forget the explicit `aria-label` still get a usable screen-reader name.
 
 ---
 
@@ -49,15 +50,16 @@ The library defines these globals. The consumer populates them once at startup (
 
 | Global            | Purpose                                                                 |
 | ----------------- | ----------------------------------------------------------------------- |
-| `Theme`           | Semantic color tokens (primary, foreground, accent, destructive, ring) |
-| `Typography`      | Font family, size scale, weight scale                                   |
-| `Spacing`         | Spacing scale (`xs`, `sm`, `md`, `lg`, `xl`, `xxl`)                    |
-| `Radius`          | Border-radius scale (`sm`, `md`, `lg`, `full`)                          |
-| `Sizes`           | Standard heights (button, input, list-row, touch-target)                |
-| `Animation`       | Duration scale (`instant`, `fast`, `normal`, `slow`) and easings        |
-| `Locale`          | Current locale code, RTL boolean                                        |
+| `Theme`           | Semantic color tokens (primary, foreground, accent, destructive, ring, semantic palettes), shape tokens, shadow scale |
+| `Typography`      | Font family (incl. Arabic fallback), size scale, weight scale           |
+| `Spacing`         | Spacing scale (`xs` through `4xl`)                                      |
+| `Radius`          | Border-radius scale (`sm`, `md`, `lg`, `xl`, `full`)                    |
+| `Sizes`           | Standard heights (button range `xs`..`hero`, input, icon, focus-ring)   |
+| `Animation`       | Duration scale (`instant`, `fast`, `normal`, `slow`, `slower`) + `spinner-period` (revolution duration for indeterminate loading) |
+| `Depth`           | Stateless shadow math: `bumped(level, hovered)`, `blur(level)`, `magnitude(level)`, `offset-x/y(direction, mag)`, `color-of(level, override)`. Components read it from their visual layer |
+| `Locale`          | Current locale code, RTL boolean, directional glyph helpers             |
 | `CurrencyFormat`  | Currency code, decimal places, grouping separator, symbol position      |
-| `IconFont`        | Icon font name, named-icon lookup (codepoints for common names)         |
+| `IconFont`        | Dual-family icon resolution (Phosphor or Lucide), runtime-switchable    |
 
 **Stability contract:** adding fields to a global is non-breaking. Renaming or removing a field is a breaking change requiring a version bump. Globals' shapes are part of the public API surface.
 
@@ -69,20 +71,20 @@ The `Theme` global exposes three shape tokens controlling the silhouette of inte
 
 | Token               | Type     | Default     | Affects                                                                |
 | ------------------- | -------- | ----------- | ---------------------------------------------------------------------- |
-| `button-shape`      | `string` | `"pill"`    | `Button`, `Chip`, `OptionTile`, `MoneyInput`                           |
+| `button-shape`      | `string` | `"rounded"` | `Button`, `Chip`, `OptionTile`, `MoneyInput`                           |
 | `card-shape`        | `string` | `"rounded"` | `Card`, `SectionCard`                                                  |
 | `icon-button-shape` | `string` | `"circle"`  | `IconButton`, `BackButton`                                             |
 
 Accepted values:
 
-- **`rounded`** — moderate radius (`Radius.md`, ~8px). Shadcn / Linear / Vercel aesthetic.
-- **`pill`** — capsule shape (`radius = height / 2`). Apple / Google / YouTube / X / Spotify / Material 3 Expressive — the 2024–25 mainstream.
+- **`rounded`** — moderate radius (`Radius.md`, ~10px). SwiftUI-default rounded rectangle, the iOS / Apple HIG mainstream for primary actions.
+- **`pill`** — capsule shape (`radius = height / 2`). Common for navigation chips, secondary actions, and contexts where extra softness is wanted.
 - **`square`** — zero radius. Brutalist / Notion-style. Use sparingly.
 - **`circle`** — only valid for `icon-button-shape`. Forces 1:1 aspect ratio plus full radius.
 
-**Defaults are deliberate.** The library ships with `pill` + `circle` because that matches the dominant contemporary aesthetic. To switch to a shadcn/Linear look, set `Theme.button-shape = "rounded"` at app startup.
+**Defaults are deliberate.** The library ships with `rounded` + `circle` to match SwiftUI's primary-action convention on touch hardware. To switch to a capsule look (mid-2020s web aesthetic), set `Theme.button-shape = "pill"` at app startup. To switch to a flat/brutalist look, `"square"`.
 
-**Per-instance override.** Every shape-bearing component accepts a `shape` property. The sentinel value `"default"` (the property's default value) means "follow the theme token." Explicit values override.
+**Per-instance override.** Every shape-bearing component accepts a `shape` property. The sentinel value `Shape.default` means "follow the theme token." Explicit values override.
 
 ### Numeric content rendering
 
@@ -107,79 +109,111 @@ This is the standard Unicode BiDi behavior for numeric content embedded in mixed
 
 ## Component catalog (v1)
 
-15 primitives. Each one ~50–200 lines of Slint source. Total expected library size ~1800–2200 lines.
+15 primitives. Each one ~50–340 lines of Slint source.
 
 Naming convention: PascalCase, single-noun where possible, no `Abdu*` or library prefix on components (the import path provides the namespace).
 
-**Property types use Slint enums, not strings.** The tables below show enum values inline (e.g., `variant: ButtonVariant`) but the precise enum definitions, defaults, and every public property live in [IMPL.md](./IMPL.md). The catalog below is the *shape contract*; IMPL is the *precision contract*. Where a table lists 5–8 properties, the actual component will ship with 10–20 (per the construction discipline in [CLAUDE.md](./CLAUDE.md)) — the additional ones are convenience features (loading state, full-width, tooltip, etc.) standard to textbook component libraries.
+**Property types use Slint enums, not strings.** The tables below highlight the most-used properties of each component; the *complete* property surface (with all defaults, depth/lighting properties, debug knobs, accessibility wiring) lives in [HANDOVER.md](./HANDOVER.md) for shipped components and [IMPL.md](./IMPL.md) for pending ones. The catalog below is the *shape contract*; HANDOVER + IMPL together are the *precision contract*.
 
-**Icons** are referenced by name (e.g., `"chevron-right"`, `"trash"`, `"check"`) resolved via the bundled icon font through the `IconFont` global. Raw codepoint characters and emoji are also accepted as fallback. Final icon-font choice (Phosphor vs Lucide) lands in Phase 1.
+**Icons** are referenced by name (e.g., `"chevron-right"`, `"trash"`, `"check"`) resolved via `IconFont`. Raw codepoint characters and emoji are accepted as fallback. Both Phosphor and Lucide ship bundled, runtime-switchable via `IconFont.family`.
 
-### Button
+**Depth / lighting.** Every elevated component (Button, IconButton, eventually Card/Toggle) exposes a six-property depth API — `elevated`, `shadow-elevation`, `shadow-color`, `shadow-direction`, `thickness`, `press-animation` — backed by the stateless `Depth` global for shadow math. Tunable per instance; defaults read from the Theme.
 
-The foundation. Variants and sizes mirror shadcn/ui.
+**Accessibility.** Every interactive component wires Slint's `accessible-*` properties. `aria-label` is the explicit caller intent; an internal cascade (`aria-label → tooltip → label/icon → fallback`) ensures the platform AT tree always gets a usable name. Activation, checked state, and disabled state propagate automatically.
 
-| Property   | Type      | Default     | Description                                                   |
-| ---------- | --------- | ----------- | ------------------------------------------------------------- |
-| `label`    | `string`  | `""`        | Visible text. Empty for icon-only buttons.                    |
-| `icon`     | `string`  | `""`        | Leading icon (emoji, glyph, or icon-font codepoint).          |
-| `variant`  | `string`  | `"default"` | `default \| destructive \| outline \| secondary \| ghost`     |
-| `size`     | `string`  | `"default"` | `default \| sm \| lg \| icon`                                 |
-| `disabled` | `bool`    | `false`     | Visually muted, non-interactive.                              |
+### Button — shipped
+
+Foundation interactive primitive. Six variants, eight sizes (xs..hero plus icon-square), the full depth/lighting set, accessibility cascade, optional tooltip, optional loading spinner, optional `checkable` toggle behaviour. **25 public properties total** — see [HANDOVER.md → "Button API (as built)"](./HANDOVER.md) for the complete table.
+
+| Property        | Type             | Default            | Description                                                                                  |
+| --------------- | ---------------- | ------------------ | -------------------------------------------------------------------------------------------- |
+| `label`         | `string`         | `""`               | Visible text. Empty renders an icon-only button (prefer `IconButton` for that case).         |
+| `icon-leading`  | `string`         | `""`               | Icon name on reading-start side. RTL-aware.                                                  |
+| `icon-trailing` | `string`         | `""`               | Icon name on reading-end side.                                                               |
+| `variant`       | `ButtonVariant`  | `default`          | `default \| destructive \| outline \| secondary \| ghost \| link`                            |
+| `size`          | `ButtonSize`     | `md`               | `xs \| sm \| md \| lg \| xl \| xxl \| hero \| icon` (32 / 38 / 44 / 52 / 60 / 72 / 88 / 44px) |
+| `shape`         | `Shape`          | `default`          | Follows `Theme.button-shape` unless overridden.                                              |
+| `tone`          | `Tone`           | `default`          | `default \| primary \| success \| warning \| destructive \| info \| muted` — overrides the variant's color family. |
+| `loading`       | `bool`           | `false`            | Replaces content with a rotating spinner; blocks click. Period read from `Animation.spinner-period`. |
+| `disabled`      | `bool`           | `false`            | Visually muted; blocks click and keyboard activation.                                        |
+| `full-width`    | `bool`           | `false`            | Stretches to parent's available width.                                                       |
+| `checkable`     | `bool`           | `false`            | When true, the button behaves as a toggle and `checked` drives the pressed visual.           |
+| `checked`       | `bool` (in-out)  | `false`            | Controlled checked state.                                                                    |
+| `tooltip`       | `string`         | `""`               | Hover text. Also feeds the accessibility cascade if `aria-label` is empty.                   |
+| `aria-label`    | `string`         | `""`               | Required when `label` is empty; primary accessibility name.                                  |
+
+Plus the depth set (`elevated`, `shadow-elevation`, `shadow-color`, `shadow-direction`, `thickness`, `press-animation`), the escape hatches (`bg-color`, `height-override`, `min-content-width`), and `debug-bounds`. See HANDOVER for full details.
+
+**Callbacks:** `clicked()`, `pressed-changed(bool)`, `hover-changed(bool)`, `focus-changed(bool)`
+
+**Reads from environment:** `Theme`, `Typography`, `Sizes`, `Radius`, `Spacing`, `Animation`, `Locale`, `IconFont`, `Depth`
+
+---
+
+### IconButton — shipped
+
+Square, icon-only sibling of Button. Same six variants (default is `ghost`), distinct size enum (`IconButtonSize.xs..xxl`, no `hero`), default shape resolves against `Theme.icon-button-shape` (`"circle"`). **19 public properties total** — see [HANDOVER.md → "IconButton API (as built)"](./HANDOVER.md) and [`architecture/icon-button.md`](./architecture/icon-button.md) for the design contract.
+
+| Property      | Type              | Default   | Description                                                                                   |
+| ------------- | ----------------- | --------- | --------------------------------------------------------------------------------------------- |
+| `icon`        | `string`          | `""`      | The glyph to render. Library-canonical name or raw codepoint / emoji.                         |
+| `aria-label`  | `string`          | `""`      | Accessibility name. Cascade: `aria-label → tooltip → icon → "Button"`.                        |
+| `variant`     | `ButtonVariant`   | `ghost`   | Different default from Button. Same six values.                                               |
+| `size`        | `IconButtonSize`  | `md`      | `xs \| sm \| md \| lg \| xl \| xxl` (32 / 38 / 44 / 52 / 60 / 72 px square)                   |
+| `shape`       | `Shape`           | `default` | Follows `Theme.icon-button-shape`. On a square button, `pill` and `circle` look identical.    |
+| `tone`        | `Tone`            | `default` | Same enum as Button.                                                                          |
+| `loading`     | `bool`            | `false`   | Replaces icon with a rotating spinner; period read from `Animation.spinner-period`.           |
+| `disabled`    | `bool`            | `false`   |                                                                                               |
+| `tooltip`     | `string`          | `""`      | Critical for icon-only — primary discoverability. Also feeds the accessibility cascade.       |
+| `checkable`   | `bool`            | `false`   | Favorite / pin / mute / star use cases.                                                       |
+| `checked`     | `bool` (in-out)   | `false`   | Controlled checked state.                                                                     |
+
+Plus the full depth set (same six properties as Button), `height-override`, and `debug-bounds`.
+
+**Excluded vs Button** (intentional API divergence): `label`, `icon-leading`, `icon-trailing` (consolidated to `icon`); `full-width` (always square); `min-content-width` (size dictates width); `bg-color` (curated palette wins — use `tone` or `variant`).
+
+**Callbacks:** `clicked()`, `pressed-changed(bool)`, `hover-changed(bool)`, `focus-changed(bool)`
+
+**Reads from environment:** `Theme`, `Typography`, `Sizes`, `Radius`, `Animation`, `IconFont`, `Depth`
+
+---
+
+### BackButton — pending (Phase 2)
+
+Locale-aware navigation back control. Picks the correct chevron glyph from `Locale.rtl`. Will compose `IconButton` internally rather than re-implementing the depth + accessibility wiring.
+
+| Property | Type           | Default     | Description |
+| -------- | -------------- | ----------- | ----------- |
+| `tone`   | `TonalSurface` | `on-surface` | `on-surface \| on-primary \| on-dark \| on-light` — picks contrast for the header background |
 
 **Callbacks:** `clicked()`
 
-**Reads from environment:** `Theme`, `Typography`, `Radius`, `Animation`
+**Reads from environment:** `Theme`, `Locale`, `IconFont`
 
 ---
 
-### IconButton
+### Toggle — pending (next)
 
-Square click target. Convenience over `Button { size: "icon"; }` for the common case.
+iOS-style switch. Single internal state machine: knob slide animation, track color transition between off and on, optional knob icon. Three sizes (`ToggleSize.sm | md | lg`). Will adopt the accessibility cascade with `accessible-role: switch`.
 
-| Property   | Type      | Default | Description                                       |
-| ---------- | --------- | ------- | ------------------------------------------------- |
-| `icon`     | `string`  | `""`    | Required. The glyph or symbol to render.          |
-| `tone`     | `string`  | `"default"` | `default \| muted \| destructive`             |
-| `size-px`  | `length`  | `40px`  | Side length. Touch-target compliant by default.   |
-| `disabled` | `bool`    | `false` |                                                   |
+| Property      | Type         | Default | Description                                                  |
+| ------------- | ------------ | ------- | ------------------------------------------------------------ |
+| `on`          | `bool`       | `false` | Current state (controlled).                                  |
+| `size`        | `ToggleSize` | `md`    | `sm \| md \| lg`                                             |
+| `label`       | `string`     | `""`    | Optional label rendered next to the toggle.                  |
+| `description` | `string`     | `""`    | Optional caption below the label.                            |
+| `on-icon`     | `string`     | `""`    | Optional icon inside the knob when on (e.g. `"check"`).      |
+| `off-icon`    | `string`     | `""`    | Optional icon inside the knob when off.                      |
+| `disabled`    | `bool`       | `false` |                                                              |
+| `aria-label`  | `string`     | `""`    | Required when `label` is empty.                              |
 
-**Callbacks:** `clicked()`
+**Callbacks:** `toggled(bool)`, `focus-changed(bool)`
 
-**Reads from environment:** `Theme`, `Radius`, `Animation`
-
----
-
-### BackButton
-
-Locale-aware navigation back control. Picks the correct arrow glyph from `Locale.rtl`.
-
-| Property | Type   | Default | Description |
-| -------- | ------ | ------- | ----------- |
-| `tone`   | `string` | `"on-surface"` | `on-surface \| on-primary` — picks contrast for header background |
-
-**Callbacks:** `clicked()`
-
-**Reads from environment:** `Theme`, `Locale`
+**Reads from environment:** `Theme`, `Typography`, `Sizes`, `Radius`, `Spacing`, `Animation`, `Locale`, `IconFont`, `Depth`
 
 ---
 
-### Toggle
-
-A switch. Single internal animation (knob slide), no caller plumbing.
-
-| Property   | Type   | Default | Description                              |
-| ---------- | ------ | ------- | ---------------------------------------- |
-| `on`       | `bool` | `false` | Current state.                           |
-| `disabled` | `bool` | `false` |                                          |
-
-**Callbacks:** `toggled(bool)` — fires with the new state after the user activates the toggle.
-
-**Reads from environment:** `Theme`, `Animation`
-
----
-
-### OptionTile
+### OptionTile — pending (Phase 2)
 
 Selectable tile in a radio group. The parent owns the "which is selected" state; the tile just renders based on `selected`.
 
@@ -197,7 +231,7 @@ Selectable tile in a radio group. The parent owns the "which is selected" state;
 
 ---
 
-### Chip
+### Chip — pending (Phase 2)
 
 Compact label or count badge. Static; no interaction.
 
@@ -211,7 +245,7 @@ Compact label or count badge. Static; no interaction.
 
 ---
 
-### StatusPill
+### StatusPill — pending (Phase 2)
 
 State-aware pill. Like `Chip` but with an optional pulse animation when state changes — communicates "this just updated."
 
@@ -225,7 +259,7 @@ State-aware pill. Like `Chip` but with an optional pulse animation when state ch
 
 ---
 
-### Card
+### Card — pending (Phase 1)
 
 Surface container with shadow and radius. No header, no padding-on-content opinions — pure surface.
 
@@ -240,7 +274,7 @@ Surface container with shadow and radius. No header, no padding-on-content opini
 
 ---
 
-### SectionCard
+### SectionCard — pending (Phase 2)
 
 Card with a built-in header (icon + title) and content slot. The dominant pattern in settings/report screens.
 
@@ -255,7 +289,7 @@ Card with a built-in header (icon + title) and content slot. The dominant patter
 
 ---
 
-### KeyValueRow
+### KeyValueRow — pending (Phase 1)
 
 Label on the start side, value on the end side. RTL-aware. The building block for breakdowns, totals, summaries.
 
@@ -270,7 +304,7 @@ Label on the start side, value on the end side. RTL-aware. The building block fo
 
 ---
 
-### FormRow
+### FormRow — pending (Phase 2)
 
 Label + control + helper text + optional error. The form-screen building block.
 
@@ -287,7 +321,7 @@ Label + control + helper text + optional error. The form-screen building block.
 
 ---
 
-### Money
+### Money — pending (Phase 2)
 
 Currency-aware display. Renders amount and currency as an **LTR-atomic pair** (see [Numeric content rendering](#numeric-content-rendering)) — the currency sits on the physical right of the number for trailing-symbol currencies (`SAR`, `ر.س`, `kr`, `¥` in some locales), or on the physical left for leading-symbol currencies (`$`, `£`, `€`). The pair's internal ordering does not flip with `Locale.rtl`; only the pair's position within surrounding layout does.
 
@@ -304,7 +338,7 @@ Currency code/symbol and its position (leading vs trailing the number) come from
 
 ---
 
-### Quantity
+### Quantity — pending (Phase 2)
 
 Generic unit-bearing value (weight, length, capacity, frequency, percentage). Same LTR-atomic rendering rule as `Money` — the unit sits on the physical right of the number unless `unit-position` overrides.
 
@@ -322,7 +356,7 @@ The pair always renders LTR internally; only the unit's own glyphs follow their 
 
 ---
 
-### MoneyInput
+### MoneyInput — pending (Phase 2)
 
 Numeric input with the current currency rendered inline. Handles decimal-place enforcement, max-digit constraints, and locale-aware alignment.
 
@@ -342,7 +376,7 @@ Validation logic (range, business rules) is the caller's responsibility. The inp
 
 ---
 
-### Input
+### Input — pending (Phase 2)
 
 General-purpose text input supporting multiple input kinds. The form-building workhorse.
 
@@ -394,7 +428,7 @@ Also deferred to a later version:
 
 ## Using the library
 
-> Not yet implemented. The shape below is the intended consumer experience.
+> Shape below is the intended consumer experience. The library is mid–Phase 1 and not yet integrated into a real consumer app; the import path and global-population pattern are settled.
 
 ### 1. Depend on the crate
 
@@ -456,13 +490,21 @@ Resolved in Phase 0:
 - ✅ **Crate location** — sibling directory at repo root (`abdu-slint-ui/` and `abdu-slint-ui-playground/` next to `crates/`, `src/`, `ui/`).
 - ✅ **License** — MIT OR Apache-2.0 (dual). Both `LICENSE-MIT` and `LICENSE-APACHE` ship with the crate.
 - ✅ **Input component** — added as primitive #15 in v1.
-- ✅ **Icon system** — library bundles an icon font (Phosphor or Lucide; choice in Phase 1) loaded via Slint `@import`; components accept icon *names* resolved through the `IconFont` global, with raw codepoints/emoji as a fallback.
+- ✅ **Icon system** — both Phosphor and Lucide bundled, runtime-switchable via `IconFont.family`. Components accept canonical icon names, resolved through `IconFont`; raw codepoints/emoji accepted as fallback.
 
-Still open, deferred to Phase 1 implementation:
+Resolved during Phase 1:
 
-- **Focus-ring rendering.** Slint's focus model is limited. We'll attempt keyboard-focus visuals on `Button`, `IconButton`, `Input`, `MoneyInput`, `Toggle`, and `OptionTile` in v1; other components may or may not, depending on Slint capability. Document final state in IMPL.md.
-- **Compact mode.** Decision: read a global density token (`Theme.density`?) rather than per-component compact flags. Specifics — including whether `Density` is per-component overridable — settled when the first density-aware component lands.
-- **Phosphor vs Lucide.** Both are excellent. Phosphor has more variants (regular, thin, light, bold, fill); Lucide is simpler and lighter (~250 KB vs ~600 KB). Final choice in Phase 1, possibly after a side-by-side font weight comparison in the playground.
+- ✅ **Phosphor vs Lucide** — ship both; let consumers pick at runtime via `IconFont.family`.
+- ✅ **Focus-ring rendering** — implemented on Button and IconButton via a dedicated focus-ring Rectangle drawn outside the surface, driven by an internal `FocusScope`. Pattern propagates to remaining interactive primitives.
+- ✅ **Depth physics architecture** — extracted as the stateless `Depth` global (seven pure functions). Components declare their own six depth-input properties; the global owns the resolution math. Decouples shadow tuning from any single component.
+- ✅ **Accessibility wiring** — every interactive component sets Slint's `accessible-role / label / checkable / checked / enabled / action-default`, with a name cascade so `aria-label` omissions still produce a usable screen-reader name. Pattern propagates to remaining interactive primitives.
+- ✅ **Loading spinner** — rotating glyph driven by `animation-tick()`, with rotation period read from the global `Animation.spinner-period`. Tunable per app at startup.
+
+Still open, deferred to later Phase 1 work or Phase 2:
+
+- **Compact mode.** `Theme.density` global exists with `"compact" | "default" | "comfortable"`. Specifics — including whether `Density` is per-component overridable — settled when the first density-aware component lands.
+- **Variant resolution global.** Button and IconButton currently duplicate `variant-base-bg / variant-hover-bg / variant-foreground / tone-color / tone-foreground / base-bg / hover-bg / foreground-color / resolved-border-color`. After Card lands (third consumer), revisit whether a `Variant` global parallel to `Depth` cleanly factors the resolution math.
+- **Spinner visual identity.** Currently uses the icon-font `loader` codepoint with rotation. A Phase-2 task could replace it with a `SpinnerBase`-style Path-based arc spinner so the loading visual is identical across icon-family swaps.
 
 ---
 
@@ -482,15 +524,21 @@ Read source for *how a component is built*. Run the playground for *how to use i
 
 ## Project status
 
-| Phase                                              | State   |
-| -------------------------------------------------- | ------- |
-| Design contract (this doc)                         | draft   |
-| Construction discipline (`CLAUDE.md`)              | draft   |
-| Roadmap (`ROADMAP.md`)                             | draft   |
-| Token / global design                              | pending |
-| Component IMPL doc                                 | pending |
-| Reference theme retune                             | pending |
-| First primitive (`Button`)                         | spike done — see `ui/spike/shadcn_button.slint` |
-| Playground app (`abdu-slint-ui-playground`)        | pending |
-| Workspace integration                              | pending |
-| Consumed by `e2manage-pos-terminal`                | pending |
+| Phase                                              | State                                              |
+| -------------------------------------------------- | -------------------------------------------------- |
+| Design contract (this doc)                         | done (Phase 1 revision applied)                    |
+| Construction discipline (`CLAUDE.md`)              | done                                               |
+| Roadmap (`ROADMAP.md`)                             | done                                               |
+| Implementation playbook (`IMPL.md`)                | done for Phase 1; later phases sketched            |
+| Per-component design docs (`architecture/`)        | started — `icon-button.md` is the first entry      |
+| Tokens + globals                                   | done (10 globals: `Theme`, `Typography`, `Spacing`, `Radius`, `Sizes`, `Animation`, `Depth`, `Locale`, `CurrencyFormat`, `IconFont`) |
+| Design language                                    | iOS / SwiftUI-derived; documented in HANDOVER      |
+| `Button`                                           | shipped (25 properties, full depth + accessibility) |
+| `IconButton`                                       | shipped (19 properties)                            |
+| `Toggle`                                           | pending — next Phase 1 component                   |
+| `Card`                                             | pending                                            |
+| `KeyValueRow`                                      | pending                                            |
+| Phase 1 smoke test (`examples/settings-display.slint`) | pending                                        |
+| Playground app (`abdu-slint-ui-playground`)        | shipped (sidebar + scrollable toolbar + Button & IconButton sections + spinner-period live tuning) |
+| Phase 2 primitives (10 more)                       | pending                                            |
+| Workspace integration into `e2manage-pos-terminal`  | pending (Phase 4)                                 |
