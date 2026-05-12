@@ -453,18 +453,31 @@ export component Button inherits Rectangle {
 
         // Bottom edge stripe — the "side wall" of an extruded shape.
         // Combined with the top highlight and the outer drop-shadow, gives
-        // the button real 3D depth. Pressing the button flattens the stripe
-        // (height → 1px) so it feels like the button compresses on tap.
+        // the button real 3D depth. A semi-transparent black overlay reads
+        // as a darker stripe on any bg color (the previous `darker(25%)`
+        // was too subtle on saturated blues and reds). Pressing flattens
+        // the stripe (height → 1px) so the button visibly compresses.
         if root.thickness > 0px && !root.disabled: Rectangle {
             width: parent.width;
             height: root.visually-pressed ? 1px : root.thickness;
             y: parent.height - self.height;
-            background: root.active-bg.darker(25%);
+            background: #00000066;  // rgba(0,0,0,0.40)
             border-top-left-radius: 0px;
             border-top-right-radius: 0px;
             border-bottom-left-radius: parent.border-radius;
             border-bottom-right-radius: parent.border-radius;
             animate height { duration: Animation.fast; easing: ease-out; }
+
+            // Thin lighter highlight at the very top of the stripe — reads
+            // as the "edge" between the face and the side wall, sharpens
+            // the 3D illusion.
+            Rectangle {
+                x: 0;
+                y: 0;
+                width: parent.width;
+                height: 1px;
+                background: #ffffff26;  // rgba(255,255,255,0.15)
+            }
         }
     }
 
