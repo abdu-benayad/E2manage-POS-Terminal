@@ -90,6 +90,12 @@ export component Button inherits Rectangle {
     /// recolor the shadow without changing its geometry.
     in property <color> shadow-color: transparent;
 
+    /// Direction the simulated light comes from, in degrees. 0 = light
+    /// from above (shadow falls below — the default). 90 = light from
+    /// the right (shadow falls left). 180 = light from below. 270 =
+    /// light from the left. Any integer in [0, 359].
+    in property <int> shadow-direction: 0;
+
     /// Custom height override. `0px` means "use the `size` preset". Any
     /// positive value replaces the preset's height; font size, icon size,
     /// and horizontal padding scale proportionally so the button still
@@ -323,13 +329,25 @@ export component Button inherits Rectangle {
         : root.effective-elevation == Elevation.xl  ? Theme.shadow-xl-blur
         : 0px;
 
-    property <length> active-shadow-y:
+    // Radial magnitude — how far the shadow drops from the button. Per
+    // elevation, taken from the Theme.shadow-{level}-y token.
+    property <length> active-shadow-magnitude:
           !root.shadow-applies                      ? 0px
         : root.effective-elevation == Elevation.sm  ? Theme.shadow-sm-y
         : root.effective-elevation == Elevation.md  ? Theme.shadow-md-y
         : root.effective-elevation == Elevation.lg  ? Theme.shadow-lg-y
         : root.effective-elevation == Elevation.xl  ? Theme.shadow-xl-y
         : 0px;
+
+    // Project the radial magnitude onto x/y axes using the light
+    // direction. Screen y grows downward, so:
+    //   direction=0   → cos=1,  -sin=0  → shadow straight down (default)
+    //   direction=90  → cos=0,  -sin=-1 → shadow to the left
+    //   direction=180 → cos=-1, -sin=0  → shadow straight up
+    //   direction=270 → cos=0,  -sin=1  → shadow to the right
+    property <angle> direction-angle: root.shadow-direction * 1deg;
+    property <length> active-shadow-x: -Math.sin(root.direction-angle) * root.active-shadow-magnitude;
+    property <length> active-shadow-y:  Math.cos(root.direction-angle) * root.active-shadow-magnitude;
 
     // Color: explicit `shadow-color` wins; otherwise pick the Theme token
     // matching the effective elevation.
@@ -399,13 +417,16 @@ export component Button inherits Rectangle {
         border-color:
               root.debug-bounds ? #ff00ff
                                  : root.resolved-border-color;
-        drop-shadow-blur:  root.active-shadow-blur;
+        drop-shadow-blur:     root.active-shadow-blur;
+        drop-shadow-offset-x: root.active-shadow-x;
         drop-shadow-offset-y: root.active-shadow-y;
-        drop-shadow-color: root.active-shadow-color;
+        drop-shadow-color:    root.active-shadow-color;
 
-        animate background       { duration: Animation.fast; easing: ease-out; }
-        animate border-color     { duration: Animation.fast; easing: ease-out; }
-        animate drop-shadow-blur { duration: Animation.fast; easing: ease-out; }
+        animate background           { duration: Animation.fast; easing: ease-out; }
+        animate border-color         { duration: Animation.fast; easing: ease-out; }
+        animate drop-shadow-blur     { duration: Animation.fast; easing: ease-out; }
+        animate drop-shadow-offset-x { duration: Animation.fast; easing: ease-out; }
+        animate drop-shadow-offset-y { duration: Animation.fast; easing: ease-out; }
 
         // Inner glossy highlight at the top half of filled-prominent variants.
         // A white-to-transparent vertical gradient creates the "iOS glossy"
