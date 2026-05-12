@@ -1,0 +1,204 @@
+// Toggle preview — state × size × tone × interaction × depth in one window.
+// Run: `slint-viewer abdu-slint-ui/previews/toggle.slint`
+
+import { Toggle } from "../components/toggle.slint";
+import { ToggleSize, Tone, Elevation } from "../enums.slint";
+import { Theme } from "../globals/theme.slint";
+import { Locale } from "../globals/locale.slint";
+import { Spacing } from "../globals/spacing.slint";
+import { Typography } from "../globals/typography.slint";
+
+import "../assets/phosphor.ttf";
+import "../assets/lucide.ttf";
+
+component Section inherits VerticalLayout {
+    in property <string> title;
+    spacing: Spacing.sm;
+    Text {
+        text: root.title;
+        font-size: Typography.text-sm;
+        font-weight: Typography.weight-semibold;
+        color: Theme.muted-foreground;
+    }
+}
+
+export component TogglePreview inherits Window {
+    title: "Toggle — preview";
+    preferred-width: 1100px;
+    preferred-height: 1100px;
+    background: Theme.background;
+
+    in-out property <bool> rtl-toggle: false;
+    changed rtl-toggle => { Locale.rtl = self.rtl-toggle; }
+
+    // Pre-set values for the interactive demo column so each row stays on
+    // its respective state across runs of the preview.
+    in-out property <bool> demo-on-a: false;
+    in-out property <bool> demo-on-b: true;
+    in-out property <bool> demo-on-c: false;
+    in-out property <bool> demo-on-d: true;
+
+    VerticalLayout {
+        padding: Spacing.xl;
+        spacing: Spacing.xl;
+
+        Text {
+            text: "Toggle";
+            font-size: Typography.text-xxl;
+            font-weight: Typography.weight-bold;
+            color: Theme.foreground;
+        }
+        Text {
+            text: "iOS-style switch. Knob carries depth; track is flat with a subtle border. Slide animation (200ms) and press-dip on the knob face compose orthogonally.";
+            font-size: Typography.text-sm;
+            color: Theme.muted-foreground;
+            wrap: word-wrap;
+        }
+
+        // --- States: off / on across sizes -----------------------------
+        Section {
+            title: "States × sizes — off (left) and on (right) at sm / md / lg";
+            HorizontalLayout {
+                spacing: Spacing.xl;
+                alignment: start;
+                VerticalLayout {
+                    spacing: Spacing.md;
+                    Toggle { on: false; size: ToggleSize.sm; }
+                    Toggle { on: false; size: ToggleSize.md; }
+                    Toggle { on: false; size: ToggleSize.lg; }
+                }
+                VerticalLayout {
+                    spacing: Spacing.md;
+                    Toggle { on: true; size: ToggleSize.sm; }
+                    Toggle { on: true; size: ToggleSize.md; }
+                    Toggle { on: true; size: ToggleSize.lg; }
+                }
+            }
+        }
+
+        // --- Tones (all on) -------------------------------------------
+        Section {
+            title: "Tones — on-track color override (all switches in 'on' state)";
+            HorizontalLayout {
+                spacing: Spacing.md;
+                alignment: start;
+                Toggle { on: true; tone: Tone.default;     label: "default (success)"; }
+                Toggle { on: true; tone: Tone.primary;     label: "primary"; }
+                Toggle { on: true; tone: Tone.warning;     label: "warning"; }
+                Toggle { on: true; tone: Tone.destructive; label: "destructive"; }
+                Toggle { on: true; tone: Tone.info;        label: "info"; }
+                Toggle { on: true; tone: Tone.muted;       label: "muted"; }
+            }
+        }
+
+        // --- States: disabled, loading, with icons ---------------------
+        Section {
+            title: "Interaction states — disabled, loading, with knob icons";
+            HorizontalLayout {
+                spacing: Spacing.xl;
+                alignment: start;
+                Toggle { on: false; disabled: true;        label: "Disabled off"; }
+                Toggle { on: true;  disabled: true;        label: "Disabled on"; }
+                Toggle { on: false; loading: true;         label: "Loading"; }
+                Toggle { on: true;  on-icon: "check"; off-icon: "x"; label: "With icons"; description: "Knob shows check / x"; }
+            }
+        }
+
+        // --- Label + description ---------------------------------------
+        Section {
+            title: "Label + description — caption renders below label in muted-foreground";
+            HorizontalLayout {
+                spacing: Spacing.xl;
+                alignment: start;
+                Toggle {
+                    on: true;
+                    label: "Cloud sync";
+                    description: "Push transactions to the server in real time";
+                }
+                Toggle {
+                    on: false;
+                    label: "Receipt previews";
+                    description: "Show a thumbnail before printing";
+                }
+            }
+        }
+
+        // --- Depth: elevation steps ------------------------------------
+        Section {
+            title: "Depth — shadow-elevation from none to xl on the knob";
+            HorizontalLayout {
+                spacing: Spacing.md;
+                alignment: start;
+                Toggle { on: true; shadow-elevation: Elevation.none; }
+                Toggle { on: true; shadow-elevation: Elevation.sm; }
+                Toggle { on: true; shadow-elevation: Elevation.md; }
+                Toggle { on: true; shadow-elevation: Elevation.lg; }
+                Toggle { on: true; shadow-elevation: Elevation.xl; }
+            }
+        }
+
+        // --- Depth: thickness ------------------------------------------
+        Section {
+            title: "Depth — knob thickness extrusion; click to see the press dip";
+            HorizontalLayout {
+                spacing: Spacing.md;
+                alignment: start;
+                Toggle { on: demo-on-a; thickness: 0px; toggled(v) => { demo-on-a = v; } }
+                Toggle { on: demo-on-b; thickness: 2px; toggled(v) => { demo-on-b = v; } }
+                Toggle { on: demo-on-c; thickness: 4px; toggled(v) => { demo-on-c = v; } }
+                Toggle { on: demo-on-d; thickness: 6px; toggled(v) => { demo-on-d = v; } }
+            }
+        }
+
+        // --- Tooltip + accessibility -----------------------------------
+        Section {
+            title: "Tooltip — hover the switch to surface secondary context";
+            HorizontalLayout {
+                spacing: Spacing.xl;
+                alignment: start;
+                Toggle {
+                    on: true;
+                    label: "Auto-print";
+                    tooltip: "Print receipts immediately after settlement";
+                }
+                Toggle {
+                    on: false;
+                    aria-label: "Demo mode";
+                    tooltip: "Run in offline demo mode (no transactions sent)";
+                }
+            }
+        }
+
+        // --- height-override -------------------------------------------
+        Section {
+            title: "height-override — proportional scale-up (track width = height × 51/31)";
+            HorizontalLayout {
+                spacing: Spacing.md;
+                alignment: start;
+                Toggle { on: true; }                              // preset md
+                Toggle { on: true; height-override: 40px; }
+                Toggle { on: true; height-override: 48px; }
+                Toggle { on: true; height-override: 56px; }
+            }
+        }
+
+        // --- RTL toggle ------------------------------------------------
+        Section {
+            title: "RTL toggle — label/description column flips to the opposite side; knob geometry does NOT flip";
+            HorizontalLayout {
+                spacing: Spacing.xl;
+                alignment: start;
+                Toggle {
+                    on: true;
+                    label: rtl-toggle ? "المزامنة السحابية" : "Cloud sync";
+                    description: rtl-toggle ? "إرسال المعاملات إلى الخادم في الوقت الفعلي" : "Send transactions to server in real time";
+                }
+                Toggle {
+                    on: rtl-toggle;
+                    label: rtl-toggle ? "إيقاف RTL" : "Toggle RTL";
+                    toggled(v) => { rtl-toggle = v; }
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,373 @@
+// Toggle playground section.
+//
+// Same shape as Button/IconButton sections: in-out properties hold live
+// state, derived properties translate slug-strings into library enums,
+// a preview pane mounts the component, a code-snippet panel shows the
+// current configuration in Slint source form, and a property panel
+// exposes every public property.
+
+import { Toggle, ToggleSize, Tone, Elevation, Theme, Typography, Spacing } from "@abdu-slint-ui";
+import { ComboBox, CheckBox, LineEdit, HorizontalBox, VerticalBox, ScrollView, Slider } from "std-widgets.slint";
+
+export component ToggleSection inherits Rectangle {
+    // ===== Live property state ===========================================
+    in-out property <string> v-label: "Cloud sync";
+    in-out property <string> v-description: "Push transactions to the server in real time";
+    in-out property <string> v-tooltip: "";
+    in-out property <string> v-aria-label: "";
+    in-out property <bool>   v-on: true;
+    in-out property <bool>   v-disabled: false;
+    in-out property <bool>   v-loading: false;
+    in-out property <string> v-size: "md";
+    in-out property <string> v-tone: "default";
+    in-out property <string> v-on-icon: "";
+    in-out property <string> v-off-icon: "";
+    in-out property <bool>   v-elevated: true;
+    in-out property <string> v-shadow-elevation: "sm";
+    in-out property <string> v-shadow-color: "none";
+    in-out property <float>  v-shadow-direction: 0.0;
+    in-out property <float>  v-thickness-px: 0.0;
+    in-out property <bool>   v-press-animation: true;
+    in-out property <float>  v-height-override-px: 0.0;
+    in-out property <bool>   v-debug-bounds: false;
+
+    // ===== Derived enum values ==========================================
+    property <ToggleSize> size-enum:
+          v-size == "sm" ? ToggleSize.sm
+        : v-size == "lg" ? ToggleSize.lg
+        : ToggleSize.md;
+
+    property <Tone> tone-enum:
+          v-tone == "primary"     ? Tone.primary
+        : v-tone == "success"     ? Tone.success
+        : v-tone == "warning"     ? Tone.warning
+        : v-tone == "destructive" ? Tone.destructive
+        : v-tone == "info"        ? Tone.info
+        : v-tone == "muted"       ? Tone.muted
+        : Tone.default;
+
+    property <Elevation> shadow-elevation-enum:
+          v-shadow-elevation == "none" ? Elevation.none
+        : v-shadow-elevation == "md"   ? Elevation.md
+        : v-shadow-elevation == "lg"   ? Elevation.lg
+        : v-shadow-elevation == "xl"   ? Elevation.xl
+        : Elevation.sm;
+
+    // Palette for shadow-color (matches Button / IconButton for consistency).
+    property <[{slug: string, swatch: color}]> palette: [
+        { slug: "none",     swatch: #00000000 },
+        { slug: "red",      swatch: #ef4444 },
+        { slug: "orange",   swatch: #f97316 },
+        { slug: "amber",    swatch: #f59e0b },
+        { slug: "yellow",   swatch: #eab308 },
+        { slug: "lime",     swatch: #84cc16 },
+        { slug: "green",    swatch: #22c55e },
+        { slug: "emerald",  swatch: #10b981 },
+        { slug: "teal",     swatch: #14b8a6 },
+        { slug: "cyan",     swatch: #06b6d4 },
+        { slug: "sky",      swatch: #0ea5e9 },
+        { slug: "blue",     swatch: #3b82f6 },
+        { slug: "indigo",   swatch: #6366f1 },
+        { slug: "violet",   swatch: #8b5cf6 },
+        { slug: "purple",   swatch: #a855f7 },
+        { slug: "fuchsia",  swatch: #d946ef },
+        { slug: "pink",     swatch: #ec4899 },
+        { slug: "rose",     swatch: #f43f5e },
+        { slug: "slate",    swatch: #475569 },
+    ];
+
+    property <color> shadow-color-resolved:
+          v-shadow-color == "red"      ? #ef4444b3
+        : v-shadow-color == "orange"   ? #f97316b3
+        : v-shadow-color == "amber"    ? #f59e0bb3
+        : v-shadow-color == "yellow"   ? #eab308b3
+        : v-shadow-color == "lime"     ? #84cc16b3
+        : v-shadow-color == "green"    ? #22c55eb3
+        : v-shadow-color == "emerald"  ? #10b981b3
+        : v-shadow-color == "teal"     ? #14b8a6b3
+        : v-shadow-color == "cyan"     ? #06b6d4b3
+        : v-shadow-color == "sky"      ? #0ea5e9b3
+        : v-shadow-color == "blue"     ? #3b82f6b3
+        : v-shadow-color == "indigo"   ? #6366f1b3
+        : v-shadow-color == "violet"   ? #8b5cf6b3
+        : v-shadow-color == "purple"   ? #a855f7b3
+        : v-shadow-color == "fuchsia"  ? #d946efb3
+        : v-shadow-color == "pink"     ? #ec4899b3
+        : v-shadow-color == "rose"     ? #f43f5eb3
+        : v-shadow-color == "slate"    ? #475569b3
+        : transparent;
+
+    background: transparent;
+
+    HorizontalLayout {
+        // --- Preview pane ------------------------------------------------
+        Rectangle {
+            background: Theme.surface-muted;
+            VerticalBox {
+                padding: 32px;
+                spacing: Spacing.lg;
+                alignment: center;
+                Text {
+                    text: "Live preview";
+                    font-size: Typography.text-sm;
+                    color: Theme.muted-foreground;
+                }
+                HorizontalLayout {
+                    alignment: center;
+                    Toggle {
+                        label: root.v-label;
+                        description: root.v-description;
+                        tooltip: root.v-tooltip;
+                        aria-label: root.v-aria-label;
+                        on: root.v-on;
+                        disabled: root.v-disabled;
+                        loading: root.v-loading;
+                        size: root.size-enum;
+                        tone: root.tone-enum;
+                        on-icon: root.v-on-icon;
+                        off-icon: root.v-off-icon;
+                        elevated: root.v-elevated;
+                        shadow-elevation: root.shadow-elevation-enum;
+                        shadow-color: root.shadow-color-resolved;
+                        shadow-direction: floor(root.v-shadow-direction);
+                        thickness: root.v-thickness-px * 1px;
+                        press-animation: root.v-press-animation;
+                        height-override: root.v-height-override-px * 1px;
+                        debug-bounds: root.v-debug-bounds;
+                        toggled(v) => { root.v-on = v; }
+                    }
+                }
+
+                // Code snippet panel.
+                Rectangle {
+                    background: #0f172a;
+                    border-radius: 8px;
+                    height: 260px;
+                    ScrollView {
+                        Text {
+                            x: 16px;
+                            y: 12px;
+                            text:
+                                  "Toggle {\n"
+                                + (root.v-label != ""        ? "    label: \"" + root.v-label + "\";\n" : "")
+                                + (root.v-description != ""  ? "    description: \"" + root.v-description + "\";\n" : "")
+                                + (root.v-tooltip != ""      ? "    tooltip: \"" + root.v-tooltip + "\";\n" : "")
+                                + (root.v-aria-label != ""   ? "    aria-label: \"" + root.v-aria-label + "\";\n" : "")
+                                + (root.v-on                 ? "    on: true;\n" : "")
+                                + (root.v-disabled           ? "    disabled: true;\n" : "")
+                                + (root.v-loading            ? "    loading: true;\n" : "")
+                                + (root.v-size != "md"       ? "    size: ToggleSize." + root.v-size + ";\n" : "")
+                                + (root.v-tone != "default"  ? "    tone: Tone." + root.v-tone + ";\n" : "")
+                                + (root.v-on-icon != ""      ? "    on-icon: \"" + root.v-on-icon + "\";\n" : "")
+                                + (root.v-off-icon != ""     ? "    off-icon: \"" + root.v-off-icon + "\";\n" : "")
+                                + (!root.v-elevated          ? "    elevated: false;\n" : "")
+                                + (root.v-shadow-elevation != "sm" ? "    shadow-elevation: Elevation." + root.v-shadow-elevation + ";\n" : "")
+                                + (root.v-shadow-color != "none"   ? "    shadow-color: " + root.v-shadow-color + ";  // preset\n" : "")
+                                + (root.v-shadow-direction > 0     ? "    shadow-direction: " + floor(root.v-shadow-direction) + ";\n" : "")
+                                + (root.v-thickness-px > 0         ? "    thickness: " + floor(root.v-thickness-px) + "px;\n" : "")
+                                + (!root.v-press-animation         ? "    press-animation: false;\n" : "")
+                                + (root.v-height-override-px > 0   ? "    height-override: " + floor(root.v-height-override-px) + "px;\n" : "")
+                                + (root.v-debug-bounds             ? "    debug-bounds: true;\n" : "")
+                                + "}";
+                            color: #f8fafc;
+                            font-family: "monospace";
+                            font-size: 12px;
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- Property panel ----------------------------------------------
+        Rectangle {
+            width: 320px;
+            background: Theme.surface;
+            Rectangle { width: 1px; background: Theme.border; }
+
+            ScrollView {
+                VerticalBox {
+                    padding: 16px;
+                    spacing: 10px;
+
+                    Text { text: "Properties"; font-weight: 600; font-size: 14px; }
+
+                    Text { text: "label"; font-size: 12px; color: Theme.muted-foreground; }
+                    LineEdit {
+                        text: root.v-label;
+                        placeholder-text: "Primary text beside the switch";
+                        edited(s) => { root.v-label = s; }
+                    }
+
+                    Text { text: "description"; font-size: 12px; color: Theme.muted-foreground; }
+                    LineEdit {
+                        text: root.v-description;
+                        placeholder-text: "Caption below label (optional)";
+                        edited(s) => { root.v-description = s; }
+                    }
+
+                    Text { text: "tooltip"; font-size: 12px; color: Theme.muted-foreground; }
+                    LineEdit {
+                        text: root.v-tooltip;
+                        edited(s) => { root.v-tooltip = s; }
+                    }
+
+                    Text { text: "aria-label"; font-size: 12px; color: Theme.muted-foreground; }
+                    LineEdit {
+                        text: root.v-aria-label;
+                        placeholder-text: "Explicit a11y name (overrides cascade)";
+                        edited(s) => { root.v-aria-label = s; }
+                    }
+
+                    CheckBox { text: "on (current state)"; checked: root.v-on; toggled => { root.v-on = self.checked; } }
+                    CheckBox { text: "disabled"; checked: root.v-disabled; toggled => { root.v-disabled = self.checked; } }
+                    CheckBox { text: "loading"; checked: root.v-loading; toggled => { root.v-loading = self.checked; } }
+
+                    Text { text: "size"; font-size: 12px; color: Theme.muted-foreground; }
+                    ComboBox {
+                        model: ["sm", "md", "lg"];
+                        current-value: root.v-size;
+                        selected(v) => { root.v-size = v; }
+                    }
+
+                    Text { text: "tone (on-track color)"; font-size: 12px; color: Theme.muted-foreground; }
+                    ComboBox {
+                        model: ["default", "primary", "success", "warning", "destructive", "info", "muted"];
+                        current-value: root.v-tone;
+                        selected(v) => { root.v-tone = v; }
+                    }
+
+                    Text { text: "on-icon (inside knob when on)"; font-size: 12px; color: Theme.muted-foreground; }
+                    LineEdit {
+                        text: root.v-on-icon;
+                        placeholder-text: "e.g. check";
+                        edited(s) => { root.v-on-icon = s; }
+                    }
+
+                    Text { text: "off-icon (inside knob when off)"; font-size: 12px; color: Theme.muted-foreground; }
+                    LineEdit {
+                        text: root.v-off-icon;
+                        placeholder-text: "e.g. x";
+                        edited(s) => { root.v-off-icon = s; }
+                    }
+
+                    CheckBox { text: "elevated (knob shadow master)"; checked: root.v-elevated; toggled => { root.v-elevated = self.checked; } }
+
+                    Text { text: "shadow-elevation (knob magnitude)"; font-size: 12px; color: Theme.muted-foreground; }
+                    ComboBox {
+                        model: ["none", "sm", "md", "lg", "xl"];
+                        current-index: root.v-shadow-elevation == "none" ? 0
+                                     : root.v-shadow-elevation == "md"   ? 2
+                                     : root.v-shadow-elevation == "lg"   ? 3
+                                     : root.v-shadow-elevation == "xl"   ? 4 : 1;
+                        selected(v) => { root.v-shadow-elevation = v; }
+                    }
+
+                    Text { text: "shadow-color (tint)"; font-size: 12px; color: Theme.muted-foreground; }
+                    Text {
+                        text: root.v-shadow-color == "none" ? "Theme default (gray)" : root.v-shadow-color;
+                        font-size: 11px;
+                        color: Theme.muted-foreground;
+                    }
+                    Rectangle {
+                        height: 4 * 32px;
+                        background: transparent;
+                        for entry[idx] in root.palette: Rectangle {
+                            x: mod(idx, 6) * 32px;
+                            y: floor(idx / 6) * 32px;
+                            width: 28px;
+                            height: 28px;
+                            background: entry.swatch;
+                            border-radius: 6px;
+                            border-width: root.v-shadow-color == entry.slug ? 2px : 1px;
+                            border-color: root.v-shadow-color == entry.slug ? Theme.foreground : Theme.border;
+                            if entry.slug == "none": Rectangle {
+                                background: Theme.surface;
+                                border-radius: 6px;
+                                Text {
+                                    text: "Ø";
+                                    color: Theme.muted-foreground;
+                                    font-size: 16px;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                            }
+                            TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { root.v-shadow-color = entry.slug; }
+                            }
+                        }
+                    }
+
+                    Text { text: "shadow-direction (light angle, degrees)"; font-size: 12px; color: Theme.muted-foreground; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Slider {
+                            minimum: 0;
+                            maximum: 359;
+                            value: root.v-shadow-direction;
+                            changed(val) => { root.v-shadow-direction = val; }
+                        }
+                        Text {
+                            text:
+                                  floor(root.v-shadow-direction) + "° "
+                                + (root.v-shadow-direction < 22  ? "↑"
+                                 : root.v-shadow-direction < 67  ? "↗"
+                                 : root.v-shadow-direction < 112 ? "→"
+                                 : root.v-shadow-direction < 157 ? "↘"
+                                 : root.v-shadow-direction < 202 ? "↓"
+                                 : root.v-shadow-direction < 247 ? "↙"
+                                 : root.v-shadow-direction < 292 ? "←"
+                                 : root.v-shadow-direction < 337 ? "↖"
+                                 : "↑");
+                            vertical-alignment: center;
+                            font-size: 12px;
+                            color: Theme.muted-foreground;
+                            min-width: 56px;
+                        }
+                    }
+
+                    Text { text: "thickness (knob extrusion, px)"; font-size: 12px; color: Theme.muted-foreground; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Slider {
+                            minimum: 0;
+                            maximum: 8;
+                            value: root.v-thickness-px;
+                            changed(val) => { root.v-thickness-px = val; }
+                        }
+                        Text {
+                            text: root.v-thickness-px == 0 ? "flat" : floor(root.v-thickness-px) + "px";
+                            vertical-alignment: center;
+                            font-size: 12px;
+                            color: Theme.muted-foreground;
+                            min-width: 40px;
+                        }
+                    }
+
+                    CheckBox { text: "press-animation (knob face dips on press)"; checked: root.v-press-animation; toggled => { root.v-press-animation = self.checked; } }
+                    CheckBox { text: "debug-bounds (magenta track outline + aria badge)"; checked: root.v-debug-bounds; toggled => { root.v-debug-bounds = self.checked; } }
+
+                    Text { text: "height-override (px) — 0 = use preset"; font-size: 12px; color: Theme.muted-foreground; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Slider {
+                            minimum: 0;
+                            maximum: 72;
+                            value: root.v-height-override-px;
+                            changed(val) => { root.v-height-override-px = val; }
+                        }
+                        Text {
+                            text: root.v-height-override-px == 0 ? "off" : floor(root.v-height-override-px) + "px";
+                            vertical-alignment: center;
+                            font-size: 12px;
+                            color: Theme.muted-foreground;
+                            min-width: 40px;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

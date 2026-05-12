@@ -15,6 +15,7 @@ import { Theme, Locale, IconFont, IconFamily, CurrencyFormat, Animation } from "
 import { ComboBox, CheckBox, HorizontalBox, VerticalBox, ListView, StandardListView, StandardButton, ScrollView, Slider } from "std-widgets.slint";
 import { ButtonSection } from "sections/button.slint";
 import { IconButtonSection } from "sections/icon-button.slint";
+import { ToggleSection } from "sections/toggle.slint";
 
 export component PlaygroundWindow inherits Window {
     title: "abdu-slint-ui Playground";
@@ -125,8 +126,25 @@ export component PlaygroundWindow inherits Window {
                     }
                 }
 
+                toggle-tile := Rectangle {
+                    height: 36px;
+                    background: root.selected-section == "toggle" ? #e2e8f0 : transparent;
+                    border-radius: 6px;
+                    Text {
+                        x: 12px;
+                        text: "Toggle";
+                        font-size: 13px;
+                        vertical-alignment: center;
+                        color: #0f172a;
+                    }
+                    TouchArea {
+                        clicked => { root.selected-section = "toggle"; }
+                        mouse-cursor: pointer;
+                    }
+                }
+
                 Text {
-                    text: "(Toggle, Card, KeyValueRow appear here as their sections land)";
+                    text: "(Card, KeyValueRow appear here as their sections land)";
                     font-size: 11px;
                     color: #94a3b8;
                     wrap: word-wrap;
@@ -257,12 +275,13 @@ export component PlaygroundWindow inherits Window {
             // Section pane
             if root.selected-section == "button":      ButtonSection { }
             if root.selected-section == "icon-button": IconButtonSection { }
-            if root.selected-section != "button" && root.selected-section != "icon-button": Rectangle {
+            if root.selected-section == "toggle":      ToggleSection { }
+            if root.selected-section != "button" && root.selected-section != "icon-button" && root.selected-section != "toggle": Rectangle {
                 background: Theme.surface-muted;
                 Text {
                     x: 32px;
                     y: 32px;
-                    text: "Section '" + root.selected-section + "' not yet implemented. Select Button or IconButton from the sidebar.";
+                    text: "Section '" + root.selected-section + "' not yet implemented. Select Button, IconButton, or Toggle from the sidebar.";
                     color: Theme.muted-foreground;
                 }
             }

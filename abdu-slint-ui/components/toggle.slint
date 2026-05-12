@@ -1,0 +1,485 @@
+// Toggle — iOS-style binary switch.
+//
+// Sibling of Button and IconButton. Not derived from either. Shares the
+// `Depth` global for knob shadow math and adopts the accessibility
+// cascade pattern (`aria-label → tooltip → label → "Toggle"`) — but
+// with `accessible-role: switch`, not button.
+//
+// Depth applies to the knob, not the track. A track shadow would weld
+// the pill to the substrate beneath; the iOS aesthetic floats the knob
+// over a recessed channel. The track gets a flat fill + subtle border;
+// the knob carries the drop-shadow and optional `thickness` extrusion.
+//
+// The slide animation (knob x) and the press-dip (knob face y) compose
+// orthogonally — both can fire simultaneously without interference.
+//
+// Per architecture/toggle.md.
+
+import { ToggleSize, Tone, Elevation } from "../enums.slint";
+import { Theme } from "../globals/theme.slint";
+import { Typography } from "../globals/typography.slint";
+import { Sizes } from "../globals/sizes.slint";
+import { Radius } from "../globals/radius.slint";
+import { Spacing } from "../globals/spacing.slint";
+import { Animation } from "../globals/animation.slint";
+import { Locale } from "../globals/locale.slint";
+import { IconFont } from "../globals/icon-font.slint";
+import { Depth } from "../globals/depth.slint";
+
+export component Toggle inherits Rectangle {
+    // ===== Public API =====================================================
+
+    /// Visible primary text rendered beside the switch. RTL-aware position.
+    in property <string> label: "";
+
+    /// Caption rendered below `label`, in `Theme.muted-foreground`.
+    /// Not part of the accessibility-name cascade.
+    in property <string> description: "";
+
+    /// Hover text shown after a brief delay above the track.
+    /// Doubles as the accessible-name fallback when `aria-label` is empty.
+    in property <string> tooltip: "";
+
+    /// Explicit accessibility name. Always wins the cascade.
+    in property <string> aria-label: "";
+
+    /// Controlled on/off state. Toggle flips this itself on user activation
+    /// and then fires `toggled(on)` — matches Button's `checkable` flow.
+    in-out property <bool> on: false;
+
+    /// Visually muted; blocks click and keyboard activation.
+    in property <bool> disabled: false;
+
+    /// Swaps the knob glyph to the rotating spinner and blocks `toggled`.
+    /// `on` is preserved through loading — the consumer flips it once
+    /// their async work completes.
+    in property <bool> loading: false;
+
+    /// Vertical scale. `sm / md / lg` map to the iOS-canonical proportions
+    /// (`md` is the iOS 51×31 reference).
+    in property <ToggleSize> size: ToggleSize.md;
+
+    /// On-state color override. `default` resolves to `Theme.success` (iOS
+    /// green). `destructive` makes the on-track red for irreversible-action
+    /// toggles.
+    in property <Tone> tone: Tone.default;
+
+    /// Icon rendered inside the knob when `on`. Cross-fades with `off-icon`
+    /// during the slide animation.
+    in property <string> on-icon: "";
+
+    /// Icon rendered inside the knob when off.
+    in property <string> off-icon: "";
+
+    /// Master shadow on/off gate on the knob.
+    in property <bool> elevated: true;
+
+    /// Knob shadow magnitude when elevated. Hover bumps one step.
+    in property <Elevation> shadow-elevation: Elevation.sm;
+
+    /// Custom knob shadow color override. Transparent = use Theme token.
+    in property <color> shadow-color: transparent;
+
+    /// Direction the simulated light comes from, in degrees [0, 359].
+    in property <int> shadow-direction: 0;
+
+    /// Visible 3D extrusion on the knob. Two-layer surface/face — the
+    /// skirt peeks under the face at the bottom by `thickness` px.
+    /// `0px` = flat disc. 2–4px reads as tactile.
+    in property <length> thickness: 0px;
+
+    /// Controls the "press into the base" face-slide on the knob. Composes
+    /// orthogonally with the x-slide between off and on positions.
+    in property <bool> press-animation: true;
+
+    /// Custom track-height override. `0px` = use the `size` preset. Any
+    /// positive value forces the track height; knob diameter and track
+    /// width scale proportionally at the iOS aspect ratio (51/31).
+    in property <length> height-override: 0px;
+
+    /// Debug helper. When true, draws a magenta border on the track
+    /// Rectangle and, if the accessibility cascade is falling through
+    /// to the "Toggle" default, renders a magenta dot at the top-right.
+    in property <bool> debug-bounds: false;
+
+    // ===== Callbacks ======================================================
+
+    /// Fires after `on` has been flipped by user activation. Argument is
+    /// the new value (same as `root.on` post-flip).
+    callback toggled(bool);
+    callback pressed-changed(bool);
+    callback hover-changed(bool);
+    callback focus-changed(bool);
+
+    // ===== Internal derived state =========================================
+
+    // Preset track height / width / knob diameter. The aspect ratio is
+    // locked to iOS-canonical 51/31 ≈ 1.645 across sizes; this gives a
+    // consistent visual rhythm regardless of which preset is picked.
+    property <length> preset-track-height:
+          root.size == ToggleSize.sm ? 26px
+        : root.size == ToggleSize.lg ? 36px
+        : 31px;
+
+    property <length> preset-track-width:
+          root.size == ToggleSize.sm ? 44px
+        : root.size == ToggleSize.lg ? 60px
+        : 51px;
+
+    // Knob inset on every side (between knob edge and track edge). Fixed
+    // across sizes and overrides — it's the visual "rim" of the channel.
+    property <length> gap: 2px;
+
+    property <bool>   height-overridden: root.height-override > 0px;
+
+    // Resolved (preset OR override-driven) dimensions.
+    property <length> resolved-track-height:
+        root.height-overridden ? root.height-override : root.preset-track-height;
+
+    property <length> resolved-track-width:
+        root.height-overridden ? (root.height-override * 1645 / 1000) : root.preset-track-width;
+
+    property <length> resolved-knob-diameter: root.resolved-track-height - 2 * root.gap;
+
+    // Knob x positions inside the track. RTL does NOT flip: a switch's
+    // physical geometry is locale-independent (off = "switch toward
+    // negative", on = "switch toward positive") and iOS Arabic behaves
+    // the same way.
+    property <length> off-x: root.gap;
+    property <length> on-x:  root.resolved-track-width - root.resolved-knob-diameter - root.gap;
+    property <length> knob-x: root.on ? root.on-x : root.off-x;
+
+    // Knob icon size — 50% of the knob diameter. Floor at 10px to keep
+    // the glyph legible on `sm` (knob is 22px → 11px icon).
+    property <length> knob-icon-size: max(10px, root.resolved-knob-diameter * 0.5);
+
+    // ===== Tone resolution (track-on color) ==============================
+
+    property <color> track-on-bg:
+          root.tone == Tone.primary     ? Theme.primary
+        : root.tone == Tone.success     ? Theme.success
+        : root.tone == Tone.warning     ? Theme.warning
+        : root.tone == Tone.destructive ? Theme.destructive
+        : root.tone == Tone.info        ? Theme.info
+        : root.tone == Tone.muted       ? Theme.muted-foreground
+        : Theme.success;   // Tone.default → iOS systemGreen
+
+    property <color> track-off-bg: Theme.border;   // iOS separator gray
+    property <color> track-bg-target: root.on ? root.track-on-bg : root.track-off-bg;
+
+    // Subtle inner-edge border for channel definition (no inset shadow in v1).
+    property <color> track-border-color:
+          root.debug-bounds ? #ff00ff
+        : root.on           ? root.track-on-bg.darker(10%)
+        :                     root.track-off-bg.darker(5%);
+
+    // ===== Press / hover / disabled ======================================
+
+    // The toggle's state lives in `on` (knob position). A "checked"
+    // pressed-look would be visually confusing here — deliberate
+    // divergence from Button's `checkable && checked` path. Only a live
+    // tactile press triggers the knob's face dip.
+    property <bool> visually-pressed: !root.loading && touch.pressed;
+
+    // ===== Depth (delegated to the Depth global) =========================
+
+    property <Elevation> eff-level:     Depth.bumped(root.shadow-elevation, touch.has-hover);
+    property <bool>      apply-shadow:  Depth.applies(root.elevated, root.disabled, root.shadow-elevation);
+    property <length>    eff-magnitude: Depth.magnitude(root.eff-level);
+
+    // ===== Column visibility =============================================
+
+    property <bool> has-column: root.label != "" || root.description != "";
+
+    // ===== Root: events, accessibility, opacity ==========================
+
+    background: transparent;
+    horizontal-stretch: 0.0;
+
+    opacity:
+          root.disabled         ? 0.5
+        : root.visually-pressed ? 0.92
+        :                         1.0;
+    animate opacity { duration: Animation.fast; easing: ease-out; }
+
+    // Accessibility — `switch` is Slint's distinct AccessibleRole value.
+    // `description` is not part of the cascade (captions are not names).
+    accessible-role: switch;
+    accessible-label:
+          root.aria-label != "" ? root.aria-label
+        : root.tooltip    != "" ? root.tooltip
+        : root.label      != "" ? root.label
+        :                         "Toggle";
+    accessible-checkable: true;
+    accessible-checked:   root.on;
+    accessible-enabled:   !root.disabled && !root.loading;
+    accessible-action-default => {
+        root.on = !root.on;
+        root.toggled(root.on);
+    }
+
+    // ===== Layout: track + optional label/description column =============
+    //
+    // Order is RTL-aware. Two `if Locale.rtl` branches around the same
+    // track-container give us LTR (track | column) and RTL (column | track)
+    // without absolute positioning. Mirrors Button's icon-leading /
+    // icon-trailing duplication pattern.
+
+    HorizontalLayout {
+        alignment: start;
+        spacing: root.has-column ? Spacing.md : 0px;
+
+        // RTL: column first.
+        if Locale.rtl && root.has-column: VerticalLayout {
+            spacing: 2px;
+            alignment: center;
+            if root.label != "": Text {
+                text: root.label;
+                font-family: Locale.current == "ar" ? Typography.font-family-ar : Typography.font-family;
+                font-size: Typography.text-base;
+                font-weight: Typography.weight-medium;
+                color: Theme.foreground;
+                horizontal-alignment: right;
+            }
+            if root.description != "": Text {
+                text: root.description;
+                font-family: Locale.current == "ar" ? Typography.font-family-ar : Typography.font-family;
+                font-size: Typography.text-sm;
+                color: Theme.muted-foreground;
+                horizontal-alignment: right;
+                wrap: word-wrap;
+            }
+        }
+
+        // The track — always rendered, in the middle of the layout.
+        track-container := Rectangle {
+            width:  root.resolved-track-width;
+            height: root.resolved-track-height;
+            vertical-stretch: 0;
+            horizontal-stretch: 0;
+
+            track := Rectangle {
+                x: 0;
+                y: 0;
+                width:  parent.width;
+                height: parent.height;
+                background: root.track-bg-target;
+                border-radius: self.height / 2;   // pill — locked
+                border-width:
+                      root.debug-bounds ? 2px
+                    :                     Sizes.border-thin;
+                border-color: root.track-border-color;
+
+                animate background  { duration: Animation.fast; easing: ease-out; }
+                animate border-color { duration: Animation.fast; easing: ease-out; }
+
+                // ----- Knob: surface (skirt) + face (top) ----------------
+                //
+                // Same two-layer pattern as Button. The surface carries the
+                // drop-shadow and is the "side wall" visible during press
+                // when thickness > 0. The face slides down by 70% of
+                // thickness on press while the surface stays put.
+
+                knob-surface := Rectangle {
+                    x: root.knob-x;
+                    y: root.gap;
+                    width:  root.resolved-knob-diameter;
+                    height: root.resolved-knob-diameter;
+                    background: #f0f0f0;   // skirt — visible side wall when thickness > 0
+                    border-radius: self.width / 2;
+
+                    drop-shadow-blur:     root.apply-shadow ? Depth.blur(root.eff-level) : 0px;
+                    drop-shadow-offset-x: root.apply-shadow ? Depth.offset-x(root.shadow-direction, root.eff-magnitude) : 0px;
+                    drop-shadow-offset-y: root.apply-shadow ? Depth.offset-y(root.shadow-direction, root.eff-magnitude) : 0px;
+                    drop-shadow-color:    root.apply-shadow ? Depth.color-of(root.eff-level, root.shadow-color) : #00000000;
+
+                    animate x { duration: Animation.normal; easing: ease-out; }
+                    animate drop-shadow-blur     { duration: Animation.fast; easing: ease-out; }
+                    animate drop-shadow-offset-x { duration: Animation.fast; easing: ease-out; }
+                    animate drop-shadow-offset-y { duration: Animation.fast; easing: ease-out; }
+
+                    knob-face := Rectangle {
+                        x: 0;
+                        y: (root.visually-pressed && root.press-animation) ? root.thickness * 0.7 : 0px;
+                        width:  parent.width;
+                        height: parent.height - root.thickness;
+                        background: @linear-gradient(180deg, #ffffff 0%, #f5f5f5 100%);
+                        border-radius: self.height / 2;
+                        clip: true;
+
+                        animate y      { duration: Animation.fast; easing: ease-out; }
+                        animate height { duration: Animation.fast; easing: ease-out; }
+
+                        // Glossy top-half highlight (subtle gloss on the white disc).
+                        Rectangle {
+                            x: 0;
+                            y: 0;
+                            width:  parent.width;
+                            height: parent.height * 0.55;
+                            border-top-left-radius:     parent.border-radius;
+                            border-top-right-radius:    parent.border-radius;
+                            border-bottom-left-radius:  0px;
+                            border-bottom-right-radius: 0px;
+                            background: @linear-gradient(180deg, #ffffff66 0%, #ffffff00 100%);
+                        }
+
+                        // ----- Knob icons (cross-fade) ----------------------
+                        //
+                        // Three stacked Text elements. `off-icon-text` and
+                        // `on-icon-text` cross-fade over Animation.normal
+                        // (same duration as the knob's x-slide), so they
+                        // read as a single motion. `loader-text` swaps in
+                        // with the snappier Animation.fast when `loading`
+                        // becomes true — the load-state transition is a
+                        // distinct semantic event from the on/off slide.
+
+                        off-icon-text := Text {
+                            width:  parent.width;
+                            height: parent.height;
+                            text: IconFont.resolve(root.off-icon);
+                            font-family: IconFont.font-family-name();
+                            font-size: root.knob-icon-size;
+                            color: Theme.muted-foreground;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            opacity: root.loading ? 0 : (root.on ? 0 : 1);
+                            animate opacity { duration: Animation.normal; easing: ease-out; }
+                        }
+
+                        on-icon-text := Text {
+                            width:  parent.width;
+                            height: parent.height;
+                            text: IconFont.resolve(root.on-icon);
+                            font-family: IconFont.font-family-name();
+                            font-size: root.knob-icon-size;
+                            color: Theme.muted-foreground;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            opacity: root.loading ? 0 : (root.on ? 1 : 0);
+                            animate opacity { duration: Animation.normal; easing: ease-out; }
+                        }
+
+                        // Loader: rotation only when loading. transform-origin
+                        // defaults to top-left in Slint — pin it to the
+                        // glyph's center or the spinner orbits its corner.
+                        loader-text := Text {
+                            width:  parent.width;
+                            height: parent.height;
+                            text: IconFont.resolve("loader");
+                            font-family: IconFont.font-family-name();
+                            font-size: root.knob-icon-size;
+                            color: Theme.muted-foreground;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            opacity: root.loading ? 1 : 0;
+                            transform-rotation: root.loading
+                                ? mod(animation-tick(), Animation.spinner-period) / Animation.spinner-period * 360deg
+                                : 0deg;
+                            transform-origin: { x: self.width / 2, y: self.height / 2 };
+                            animate opacity { duration: Animation.fast; easing: ease-out; }
+                        }
+                    }
+                }
+            }
+        }
+
+        // LTR: column second.
+        if !Locale.rtl && root.has-column: VerticalLayout {
+            spacing: 2px;
+            alignment: center;
+            if root.label != "": Text {
+                text: root.label;
+                font-family: Locale.current == "ar" ? Typography.font-family-ar : Typography.font-family;
+                font-size: Typography.text-base;
+                font-weight: Typography.weight-medium;
+                color: Theme.foreground;
+            }
+            if root.description != "": Text {
+                text: root.description;
+                font-family: Locale.current == "ar" ? Typography.font-family-ar : Typography.font-family;
+                font-size: Typography.text-sm;
+                color: Theme.muted-foreground;
+                wrap: word-wrap;
+            }
+        }
+    }
+
+    // ===== Focus ring =====================================================
+    // Drawn outside the root, encompassing the entire control (track +
+    // label column). Width/height follow root automatically because the
+    // HorizontalLayout drives root's intrinsic sizing.
+    Rectangle {
+        x: -Sizes.focus-ring-offset;
+        y: -Sizes.focus-ring-offset;
+        width:  parent.width  + 2 * Sizes.focus-ring-offset;
+        height: parent.height + 2 * Sizes.focus-ring-offset;
+        border-radius: Radius.md + Sizes.focus-ring-offset;
+        border-color: Theme.ring;
+        border-width: focus-scope.has-focus ? Sizes.focus-ring : 0px;
+        background: transparent;
+    }
+
+    // ===== Debug aria badge ==============================================
+    if root.debug-bounds && root.aria-label == "" && root.tooltip == "" && root.label == "": Rectangle {
+        x: parent.width - self.width - 4px;
+        y: 4px;
+        width: 6px;
+        height: 6px;
+        border-radius: 3px;
+        background: #ff00ff;
+    }
+
+    // ===== Interaction layer ==============================================
+
+    touch := TouchArea {
+        enabled: !root.disabled && !root.loading;
+        mouse-cursor: root.disabled || root.loading ? MouseCursor.default : MouseCursor.pointer;
+
+        clicked => {
+            root.on = !root.on;
+            root.toggled(root.on);
+        }
+
+        changed has-hover => { root.hover-changed(self.has-hover); }
+        changed pressed   => { root.pressed-changed(self.pressed); }
+    }
+
+    focus-scope := FocusScope {
+        enabled: !root.disabled && !root.loading;
+        key-pressed(event) => {
+            if (event.text == " " || event.text == "\n") {
+                root.on = !root.on;
+                root.toggled(root.on);
+                return accept;
+            }
+            return reject;
+        }
+        changed has-focus => { root.focus-changed(self.has-focus); }
+    }
+
+    // ===== Tooltip ========================================================
+    // Centered above the track-container (not above the full control —
+    // the label column doesn't move the tooltip).
+
+    if root.tooltip != "" && touch.has-hover && !root.disabled: Rectangle {
+        x: (Locale.rtl ? parent.width - root.resolved-track-width : 0px)
+           + (root.resolved-track-width - self.width) / 2;
+        y: -self.height - 6px;
+        width:  tooltip-text.preferred-width + 16px;
+        height: tooltip-text.preferred-height + 8px;
+        background: Theme.tooltip-background;
+        border-radius: Radius.sm;
+        drop-shadow-blur:     Theme.shadow-md-blur;
+        drop-shadow-offset-y: Theme.shadow-md-y;
+        drop-shadow-color:    Theme.shadow-md-color;
+        opacity: 0.96;
+        tooltip-text := Text {
+            x: 8px;
+            y: 4px;
+            text: root.tooltip;
+            color: Theme.tooltip-foreground;
+            font-size: Typography.text-xs;
+            font-family: Typography.font-family;
+        }
+    }
+}
