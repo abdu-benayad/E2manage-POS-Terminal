@@ -6,7 +6,7 @@
 // "Button" in the sidebar.
 
 import { Button, ButtonVariant, ButtonSize, Shape, Tone, Theme, Typography, Spacing } from "@abdu-slint-ui";
-import { ComboBox, CheckBox, LineEdit, HorizontalBox, VerticalBox, ScrollView } from "std-widgets.slint";
+import { ComboBox, CheckBox, LineEdit, HorizontalBox, VerticalBox, ScrollView, Slider } from "std-widgets.slint";
 
 export component ButtonSection inherits Rectangle {
     // ===== Live property state ===========================================
@@ -24,8 +24,11 @@ export component ButtonSection inherits Rectangle {
     in-out property <bool>   v-checked: false;
     in-out property <string> v-tooltip: "";
     in-out property <string> v-aria-label: "";
-    in-out property <string> v-bg-color: "none";   // "none" | "red" | "green" | "blue" | "amber" | "purple"
+    // Selected swatch slug. "none" means no override.
+    in-out property <string> v-bg-color: "none";
     in-out property <bool>   v-elevated: true;
+    // Custom button height in px; 0 means "use the size preset".
+    in-out property <float>  v-height-override-px: 0.0;
 
     // ===== Derived enum values ==========================================
     property <ButtonVariant> variant-enum:
@@ -50,17 +53,52 @@ export component ButtonSection inherits Rectangle {
         : v-shape == "square"  ? Shape.square
         : Shape.default;
 
-    // bg-color preset palette. A real color picker would be richer; the
-    // playground exposes a curated palette as a discoverable starting point.
+    // bg-color preset palette — Tailwind 500-shade plus three neutrals.
+    // The swatch grid below renders the same set; bg-color-resolved is the
+    // single source of truth that maps the selected slug to a color value.
     property <color> bg-color-resolved:
-          v-bg-color == "red"    ? #ef4444
-        : v-bg-color == "green"  ? #10b981
-        : v-bg-color == "blue"   ? #3b82f6
-        : v-bg-color == "amber"  ? #f59e0b
-        : v-bg-color == "purple" ? #8b5cf6
-        : v-bg-color == "pink"   ? #ec4899
-        : v-bg-color == "slate"  ? #475569
+          v-bg-color == "red"      ? #ef4444
+        : v-bg-color == "orange"   ? #f97316
+        : v-bg-color == "amber"    ? #f59e0b
+        : v-bg-color == "yellow"   ? #eab308
+        : v-bg-color == "lime"     ? #84cc16
+        : v-bg-color == "green"    ? #22c55e
+        : v-bg-color == "emerald"  ? #10b981
+        : v-bg-color == "teal"     ? #14b8a6
+        : v-bg-color == "cyan"     ? #06b6d4
+        : v-bg-color == "sky"      ? #0ea5e9
+        : v-bg-color == "blue"     ? #3b82f6
+        : v-bg-color == "indigo"   ? #6366f1
+        : v-bg-color == "violet"   ? #8b5cf6
+        : v-bg-color == "purple"   ? #a855f7
+        : v-bg-color == "fuchsia"  ? #d946ef
+        : v-bg-color == "pink"     ? #ec4899
+        : v-bg-color == "rose"     ? #f43f5e
+        : v-bg-color == "slate"    ? #475569
         : transparent;
+
+    // The 18-color palette layout. First "swatch" is the no-override sentinel.
+    property <[{slug: string, swatch: color}]> palette: [
+        { slug: "none",     swatch: #00000000 },
+        { slug: "red",      swatch: #ef4444 },
+        { slug: "orange",   swatch: #f97316 },
+        { slug: "amber",    swatch: #f59e0b },
+        { slug: "yellow",   swatch: #eab308 },
+        { slug: "lime",     swatch: #84cc16 },
+        { slug: "green",    swatch: #22c55e },
+        { slug: "emerald",  swatch: #10b981 },
+        { slug: "teal",     swatch: #14b8a6 },
+        { slug: "cyan",     swatch: #06b6d4 },
+        { slug: "sky",      swatch: #0ea5e9 },
+        { slug: "blue",     swatch: #3b82f6 },
+        { slug: "indigo",   swatch: #6366f1 },
+        { slug: "violet",   swatch: #8b5cf6 },
+        { slug: "purple",   swatch: #a855f7 },
+        { slug: "fuchsia",  swatch: #d946ef },
+        { slug: "pink",     swatch: #ec4899 },
+        { slug: "rose",     swatch: #f43f5e },
+        { slug: "slate",    swatch: #475569 },
+    ];
 
     property <Tone> tone-enum:
           v-tone == "primary"     ? Tone.primary
@@ -105,6 +143,7 @@ export component ButtonSection inherits Rectangle {
                         aria-label: root.v-aria-label;
                         bg-color: root.bg-color-resolved;
                         elevated: root.v-elevated;
+                        height-override: root.v-height-override-px * 1px;
                     }
                 }
 
@@ -135,6 +174,7 @@ export component ButtonSection inherits Rectangle {
                                 + (root.v-aria-label != "" ? "    aria-label: \"" + root.v-aria-label + "\";\n" : "")
                                 + (root.v-bg-color != "none" ? "    bg-color: " + root.v-bg-color + ";  // preset\n" : "")
                                 + (!root.v-elevated ? "    elevated: false;\n" : "")
+                                + (root.v-height-override-px > 0 ? "    height-override: " + floor(root.v-height-override-px) + "px;\n" : "")
                                 + "}";
                             color: #f8fafc;
                             font-family: "monospace";
@@ -229,19 +269,68 @@ export component ButtonSection inherits Rectangle {
                     }
 
                     Text { text: "bg-color (override)"; font-size: 12px; color: Theme.muted-foreground; }
-                    ComboBox {
-                        model: ["none", "red", "green", "blue", "amber", "purple", "pink", "slate"];
-                        current-index: root.v-bg-color == "red"    ? 1
-                                     : root.v-bg-color == "green"  ? 2
-                                     : root.v-bg-color == "blue"   ? 3
-                                     : root.v-bg-color == "amber"  ? 4
-                                     : root.v-bg-color == "purple" ? 5
-                                     : root.v-bg-color == "pink"   ? 6
-                                     : root.v-bg-color == "slate"  ? 7 : 0;
-                        selected(v) => { root.v-bg-color = v; }
+                    Text {
+                        text: root.v-bg-color == "none" ? "no override" : root.v-bg-color;
+                        font-size: 11px;
+                        color: Theme.muted-foreground;
+                    }
+                    // 18-swatch palette + "none" sentinel arranged in a 6-wide grid.
+                    // Slint lacks a wrapping flow, so each swatch is absolutely
+                    // positioned by its index in the palette array.
+                    Rectangle {
+                        height: 4 * 32px;
+                        background: transparent;
+                        for entry[idx] in root.palette: Rectangle {
+                            x: mod(idx, 6) * 32px;
+                            y: floor(idx / 6) * 32px;
+                            width: 28px;
+                            height: 28px;
+                            background: entry.swatch;
+                            border-radius: 6px;
+                            border-width: root.v-bg-color == entry.slug ? 2px : 1px;
+                            border-color: root.v-bg-color == entry.slug
+                                ? Theme.foreground
+                                : Theme.border;
+                            // "none" sentinel: render a diagonal slash on a white tile.
+                            if entry.slug == "none": Rectangle {
+                                background: Theme.surface;
+                                border-radius: 6px;
+                                Text {
+                                    text: "Ø";
+                                    color: Theme.muted-foreground;
+                                    font-size: 16px;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                            }
+                            TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { root.v-bg-color = entry.slug; }
+                            }
+                        }
                     }
 
                     CheckBox { text: "elevated (shadow)"; checked: root.v-elevated; toggled => { root.v-elevated = self.checked; } }
+
+                    Text { text: "height-override (px) — 0 = use preset"; font-size: 12px; color: Theme.muted-foreground; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Slider {
+                            minimum: 0;
+                            maximum: 96;
+                            value: root.v-height-override-px;
+                            changed(val) => { root.v-height-override-px = val; }
+                        }
+                        Text {
+                            text: root.v-height-override-px == 0 ? "off" : floor(root.v-height-override-px) + "px";
+                            vertical-alignment: center;
+                            font-size: 12px;
+                            color: Theme.muted-foreground;
+                            min-width: 40px;
+                        }
+                    }
                 }
             }
         }

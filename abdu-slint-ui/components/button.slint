@@ -80,6 +80,12 @@ export component Button inherits Rectangle {
     /// hover. Outline/ghost/link variants ignore this property.
     in property <bool> elevated: true;
 
+    /// Custom height override. `0px` means "use the `size` preset". Any
+    /// positive value replaces the preset's height; font size, icon size,
+    /// and horizontal padding scale proportionally so the button still
+    /// reads as a button at unusual heights.
+    in property <length> height-override: 0px;
+
     // ===== Callbacks ======================================================
 
     /// Fires on tap, click, or Enter/Space when focused.
@@ -105,8 +111,8 @@ export component Button inherits Rectangle {
         : root.shape == Shape.circle  ? "pill"  // circle on a non-square button is treated as pill
         : Theme.button-shape;
 
-    // Effective height by size.
-    property <length> resolved-height:
+    // Preset-derived height (used when no override is provided).
+    property <length> preset-height:
           root.size == ButtonSize.xs   ? Sizes.button-xs
         : root.size == ButtonSize.sm   ? Sizes.button-sm
         : root.size == ButtonSize.md   ? Sizes.button-md
@@ -115,8 +121,12 @@ export component Button inherits Rectangle {
         : root.size == ButtonSize.icon ? Sizes.icon-button-square
         : Sizes.button-md;
 
-    // Effective font size by size.
-    property <length> resolved-font-size:
+    // Effective height: override wins over preset when set.
+    property <bool>   height-overridden: root.height-override > 0px;
+    property <length> resolved-height: root.height-overridden ? root.height-override : root.preset-height;
+
+    // Preset-derived font/icon/padding.
+    property <length> preset-font-size:
           root.size == ButtonSize.xs ? Typography.text-xs
         : root.size == ButtonSize.sm ? Typography.text-sm
         : root.size == ButtonSize.md ? Typography.text-sm
@@ -124,8 +134,7 @@ export component Button inherits Rectangle {
         : root.size == ButtonSize.xl ? Typography.text-base
         : Typography.text-sm;
 
-    // Horizontal padding by size. Icon size buttons have no horizontal padding.
-    property <length> resolved-padding:
+    property <length> preset-padding:
           root.size == ButtonSize.icon ? 0px
         : root.size == ButtonSize.xs   ? Spacing.sm
         : root.size == ButtonSize.sm   ? Spacing.md
@@ -133,6 +142,16 @@ export component Button inherits Rectangle {
         : root.size == ButtonSize.lg   ? Spacing.xl
         : root.size == ButtonSize.xl   ? Spacing.xl
         : Spacing.lg;
+
+    // When height is overridden, scale font/icon/padding proportionally so
+    // the button still reads as a button. Coefficients tuned to match the
+    // preset ratios at h=40px (md).
+    property <length> resolved-font-size:
+        root.height-overridden ? max(10px, root.resolved-height * 0.36)
+                               : root.preset-font-size;
+    property <length> resolved-padding:
+        root.height-overridden ? (root.size == ButtonSize.icon ? 0px : root.resolved-height * 0.50)
+                               : root.preset-padding;
 
     // Effective corner radius from `resolved-shape`.
     property <length> resolved-radius:
@@ -142,13 +161,16 @@ export component Button inherits Rectangle {
         : root.resolved-height / 2;
 
     // Effective icon glyph size, tracking the font scale.
-    property <length> resolved-icon-size:
+    property <length> preset-icon-size:
           root.size == ButtonSize.xs ? Sizes.icon-xs
         : root.size == ButtonSize.sm ? Sizes.icon-sm
         : root.size == ButtonSize.md ? Sizes.icon-sm
         : root.size == ButtonSize.lg ? Sizes.icon-md
         : root.size == ButtonSize.xl ? Sizes.icon-md
         : Sizes.icon-sm;
+    property <length> resolved-icon-size:
+        root.height-overridden ? max(12px, root.resolved-height * 0.42)
+                               : root.preset-icon-size;
 
     // Tone resolves to a single color family that overrides the variant's
     // default palette. `default` means "use the variant's normal colors".
