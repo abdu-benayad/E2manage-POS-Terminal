@@ -11,12 +11,14 @@ export enum ButtonVariant {
 }
 
 export enum ButtonSize {
-    xs,    // h-7, text-xs
-    sm,    // h-9, text-sm
-    md,    // h-10, text-sm (default)
-    lg,    // h-11, text-base
-    xl,    // h-12, text-base
-    icon,  // square (h-10 w-10), icon-only
+    xs,    // 32px
+    sm,    // 38px
+    md,    // 44px (default — Apple HIG minimum tap target)
+    lg,    // 52px
+    xl,    // 60px
+    xxl,   // 72px — large primary actions on tablet POS
+    hero,  // 88px — PAY-class buttons
+    icon,  // square, icon-only (matches icon-button-square)
 }
 
 export enum Shape {

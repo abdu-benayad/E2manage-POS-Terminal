@@ -118,6 +118,8 @@ export component Button inherits Rectangle {
         : root.size == ButtonSize.md   ? Sizes.button-md
         : root.size == ButtonSize.lg   ? Sizes.button-lg
         : root.size == ButtonSize.xl   ? Sizes.button-xl
+        : root.size == ButtonSize.xxl  ? Sizes.button-xxl
+        : root.size == ButtonSize.hero ? Sizes.button-hero
         : root.size == ButtonSize.icon ? Sizes.icon-button-square
         : Sizes.button-md;
 
@@ -127,20 +129,24 @@ export component Button inherits Rectangle {
 
     // Preset-derived font/icon/padding.
     property <length> preset-font-size:
-          root.size == ButtonSize.xs ? Typography.text-xs
-        : root.size == ButtonSize.sm ? Typography.text-sm
-        : root.size == ButtonSize.md ? Typography.text-sm
-        : root.size == ButtonSize.lg ? Typography.text-base
-        : root.size == ButtonSize.xl ? Typography.text-base
+          root.size == ButtonSize.xs   ? Typography.text-xs
+        : root.size == ButtonSize.sm   ? Typography.text-sm
+        : root.size == ButtonSize.md   ? Typography.text-base
+        : root.size == ButtonSize.lg   ? Typography.text-base
+        : root.size == ButtonSize.xl   ? Typography.text-lg
+        : root.size == ButtonSize.xxl  ? Typography.text-xl
+        : root.size == ButtonSize.hero ? Typography.text-xxl
         : Typography.text-sm;
 
     property <length> preset-padding:
           root.size == ButtonSize.icon ? 0px
-        : root.size == ButtonSize.xs   ? Spacing.sm
-        : root.size == ButtonSize.sm   ? Spacing.md
-        : root.size == ButtonSize.md   ? Spacing.lg
+        : root.size == ButtonSize.xs   ? Spacing.md
+        : root.size == ButtonSize.sm   ? Spacing.lg
+        : root.size == ButtonSize.md   ? Spacing.xl
         : root.size == ButtonSize.lg   ? Spacing.xl
-        : root.size == ButtonSize.xl   ? Spacing.xl
+        : root.size == ButtonSize.xl   ? Spacing.xxl
+        : root.size == ButtonSize.xxl  ? Spacing.xxl
+        : root.size == ButtonSize.hero ? Spacing.xxxl
         : Spacing.lg;
 
     // When height is overridden, scale font/icon/padding proportionally so
@@ -162,11 +168,13 @@ export component Button inherits Rectangle {
 
     // Effective icon glyph size, tracking the font scale.
     property <length> preset-icon-size:
-          root.size == ButtonSize.xs ? Sizes.icon-xs
-        : root.size == ButtonSize.sm ? Sizes.icon-sm
-        : root.size == ButtonSize.md ? Sizes.icon-sm
-        : root.size == ButtonSize.lg ? Sizes.icon-md
-        : root.size == ButtonSize.xl ? Sizes.icon-md
+          root.size == ButtonSize.xs   ? Sizes.icon-xs
+        : root.size == ButtonSize.sm   ? Sizes.icon-sm
+        : root.size == ButtonSize.md   ? Sizes.icon-sm
+        : root.size == ButtonSize.lg   ? Sizes.icon-md
+        : root.size == ButtonSize.xl   ? Sizes.icon-md
+        : root.size == ButtonSize.xxl  ? Sizes.icon-lg
+        : root.size == ButtonSize.hero ? Sizes.icon-xl
         : Sizes.icon-sm;
     property <length> resolved-icon-size:
         root.height-overridden ? max(12px, root.resolved-height * 0.42)
@@ -272,8 +280,13 @@ export component Button inherits Rectangle {
         : (root.visually-pressed || touch.has-hover) ? root.bg-color.darker(12%)
         : root.bg-color;
 
-    // Elevation: solid variants get a subtle drop shadow that deepens on hover.
-    property <bool>   shadow-applies: root.elevated && root.variant-is-solid && !root.disabled;
+    // Elevation: filled-prominent variants get a subtle drop shadow that
+    // deepens on hover. iOS gray (secondary) is intentionally flat, so it
+    // doesn't get a shadow even when `elevated: true`.
+    property <bool> variant-is-filled-prominent:
+        root.variant == ButtonVariant.default
+        || root.variant == ButtonVariant.destructive;
+    property <bool>   shadow-applies: root.elevated && root.variant-is-filled-prominent && !root.disabled;
     property <length> active-shadow-blur:
         !root.shadow-applies ? 0px
         : touch.has-hover    ? Theme.shadow-md-blur
@@ -305,7 +318,12 @@ export component Button inherits Rectangle {
     drop-shadow-blur:  root.active-shadow-blur;
     drop-shadow-offset-y: root.active-shadow-y;
     drop-shadow-color: root.active-shadow-color;
-    opacity: root.disabled ? 0.5 : 1.0;
+    // iOS press feel: subtle opacity dim while the user is actively pressing.
+    // This is the SwiftUI default — buttons don't change color, they fade.
+    opacity:
+          root.disabled         ? 0.5
+        : root.visually-pressed ? 0.85
+        : 1.0;
 
     animate background       { duration: Animation.fast; easing: ease-out; }
     animate opacity          { duration: Animation.fast; easing: ease-out; }

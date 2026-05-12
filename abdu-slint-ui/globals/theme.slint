@@ -1,55 +1,57 @@
 // Theme — semantic colors, shape tokens, density, and shadow primitives.
 //
-// Consumers may override `in-out` properties at app startup to switch
-// between light/dark, swap accent colors, or change the shape language.
-// `out` properties are intended to be read-only from consumer code.
+// Current palette: iOS / SwiftUI system colors (Light mode). Tap targets
+// follow Apple HIG (44pt minimum). Shadows are softer and more diffuse
+// than the shadcn web aesthetic to match how iOS buttons feel under touch.
 
 export global Theme {
-    // --- Surfaces & foregrounds ---
-    out property <color> background: #ffffff;
-    out property <color> foreground: #020817;
-    out property <color> surface: #ffffff;
-    out property <color> surface-muted: #f1f5f9;
+    // --- Surfaces & foregrounds (iOS systemBackground hierarchy) ---
+    out property <color> background: #ffffff;             // systemBackground
+    out property <color> foreground: #1c1c1e;             // label
+    out property <color> surface: #ffffff;                // tertiarySystemBackground
+    out property <color> surface-muted: #f2f2f7;          // secondarySystemBackground
 
-    // --- Primary palette ---
-    out property <color> primary: #0f172a;
-    out property <color> primary-hover: #1e293b;
-    out property <color> primary-foreground: #f8fafc;
+    // --- Primary palette (iOS systemBlue — the global tint) ---
+    out property <color> primary: #007aff;                // systemBlue
+    out property <color> primary-hover: #0066d6;          // slightly darker
+    out property <color> primary-foreground: #ffffff;
 
-    // --- Destructive palette ---
-    out property <color> destructive: #ef4444;
-    out property <color> destructive-hover: #dc2626;
-    out property <color> destructive-foreground: #f8fafc;
+    // --- Destructive palette (iOS systemRed) ---
+    out property <color> destructive: #ff3b30;
+    out property <color> destructive-hover: #d70015;
+    out property <color> destructive-foreground: #ffffff;
 
-    // --- Secondary palette ---
-    out property <color> secondary: #f1f5f9;
-    out property <color> secondary-hover: #e2e8f0;
-    out property <color> secondary-foreground: #0f172a;
+    // --- Secondary palette (iOS systemGray / fill) ---
+    out property <color> secondary: #f2f2f7;              // secondarySystemBackground
+    out property <color> secondary-hover: #e5e5ea;        // tertiarySystemFill darker
+    out property <color> secondary-foreground: #1c1c1e;
 
-    // --- Accent (hover background for ghost/outline) ---
-    out property <color> accent: #f1f5f9;
-    out property <color> accent-foreground: #0f172a;
+    // --- Accent (hover bg for plain / bordered buttons — iOS quaternary fill) ---
+    out property <color> accent: #f2f2f7;
+    out property <color> accent-foreground: #007aff;      // iOS tint on accent
 
-    // --- Semantic palettes ---
-    out property <color> success: #10b981;
-    out property <color> success-foreground: #f0fdf4;
-    out property <color> warning: #f59e0b;
-    out property <color> warning-foreground: #fffbeb;
-    out property <color> info: #3b82f6;
-    out property <color> info-foreground: #eff6ff;
+    // --- Semantic palettes (iOS system colors) ---
+    out property <color> success: #34c759;                // systemGreen
+    out property <color> success-foreground: #ffffff;
+    out property <color> warning: #ff9500;                // systemOrange
+    out property <color> warning-foreground: #ffffff;
+    out property <color> info: #5ac8fa;                   // systemCyan (legacy lighter blue)
+    out property <color> info-foreground: #ffffff;
 
     // --- Structural ---
-    out property <color> border: #e2e8f0;
-    out property <color> ring: #94a3b8;
-    out property <color> muted-foreground: #64748b;
+    out property <color> border: #c6c6c8;                 // iOS separator (opaque)
+    out property <color> ring: #007aff;                   // focus ring matches tint
+    out property <color> muted-foreground: #8e8e93;       // iOS systemGray
 
     // --- Overlays ---
-    out property <color> tooltip-background: #1e293b;       // slate-800
-    out property <color> tooltip-foreground: #f8fafc;       // slate-50
+    out property <color> tooltip-background: #1c1c1e;     // iOS label (near-black)
+    out property <color> tooltip-foreground: #ffffff;
 
     // --- Shape tokens (consumer-configurable) ---
+    // iOS defaults: continuous-corner rounded for primary buttons, no
+    // hard squares. The "pill" shape is the SwiftUI capsule.
     // Values: "rounded" | "pill" | "square"
-    in-out property <string> button-shape: "pill";
+    in-out property <string> button-shape: "rounded";
     // Values: "rounded" | "square"
     in-out property <string> card-shape: "rounded";
     // Values: "rounded" | "pill" | "circle" | "square"
@@ -59,16 +61,16 @@ export global Theme {
     // Values: "compact" | "default" | "comfortable"
     in-out property <string> density: "default";
 
-    // --- Shadow primitives ---
-    out property <length> shadow-sm-blur: 2px;
+    // --- Shadow primitives (iOS-soft: more blur, less opacity than shadcn) ---
+    out property <length> shadow-sm-blur: 4px;
     out property <length> shadow-sm-y: 1px;
-    out property <color>  shadow-sm-color: #0000000d;     // rgba(0,0,0,0.05)
+    out property <color>  shadow-sm-color: #0000000a;     // rgba(0,0,0,0.04)
 
-    out property <length> shadow-md-blur: 6px;
-    out property <length> shadow-md-y: 2px;
+    out property <length> shadow-md-blur: 12px;
+    out property <length> shadow-md-y: 3px;
     out property <color>  shadow-md-color: #00000014;     // rgba(0,0,0,0.08)
 
-    out property <length> shadow-lg-blur: 16px;
-    out property <length> shadow-lg-y: 6px;
-    out property <color>  shadow-lg-color: #0000001f;     // rgba(0,0,0,0.12)
+    out property <length> shadow-lg-blur: 32px;
+    out property <length> shadow-lg-y: 12px;
+    out property <color>  shadow-lg-color: #0000001a;     // rgba(0,0,0,0.10)
 }

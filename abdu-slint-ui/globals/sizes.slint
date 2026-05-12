@@ -7,12 +7,16 @@ export global Sizes {
     // Accessibility / tap targets
     out property <length> touch-target: 48px;
 
-    // Button heights (per ButtonSize variant)
-    out property <length> button-xs: 28px;
-    out property <length> button-sm: 36px;
-    out property <length> button-md: 40px;
-    out property <length> button-lg: 44px;
-    out property <length> button-xl: 48px;
+    // Button heights — POS-appropriate iOS scale.
+    // `md` meets Apple HIG's 44pt minimum tap target. `xxl` and `hero`
+    // are for primary actions on tablet-class POS hardware (PAY, etc).
+    out property <length> button-xs: 32px;
+    out property <length> button-sm: 38px;
+    out property <length> button-md: 44px;        // HIG minimum
+    out property <length> button-lg: 52px;
+    out property <length> button-xl: 60px;
+    out property <length> button-xxl: 72px;
+    out property <length> button-hero: 88px;      // PAY-button class
 
     // Icon-button square edge
     out property <length> icon-button-square: 40px;

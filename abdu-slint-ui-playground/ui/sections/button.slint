@@ -40,10 +40,12 @@ export component ButtonSection inherits Rectangle {
         : ButtonVariant.default;
 
     property <ButtonSize> size-enum:
-          v-size == "xs" ? ButtonSize.xs
-        : v-size == "sm" ? ButtonSize.sm
-        : v-size == "lg" ? ButtonSize.lg
-        : v-size == "xl" ? ButtonSize.xl
+          v-size == "xs"   ? ButtonSize.xs
+        : v-size == "sm"   ? ButtonSize.sm
+        : v-size == "lg"   ? ButtonSize.lg
+        : v-size == "xl"   ? ButtonSize.xl
+        : v-size == "xxl"  ? ButtonSize.xxl
+        : v-size == "hero" ? ButtonSize.hero
         : v-size == "icon" ? ButtonSize.icon
         : ButtonSize.md;
 
@@ -226,7 +228,7 @@ export component ButtonSection inherits Rectangle {
 
                     Text { text: "size"; font-size: 12px; color: Theme.muted-foreground; }
                     ComboBox {
-                        model: ["xs", "sm", "md", "lg", "xl", "icon"];
+                        model: ["xs", "sm", "md", "lg", "xl", "xxl", "hero", "icon"];
                         current-value: root.v-size;
                         selected(v) => { root.v-size = v; }
                     }

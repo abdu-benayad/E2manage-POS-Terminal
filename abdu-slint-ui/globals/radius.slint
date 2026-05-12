@@ -3,12 +3,15 @@
 // `xxl` replaces the doc-table `2xl` row (Slint identifiers cannot start
 // with a digit). `full` is the capsule/pill sentinel.
 
+// iOS uses larger corner radii than shadcn's web defaults. md = 10px is
+// the "rounded button" default; lg = 14px reads like an iOS Card; xl =
+// 18px is what iOS sheets/modals use.
 export global Radius {
     out property <length> none: 0px;
-    out property <length> sm: 4px;
-    out property <length> md: 8px;
-    out property <length> lg: 12px;
-    out property <length> xl: 16px;
+    out property <length> sm: 6px;
+    out property <length> md: 10px;
+    out property <length> lg: 14px;
+    out property <length> xl: 18px;
     out property <length> xxl: 24px;
     out property <length> full: 9999px;
 }
