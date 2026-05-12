@@ -123,7 +123,7 @@ Naming convention: PascalCase, single-noun where possible, no `Abdu*` or library
 
 ### Button — shipped
 
-Foundation interactive primitive. Six variants, eight sizes (xs..hero plus icon-square), the full depth/lighting set, accessibility cascade, optional tooltip, optional loading spinner, optional `checkable` toggle behaviour. **25 public properties total** — see [HANDOVER.md → "Button API (as built)"](./HANDOVER.md) for the complete table.
+Foundation interactive primitive. Six variants, eight sizes (xs..hero plus icon-square), the full depth/lighting set, accessibility cascade, optional tooltip, optional loading spinner, optional `checkable` toggle behaviour. **25 public properties total** — see [HANDOVER.md → "Button API (as built)"](./HANDOVER.md) for the complete property table and [`architecture/button.md`](./architecture/button.md) for the design rationale (depth/lighting decisions, variant × tone composition, internal visual structure, Slint trapdoors).
 
 | Property        | Type             | Default            | Description                                                                                  |
 | --------------- | ---------------- | ------------------ | -------------------------------------------------------------------------------------------- |
@@ -530,7 +530,7 @@ Read source for *how a component is built*. Run the playground for *how to use i
 | Construction discipline (`CLAUDE.md`)              | done                                               |
 | Roadmap (`ROADMAP.md`)                             | done                                               |
 | Implementation playbook (`IMPL.md`)                | done for Phase 1; later phases sketched            |
-| Per-component design docs (`architecture/`)        | started — `icon-button.md` is the first entry      |
+| Per-component design docs (`architecture/`)        | `button.md` + `icon-button.md`. Policy: non-trivial components get one |
 | Tokens + globals                                   | done (10 globals: `Theme`, `Typography`, `Spacing`, `Radius`, `Sizes`, `Animation`, `Depth`, `Locale`, `CurrencyFormat`, `IconFont`) |
 | Design language                                    | iOS / SwiftUI-derived; documented in HANDOVER      |
 | `Button`                                           | shipped (25 properties, full depth + accessibility) |

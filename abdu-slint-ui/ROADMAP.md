@@ -12,7 +12,7 @@
 | `CLAUDE.md` — construction discipline  | **Done** (v0). |
 | `ROADMAP.md` — this document           | **Phase 1 in progress.** |
 | `IMPL.md` — per-phase implementation   | **Done for Phase 1.** Button and IconButton sections superseded by what's actually built; remaining components match the spec. |
-| `architecture/` — per-component design docs | **Started.** First entry `icon-button.md` (the IconButton design + Depth global rationale + accessibility cascade pattern). |
+| `architecture/` — per-component design docs | **Two entries.** `button.md` (retroactive) and `icon-button.md` (forward). Policy: every non-trivial component gets one; trivial display-only ones don't. |
 | `HANDOVER.md` — current state snapshot | **Kept current.** Read this before resuming a session. |
 | Code — library                                              | **Phase 1 mid.** Foundation complete (10 globals incl. `Depth`, 11 enums, 2 icon fonts). Button + IconButton fully built with preview files. Toggle / Card / KeyValueRow + smoke-test screen remain. |
 | `abdu-slint-ui-playground/` — interactive catalog crate     | **Phase 1 mid.** Sidebar + scrollable toolbar with theme/locale/currency/icon-family/RTL/spinner-period controls. Button + IconButton sections live with full property panels. Toggle / Card / KeyValueRow sections pending. |

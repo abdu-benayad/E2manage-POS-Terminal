@@ -20,7 +20,7 @@
 ### Net additions beyond the original spec
 
 - `globals/depth.slint` (the Depth global — stateless shadow math, mentioned in HANDOVER's Depth section).
-- `architecture/icon-button.md` — first per-component design doc. New convention: each non-trivial component gets a design doc here.
+- `architecture/button.md` (retroactive) + `architecture/icon-button.md` (forward). Convention: each non-trivial component gets a design doc; trivial display-only ones (e.g. KeyValueRow) don't.
 - Accessibility cascade pattern wired on Button and IconButton (was not in the original spec).
 - `globals/icon-font.slint` (dual-font with Phosphor + Lucide, runtime-switchable; original spec assumed a single font).
 
@@ -391,7 +391,9 @@ For each component: file path, property table (every public property), callback 
 
 ### Component 1: `components/button.slint`
 
-The foundation. Variants and sizes mirror shadcn/ui; convenience features mirror Material UI / Mantine.
+> **SUPERSEDED — see `HANDOVER.md` → "Button API (as built)" for the authoritative 25-property table, and `architecture/button.md` for the design rationale (depth/lighting decisions, variant × tone composition, internal visual structure).** The original 15-property spec below is left for historical reference.
+
+The foundation. Six variants, eight sizes. Convenience features mirror Material UI / Mantine (loading state, leading/trailing icons, checkable toggle behaviour, tooltip).
 
 | Property        | Type            | Default           | Description                                                        |
 | --------------- | --------------- | ----------------- | ------------------------------------------------------------------ |

@@ -18,7 +18,7 @@
 | Path                                                          | What                              |
 | ------------------------------------------------------------- | --------------------------------- |
 | `e2manage-pos-terminal/abdu-slint-ui/`                        | **This library** (compiling, Button + IconButton shipped) |
-| `e2manage-pos-terminal/abdu-slint-ui/architecture/`           | Per-component design docs. First entry: `icon-button.md` |
+| `e2manage-pos-terminal/abdu-slint-ui/architecture/`           | Per-component design docs. Entries: `button.md` (retroactive), `icon-button.md` (forward). |
 | `e2manage-pos-terminal/abdu-slint-ui-playground/`             | **Playground app** (compiling, Button + IconButton sections live) |
 | `e2manage-pos-terminal/ui/spike/shadcn_button.slint`          | Original Phase 0 spike (kept for reference) |
 | `e2manage-pos-terminal/ui/`                                   | Existing POS UI (untouched, Phase 4 target) |
@@ -32,7 +32,9 @@
 3. **`CLAUDE.md`** — construction discipline that overrides `~/.claude/CLAUDE.md` inside this directory.
 4. **`ROADMAP.md`** — phase plan with decision gates.
 5. **`IMPL.md`** — Phase 1 file-creation spec. The Button and IconButton sections are **superseded by the actual implementations** (see API tables below); the other 3 components still match the spec.
-6. **`architecture/icon-button.md`** — design contract for IconButton (what & why), plus the rationale for the Depth global and the accessibility cascade pattern. Template for future per-component design docs.
+6. **`architecture/`** — per-component design docs. Policy: every non-trivial component gets one; trivial display-only primitives (e.g. KeyValueRow) don't. Forward design docs land *before* code (per CLAUDE.md's "Design doc → IMPL doc → code"). Current entries:
+   - **`architecture/button.md`** — retroactive consolidation. The depth/lighting system, two-layer surface/face, variant × tone matrix, accessibility cascade, escape hatches — all of Button's load-bearing decisions captured in one place.
+   - **`architecture/icon-button.md`** — forward design contract (was written before IconButton's code). Also doubles as the template for the Depth global and the accessibility cascade pattern.
 
 ---
 
@@ -48,7 +50,7 @@
 | Enums                | `enums.slint` (11 enums)               | ✅ adds `IconButtonSize` |
 | Globals              | 10 files under `globals/`              | ✅ iOS-tuned; `depth.slint` added, `Animation.pulse` renamed to `Animation.spinner-period` |
 | Fonts                | `assets/phosphor.ttf`, `assets/lucide.ttf` | ✅ both bundled, switchable at runtime |
-| Design docs          | `architecture/icon-button.md`          | ✅ first per-component spec |
+| Design docs          | `architecture/button.md`, `architecture/icon-button.md` | ✅ Button retroactive + IconButton forward |
 | `Button` component   | `components/button.slint`              | ✅ extensively iterated, depth math now via `Depth` global, accessibility cascade wired |
 | `Button` preview     | `previews/button.slint`                | ✅      |
 | `IconButton` component | `components/icon-button.slint`       | ✅ shipped (19 properties, see API below) |
@@ -89,7 +91,7 @@ The pivot is enacted in `globals/theme.slint`, `globals/sizes.slint`, `globals/r
 
 ## Button API (as built)
 
-The Button has grown substantially beyond IMPL.md's original 15 properties. This is the current authoritative reference.
+The Button has grown substantially beyond IMPL.md's original 15 properties. This is the current authoritative reference for the API surface; **`architecture/button.md`** is the authoritative reference for *why* the surface is shaped this way (depth/lighting decisions, variant × tone composition rules, escape-hatch rationale, Slint trapdoors specific to Button).
 
 ### Core properties
 
