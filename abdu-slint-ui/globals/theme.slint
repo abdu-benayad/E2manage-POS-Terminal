@@ -62,17 +62,20 @@ export global Theme {
     in-out property <string> density: "default";
 
     // --- Shadow primitives ---
-    // Aggressive values for debugging visibility — once we know shadows are
-    // rendering at all, we'll tune these back down to tasteful levels.
-    out property <length> shadow-sm-blur: 12px;
-    out property <length> shadow-sm-y: 4px;
-    out property <color>  shadow-sm-color: #00000066;     // rgba(0,0,0,0.40)
+    // Tasteful POS-tablet defaults. Visible without overpowering content.
+    out property <length> shadow-sm-blur: 8px;
+    out property <length> shadow-sm-y: 2px;
+    out property <color>  shadow-sm-color: #0000001f;     // rgba(0,0,0,0.12)
 
-    out property <length> shadow-md-blur: 28px;
-    out property <length> shadow-md-y: 10px;
-    out property <color>  shadow-md-color: #0000008c;     // rgba(0,0,0,0.55)
+    out property <length> shadow-md-blur: 18px;
+    out property <length> shadow-md-y: 6px;
+    out property <color>  shadow-md-color: #00000038;     // rgba(0,0,0,0.22)
 
-    out property <length> shadow-lg-blur: 48px;
-    out property <length> shadow-lg-y: 20px;
-    out property <color>  shadow-lg-color: #000000a6;     // rgba(0,0,0,0.65)
+    out property <length> shadow-lg-blur: 32px;
+    out property <length> shadow-lg-y: 14px;
+    out property <color>  shadow-lg-color: #00000047;     // rgba(0,0,0,0.28)
+
+    out property <length> shadow-xl-blur: 56px;
+    out property <length> shadow-xl-y: 28px;
+    out property <color>  shadow-xl-color: #00000059;     // rgba(0,0,0,0.35)
 }

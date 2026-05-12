@@ -5,7 +5,7 @@
 // Reads all visual tokens from the global environment — consumers never
 // pass theme, locale, or font props on every instance.
 
-import { ButtonVariant, ButtonSize, Shape, Tone } from "../enums.slint";
+import { ButtonVariant, ButtonSize, Shape, Tone, Elevation } from "../enums.slint";
 import { Theme } from "../globals/theme.slint";
 import { Typography } from "../globals/typography.slint";
 import { Sizes } from "../globals/sizes.slint";
@@ -75,10 +75,20 @@ export component Button inherits Rectangle {
     /// the whole color story. Use `tone` for preset color schemes.
     in property <color> bg-color: transparent;
 
-    /// Drop-shadow elevation on solid variants (default/destructive/secondary).
-    /// `true` adds Theme.shadow-sm at rest and a slightly deeper shadow on
-    /// hover. Outline/ghost/link variants ignore this property.
+    /// Master shadow on/off switch. When `false`, the button is flat
+    /// regardless of `shadow-elevation`. Default is `true`.
     in property <bool> elevated: true;
+
+    /// Shadow magnitude when elevated. The level at rest; hover bumps it
+    /// up by one step (sm → md, md → lg, lg → xl). Set to `Elevation.none`
+    /// to suppress the shadow without disabling other elevation behavior.
+    in property <Elevation> shadow-elevation: Elevation.sm;
+
+    /// Custom shadow color override. When transparent, the shadow uses the
+    /// Theme.shadow-{level}-color token matching `shadow-elevation`.
+    /// Any non-transparent color replaces it — pass a tinted alpha to
+    /// recolor the shadow without changing its geometry.
+    in property <color> shadow-color: transparent;
 
     /// Custom height override. `0px` means "use the `size` preset". Any
     /// positive value replaces the preset's height; font size, icon size,
@@ -285,25 +295,53 @@ export component Button inherits Rectangle {
         : (root.visually-pressed || touch.has-hover) ? root.bg-color.darker(12%)
         : root.bg-color;
 
-    // Elevation: filled-prominent variants get the strongest shadow; other
-    // variants get a smaller one when `elevated: true`. Disabled buttons
-    // are always flat.
+    // Elevation: filled-prominent variants set the visual default. Other
+    // variants render with shadow too when `shadow-elevation` is explicitly
+    // raised above sm; consumers can disable per-instance via
+    // `elevated: false` or `shadow-elevation: Elevation.none`.
     property <bool> variant-is-filled-prominent:
         root.variant == ButtonVariant.default
         || root.variant == ButtonVariant.destructive;
-    property <bool>   shadow-applies: root.elevated && !root.disabled;
+
+    // Hover bumps the effective elevation by one step. xl saturates.
+    property <Elevation> effective-elevation:
+          root.shadow-elevation == Elevation.none ? Elevation.none
+        : !touch.has-hover ? root.shadow-elevation
+        : root.shadow-elevation == Elevation.sm ? Elevation.md
+        : root.shadow-elevation == Elevation.md ? Elevation.lg
+        : root.shadow-elevation == Elevation.lg ? Elevation.xl
+        : Elevation.xl;
+
+    property <bool> shadow-applies:
+        root.elevated && !root.disabled && root.shadow-elevation != Elevation.none;
+
     property <length> active-shadow-blur:
-        !root.shadow-applies ? 0px
-        : touch.has-hover    ? Theme.shadow-md-blur
-        : Theme.shadow-sm-blur;
+          !root.shadow-applies                      ? 0px
+        : root.effective-elevation == Elevation.sm  ? Theme.shadow-sm-blur
+        : root.effective-elevation == Elevation.md  ? Theme.shadow-md-blur
+        : root.effective-elevation == Elevation.lg  ? Theme.shadow-lg-blur
+        : root.effective-elevation == Elevation.xl  ? Theme.shadow-xl-blur
+        : 0px;
+
     property <length> active-shadow-y:
-        !root.shadow-applies ? 0px
-        : touch.has-hover    ? Theme.shadow-md-y
-        : Theme.shadow-sm-y;
+          !root.shadow-applies                      ? 0px
+        : root.effective-elevation == Elevation.sm  ? Theme.shadow-sm-y
+        : root.effective-elevation == Elevation.md  ? Theme.shadow-md-y
+        : root.effective-elevation == Elevation.lg  ? Theme.shadow-lg-y
+        : root.effective-elevation == Elevation.xl  ? Theme.shadow-xl-y
+        : 0px;
+
+    // Color: explicit `shadow-color` wins; otherwise pick the Theme token
+    // matching the effective elevation.
+    property <bool>  shadow-color-set: root.shadow-color.alpha > 0;
     property <color> active-shadow-color:
-        !root.shadow-applies ? transparent
-        : touch.has-hover    ? Theme.shadow-md-color
-        : Theme.shadow-sm-color;
+          !root.shadow-applies                      ? transparent
+        : root.shadow-color-set                     ? root.shadow-color
+        : root.effective-elevation == Elevation.sm  ? Theme.shadow-sm-color
+        : root.effective-elevation == Elevation.md  ? Theme.shadow-md-color
+        : root.effective-elevation == Elevation.lg  ? Theme.shadow-lg-color
+        : root.effective-elevation == Elevation.xl  ? Theme.shadow-xl-color
+        : transparent;
 
     // ===== Visual layer ===================================================
     //

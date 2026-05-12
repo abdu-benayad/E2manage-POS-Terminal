@@ -5,7 +5,7 @@
 // The playground.slint window mounts this section when the user selects
 // "Button" in the sidebar.
 
-import { Button, ButtonVariant, ButtonSize, Shape, Tone, Theme, Typography, Spacing } from "@abdu-slint-ui";
+import { Button, ButtonVariant, ButtonSize, Shape, Tone, Elevation, Theme, Typography, Spacing } from "@abdu-slint-ui";
 import { ComboBox, CheckBox, LineEdit, HorizontalBox, VerticalBox, ScrollView, Slider } from "std-widgets.slint";
 
 export component ButtonSection inherits Rectangle {
@@ -27,6 +27,10 @@ export component ButtonSection inherits Rectangle {
     // Selected swatch slug. "none" means no override.
     in-out property <string> v-bg-color: "none";
     in-out property <bool>   v-elevated: true;
+    // Shadow level: none / sm / md / lg / xl
+    in-out property <string> v-shadow-elevation: "sm";
+    // Shadow color slug (palette swatch); "none" means use Theme default.
+    in-out property <string> v-shadow-color: "none";
     // Custom button height in px; 0 means "use the size preset".
     in-out property <float>  v-height-override-px: 0.0;
     // Debug visualization: magenta outline on the visual surface.
@@ -104,6 +108,37 @@ export component ButtonSection inherits Rectangle {
         { slug: "slate",    swatch: #475569 },
     ];
 
+    // Resolve the shadow-elevation slug to the library enum.
+    property <Elevation> shadow-elevation-enum:
+          v-shadow-elevation == "none" ? Elevation.none
+        : v-shadow-elevation == "md"   ? Elevation.md
+        : v-shadow-elevation == "lg"   ? Elevation.lg
+        : v-shadow-elevation == "xl"   ? Elevation.xl
+        : Elevation.sm;
+
+    // Resolve shadow color slug to a color value. Tinted alphas suit
+    // shadows — pure swatches at 70% give a moody colored shadow.
+    property <color> shadow-color-resolved:
+          v-shadow-color == "red"      ? #ef4444b3
+        : v-shadow-color == "orange"   ? #f97316b3
+        : v-shadow-color == "amber"    ? #f59e0bb3
+        : v-shadow-color == "yellow"   ? #eab308b3
+        : v-shadow-color == "lime"     ? #84cc16b3
+        : v-shadow-color == "green"    ? #22c55eb3
+        : v-shadow-color == "emerald"  ? #10b981b3
+        : v-shadow-color == "teal"     ? #14b8a6b3
+        : v-shadow-color == "cyan"     ? #06b6d4b3
+        : v-shadow-color == "sky"      ? #0ea5e9b3
+        : v-shadow-color == "blue"     ? #3b82f6b3
+        : v-shadow-color == "indigo"   ? #6366f1b3
+        : v-shadow-color == "violet"   ? #8b5cf6b3
+        : v-shadow-color == "purple"   ? #a855f7b3
+        : v-shadow-color == "fuchsia"  ? #d946efb3
+        : v-shadow-color == "pink"     ? #ec4899b3
+        : v-shadow-color == "rose"     ? #f43f5eb3
+        : v-shadow-color == "slate"    ? #475569b3
+        : transparent;
+
     property <Tone> tone-enum:
           v-tone == "primary"     ? Tone.primary
         : v-tone == "success"     ? Tone.success
@@ -147,6 +182,8 @@ export component ButtonSection inherits Rectangle {
                         aria-label: root.v-aria-label;
                         bg-color: root.bg-color-resolved;
                         elevated: root.v-elevated;
+                        shadow-elevation: root.shadow-elevation-enum;
+                        shadow-color: root.shadow-color-resolved;
                         height-override: root.v-height-override-px * 1px;
                         debug-bounds: root.v-debug-bounds;
                     }
@@ -179,6 +216,8 @@ export component ButtonSection inherits Rectangle {
                                 + (root.v-aria-label != "" ? "    aria-label: \"" + root.v-aria-label + "\";\n" : "")
                                 + (root.v-bg-color != "none" ? "    bg-color: " + root.v-bg-color + ";  // preset\n" : "")
                                 + (!root.v-elevated ? "    elevated: false;\n" : "")
+                                + (root.v-shadow-elevation != "sm" ? "    shadow-elevation: Elevation." + root.v-shadow-elevation + ";\n" : "")
+                                + (root.v-shadow-color != "none" ? "    shadow-color: " + root.v-shadow-color + ";  // preset\n" : "")
                                 + (root.v-height-override-px > 0 ? "    height-override: " + floor(root.v-height-override-px) + "px;\n" : "")
                                 + "}";
                             color: #f8fafc;
@@ -317,7 +356,56 @@ export component ButtonSection inherits Rectangle {
                         }
                     }
 
-                    CheckBox { text: "elevated (shadow)"; checked: root.v-elevated; toggled => { root.v-elevated = self.checked; } }
+                    CheckBox { text: "elevated (shadow master)"; checked: root.v-elevated; toggled => { root.v-elevated = self.checked; } }
+
+                    Text { text: "shadow-elevation (magnitude)"; font-size: 12px; color: Theme.muted-foreground; }
+                    ComboBox {
+                        model: ["none", "sm", "md", "lg", "xl"];
+                        current-index: root.v-shadow-elevation == "none" ? 0
+                                     : root.v-shadow-elevation == "md"   ? 2
+                                     : root.v-shadow-elevation == "lg"   ? 3
+                                     : root.v-shadow-elevation == "xl"   ? 4 : 1;
+                        selected(v) => { root.v-shadow-elevation = v; }
+                    }
+
+                    Text { text: "shadow-color (tint)"; font-size: 12px; color: Theme.muted-foreground; }
+                    Text {
+                        text: root.v-shadow-color == "none" ? "Theme default (gray)" : root.v-shadow-color;
+                        font-size: 11px;
+                        color: Theme.muted-foreground;
+                    }
+                    Rectangle {
+                        height: 4 * 32px;
+                        background: transparent;
+                        for entry[idx] in root.palette: Rectangle {
+                            x: mod(idx, 6) * 32px;
+                            y: floor(idx / 6) * 32px;
+                            width: 28px;
+                            height: 28px;
+                            background: entry.swatch;
+                            border-radius: 6px;
+                            border-width: root.v-shadow-color == entry.slug ? 2px : 1px;
+                            border-color: root.v-shadow-color == entry.slug ? Theme.foreground : Theme.border;
+                            if entry.slug == "none": Rectangle {
+                                background: Theme.surface;
+                                border-radius: 6px;
+                                Text {
+                                    text: "Ø";
+                                    color: Theme.muted-foreground;
+                                    font-size: 16px;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                            }
+                            TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { root.v-shadow-color = entry.slug; }
+                            }
+                        }
+                    }
+
                     CheckBox { text: "debug-bounds (magenta outline)"; checked: root.v-debug-bounds; toggled => { root.v-debug-bounds = self.checked; } }
 
                     Text { text: "height-override (px) — 0 = use preset"; font-size: 12px; color: Theme.muted-foreground; }
