@@ -11,19 +11,21 @@
 - ✅ §1.0 — Library crate skeleton, lib.slint entry point.
 - ✅ §1.1 — Enums (now 11 entries; original spec listed 10, `IconButtonSize` was added when IconButton landed).
 - ✅ §1.2 — Globals. Original spec listed 8; actual count is **10** (added `icon-font.slint` during font work, then `depth.slint` for the shadow-math extraction). `Animation.pulse` renamed to `Animation.spinner-period`.
-- 🔄 §1.3 — Components. **Button**, **IconButton**, and **Toggle** shipped; their property tables below are **SUPERSEDED** by the actual implementations documented in `HANDOVER.md`. **Card / KeyValueRow** specs below are still authoritative.
-- 🔄 §1.4 — Preview files. Button, IconButton, and Toggle shipped; Card / KeyValueRow pending.
+- 🔄 §1.3 — Components. **Button**, **IconButton**, **Toggle**, and **Card** shipped; their property tables below are **SUPERSEDED** by the actual implementations documented in `HANDOVER.md`. **KeyValueRow** spec below is still authoritative.
+- 🔄 §1.4 — Preview files. Button, IconButton, Toggle, and Card shipped; KeyValueRow pending.
 - ✅ §1.5 — Playground crate skeleton.
-- 🔄 §1.6 — Playground sections. Button, IconButton, and Toggle shipped; Card / KeyValueRow pending. **Note:** the playground sections turned out to be pure-Slint with `in-out` state on the section component, not Rust state structs as originally spec'd. The Rust-side state plan in §1.6 below is superseded — actual sections store state directly in Slint properties.
+- 🔄 §1.6 — Playground sections. Button, IconButton, Toggle, and Card shipped; KeyValueRow pending. **Note:** the playground sections turned out to be pure-Slint with `in-out` state on the section component, not Rust state structs as originally spec'd. The Rust-side state plan in §1.6 below is superseded — actual sections store state directly in Slint properties.
 - ❌ §1.7 — Smoke test pending.
 
 ### Net additions beyond the original spec
 
 - `globals/depth.slint` (the Depth global — stateless shadow math, mentioned in HANDOVER's Depth section).
-- `architecture/button.md` (retroactive) + `architecture/icon-button.md` (forward) + `architecture/toggle.md` (forward). Convention: each non-trivial component gets a design doc; trivial display-only ones (e.g. KeyValueRow) don't.
-- Accessibility cascade pattern wired on Button, IconButton, and Toggle. Toggle uses `accessible-role: switch` (first non-`button` role in the library); pattern now established for Phase 2 components that need non-button AccessibleRole values.
+- `architecture/button.md` (retroactive) + `architecture/icon-button.md` (forward) + `architecture/toggle.md` (forward) + `architecture/card.md` (forward). Convention: each non-trivial component gets a design doc; trivial display-only ones (e.g. KeyValueRow) don't — but KeyValueRow may warrant a short one as the first explicit incarnation of the segmentation principle.
+- **Single-script segmentation principle** codified in README + CLAUDE.md. No library component renders mixed-script content in a single Text element; multi-content components split into separately-anchored Texts. Sidesteps Slint's bidi bugs (#2294, #7267) by construction. Applies to KeyValueRow / Money / Quantity / FormRow / SectionCard as they land. The LTR-atomic numeric rule is now framed as a specific case of segmentation.
+- Accessibility cascade pattern wired on Button, IconButton, Toggle, and Card. Toggle uses `accessible-role: switch` (first non-`button` role in the library); Card adds the conditional-inner-shim pattern (Slint requires `accessible-role` to be compile-time-constant, so a Rectangle inside `if root.interactive` carries the role).
 - `globals/icon-font.slint` (dual-font with Phosphor + Lucide, runtime-switchable; original spec assumed a single font).
-- Toggle ships with `loading` + `tone` + `tooltip` + `height-override` + `debug-bounds` + `press-animation` + `thickness` — all spec expansions beyond the IMPL.md §1.3 baseline. Justifications in `architecture/toggle.md`.
+- Toggle ships with `loading` + `tone` + `tooltip` + `height-override` + `debug-bounds` + `press-animation` + `thickness` — spec expansions justified in `architecture/toggle.md`.
+- Card ships with `tooltip` + `padding-override` (with the dual-sentinel `0.001px` for explicit zero) + `max-content-width` + the full depth set + `debug-bounds` — spec expansions justified in `architecture/card.md`. Card explicitly skipped `variant` / `tone` and ships `thickness` / `press-animation` as inert API-parity properties in v1.
 
 ---
 

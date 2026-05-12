@@ -297,20 +297,41 @@ This adds work per component, but it pays back permanently: the playground is wh
 
 ## Internationalization
 
+### Single-script segmentation — the core principle
+
+**No library component renders mixed-script content inside a single `Text` element.** Every multi-content component splits its content into separately-anchored `Text` elements, each holding one script direction. Layout positions the segments per `Locale.rtl`; the *contents* of each segment stay in their native direction.
+
+This isn't a stylistic preference — it's a structural workaround for Slint 1.14's incomplete bidi support. Slint issues [#2294](https://github.com/slint-ui/slint/issues/2294) (RTL layouts RFC, open since 2023) and [#7267](https://github.com/slint-ui/slint/issues/7267) (Persian text bugs in LineEdit, open) mean any `Text` or `TextInput` holding bidi-mixed content has rendering or selection bugs. Segmentation sidesteps the framework limitation by construction: each `Text` only ever sees one direction, so Slint's bidi algorithm never has anything to get wrong.
+
+**When designing a new component:** if it accepts more than one piece of textual content, those pieces are SEPARATE properties handled by SEPARATE `Text` elements. Never combine into one string. Examples:
+
+- ✅ `KeyValueRow { label: string, value: string }` — two properties, two Text elements
+- ❌ `KeyValueRow { content: string }` where consumers pass `"إجمالي: 12.50"` — single Text holding bidi content, breaks at runtime
+- ✅ `Money { amount: string }` + currency rendered from `CurrencyFormat` global → two Text elements
+- ❌ `Money { value: "12.50 ر.س" }` as a single pre-formatted string handed to one Text
+
+This rule supersedes the "LTR-atomic numeric rendering" rule documented in earlier drafts; LTR-atomic is now a *specific case* of segmentation applied to numeric+unit pairs.
+
 ### RTL handling
 
-- `Locale.rtl: bool` is the single source of truth for directional layout
-- `HorizontalLayout` with `alignment: start` / `end` produces the correct physical side in both directions
-- Components with directional content (`KeyValueRow`, button leading/trailing slots) read `Locale.rtl` internally and arrange accordingly
+- `Locale.rtl: bool` is the single source of truth for directional layout.
+- Use `HorizontalLayout` with `if Locale.rtl` branches to flip layout direction at composition points (mirror the Button `icon-leading` / `icon-trailing` pattern, the Toggle column pattern, the Card column pattern).
 - **Consumers never reason about left/right.** They reason about leading/trailing.
+- **Geometric metaphors do not flip in RTL.** A switch's on-position is always physical-right regardless of locale (matches iOS Arabic behavior). A slider's "more" direction is always physical-right. Document the rule on any component with a physical metaphor.
 
-### LTR-atomic numeric rendering
-
-See README → [Numeric content rendering](./README.md#numeric-content-rendering).
+### LTR-atomic numeric rendering (a specific case of segmentation)
 
 Components displaying numbers + units (`Money`, `Quantity`, `MoneyInput`, any future `Code` / `Timestamp` / `Percent`) render the pair as an LTR sub-flow regardless of `Locale.rtl`. The pair's *position* in surrounding layout respects locale; the pair's *internal order* does not.
 
+Implementation: number and unit are SEPARATE Text elements (per the segmentation principle), arranged in a fixed `HorizontalLayout` whose direction is locked LTR. The whole pair as a unit is positioned by `Locale.rtl` in its parent.
+
 **This is non-negotiable.** Any new numeric-displaying primitive must follow this rule. If you add such a component, document the LTR-atom behavior in its description.
+
+### Free text input is the exception
+
+The principle holds for everything except inputs accepting arbitrary user text. If a cashier types `"إجمالي 12.50"` into a free-form `Input { kind: text }`, that single string lives in one `TextInput`'s buffer — Slint's bidi rendering kicks in, and the bugs from #7267 apply.
+
+Phase 2 input components inherit this limitation; mitigation strategies (numeric-only restriction, `text-direction: TextDirection` opt-in, splitting the visible value across two fields) live in each component's design doc. For now: document the limitation prominently in the component's doc-comment so consumers don't expect bidi to "just work" inside a single input.
 
 ### No user-facing copy
 

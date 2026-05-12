@@ -2,7 +2,7 @@
 
 Modern, environment-aware Slint UI primitives for Rust applications. Touch-first, tablet-class hardware in mind; iOS / SwiftUI–inspired design language.
 
-> **Status — Phase 1 in progress.** Foundation shipped (10 globals, dual icon font, design-token system). Three of five Phase 1 primitives built: `Button`, `IconButton`, and `Toggle`, each with a preview and an interactive playground section. `Card`, `KeyValueRow`, and a smoke-test screen still to land before Phase 1 closes. See [HANDOVER.md](./HANDOVER.md) for current state and [IMPL.md](./IMPL.md) for the implementation playbook.
+> **Status — Phase 1 in progress.** Foundation shipped (10 globals, dual icon font, design-token system). Four of five Phase 1 primitives built: `Button`, `IconButton`, `Toggle`, and `Card`, each with a preview and an interactive playground section. `KeyValueRow` and a smoke-test screen still to land before Phase 1 closes. See [HANDOVER.md](./HANDOVER.md) for current state and [IMPL.md](./IMPL.md) for the implementation playbook.
 
 ---
 
@@ -86,9 +86,29 @@ Accepted values:
 
 **Per-instance override.** Every shape-bearing component accepts a `shape` property. The sentinel value `Shape.default` means "follow the theme token." Explicit values override.
 
-### Numeric content rendering
+### Internationalization: single-script segmentation
 
-Any number-with-unit pair — currency, measurement, percentage, code — is an **LTR atomic sub-flow** in this library, regardless of `Locale.rtl`. The pair always renders number-then-unit (or unit-then-number for leading-symbol currencies like `$`), with the unit on the physical right of the number in the standard case.
+This library is the first Slint component library with first-class RTL and Arabic support. The design contract that makes this work is **single-script segmentation**: no library component renders mixed-script content inside a single `Text` element. Multi-content components split their content into separately-anchored `Text` elements, each containing one script direction. Layout positions the segments according to `Locale.rtl`; the *contents* of each segment stay in their native direction.
+
+This is not a stylistic choice. Slint's bidirectional text support is incomplete in v1.14 — issue [#2294](https://github.com/slint-ui/slint/issues/2294) (RTL layouts, open RFC since 2023) and [#7267](https://github.com/slint-ui/slint/issues/7267) (Persian text bugs in LineEdit, open) both mean that any `Text` or `TextInput` holding bidi-mixed content has rendering and selection bugs. Segmentation sidesteps every Slint bidi bug **by construction**: if our API forces consumers to split before they hand us strings, we never feed Slint bidi content.
+
+#### Where this applies (component-by-component)
+
+| Component | Segmentation pattern |
+|---|---|
+| **Button** | `label` (one script) + `icon-leading` / `icon-trailing` (codepoints, scriptless). RTL flips the icon's physical side; the label is single-script per consumer. |
+| **IconButton** | `icon` (codepoint). No mixed text by construction. |
+| **Toggle** | `label` (one script) + `description` (one script, separate `Text`). Knob position is geometric, locale-independent. |
+| **Card** | No text of its own. Children inside are the consumer's responsibility — they have segmented primitives to compose with. |
+| **KeyValueRow** (next, Phase 1) | `label: string` + `value: string`. Canonical use case: Arabic label + Latin numeric value. Layout flips per `Locale.rtl`; each `Text` stays one direction. |
+| **Money** (Phase 2) | `amount: string` (LTR-atomic numeric) + currency symbol/code (its own native direction). The pair renders as **two `Text` elements**, not one. `"12.50 ر.س"` is `Text { "12.50" }` next to `Text { "ر.س" }`. |
+| **Quantity** (Phase 2) | Same pattern as Money — `value` Text + `unit` Text, separately. `100 سم` is two segments, never `"100سم"` in one Text. |
+| **SectionCard** (Phase 2) | `title: string` (one script) + `icon` (codepoint) + content slot (consumer-composed). |
+| **FormRow** (Phase 2) | `label` (one script) + `helper` / `error` (one script). Control sits in its own slot. |
+
+#### LTR-atomic numeric content (a specific case of the principle)
+
+For numeric content (currency, measurement, percentage, code, timestamp), segmentation also enforces an **LTR-atomic ordering rule**: the pair renders number-then-unit (or unit-then-number for leading-symbol currencies like `$`) regardless of `Locale.rtl`. The pair's *position* in surrounding layout respects locale; the pair's *internal order* does not.
 
 | Content         | LTR context  | RTL context (visual) |
 | --------------- | ------------ | -------------------- |
@@ -101,9 +121,24 @@ Any number-with-unit pair — currency, measurement, percentage, code — is an 
 | Dimension (Ar)  | `100 سم`     | `100 سم`             |
 | Percentage      | `15%`        | `15%`                |
 
-The pair's *position within its surrounding layout* still flips with `Locale.rtl` — a price in a row's trailing slot moves to the row's physical left in RTL. But the *contents* of the pair never flip. Within the pair, glyphs use their native script direction (Arabic letters in `كغ` render RTL among themselves; Latin letters in `kg` render LTR).
+Within the pair, glyphs use their native script direction (Arabic letters in `كغ` render RTL among themselves; Latin letters in `kg` render LTR). Because each script lives in its own `Text` element, Slint's BiDi algorithm only sees single-direction content per segment — no bugs trigger.
 
-This is the standard Unicode BiDi behavior for numeric content embedded in mixed-direction text. The library enforces it inside `Money`, `Quantity`, `MoneyInput`, and any future primitive that displays a value with a unit. Consumers never set bidi controls manually.
+#### Where segmentation breaks: free text input
+
+The principle holds for everything except inputs accepting arbitrary user text. If a cashier types `"إجمالي 12.50"` into a free-form `Input { kind: text }`, that single string lives in one `TextInput`'s buffer — Slint's bidi rendering kicks in, and the bugs from #7267 apply (cursor position anomalies, word reordering on selection).
+
+Mitigations in the Phase 2 input components:
+
+- **`MoneyInput`** restricts to numeric-only characters → LTR by construction; bidi bugs cannot trigger.
+- **`Input`** ships a `text-direction: TextDirection { auto, ltr, rtl }` property. Default `auto` follows `Locale.rtl` and accepts only the dominant direction. Consumers needing free bidi input opt in explicitly with a documented warning.
+- Text fields displaying *pre-formatted* strings (read-only labels, captions) are always safe because the formatting happened on the Rust side; the `Text` element receives single-direction content.
+
+#### Consumer guidance
+
+- **Pre-localize content at the boundary.** Format strings in Rust before handing them to the library. Don't construct `"price: " + amount + " " + currency` in one string and pass it as a label.
+- **Use segmented components for label+value patterns.** Reach for `KeyValueRow`, not a Button with a long bilingual label.
+- **For numeric+unit content, use `Money` / `Quantity`** — they enforce the LTR-atomic rule internally so you don't have to.
+- **Treat free text input as opt-in bidi.** Set `text-direction` explicitly when you mean it; default to single-direction.
 
 ---
 
@@ -266,18 +301,33 @@ State-aware pill. Like `Chip` but with an optional pulse animation when state ch
 
 ---
 
-### Card — pending (Phase 1, next)
+### Card — shipped
 
-Surface container with shadow and radius. No header, no padding-on-content opinions — pure surface.
+Structural surface container with **opt-in interactivity**. Pure surface unless `interactive: true`; no `variant`, no `tone` (color-coding a card to imply semantics is inaccessible — semantic content belongs inside, not painted onto the surface). When interactive, adopts the accessibility cascade via a conditional inner shim (Slint requires `accessible-role` to be compile-time constant, so the role lives on a conditional inner Rectangle when `interactive: true`). **16 public properties total** — see [HANDOVER.md → "Card API (as built)"](./HANDOVER.md) and [`architecture/card.md`](./architecture/card.md).
 
-| Property      | Type     | Default     | Description                                            |
-| ------------- | -------- | ----------- | ------------------------------------------------------ |
-| `elevation`   | `string` | `"sm"`      | `none \| sm \| md \| lg` — drop-shadow intensity      |
-| `interactive` | `bool`   | `false`     | If true, shows hover/press feedback and emits `clicked()`. |
+| Property            | Type       | Default   | Description                                                                                  |
+| ------------------- | ---------- | --------- | -------------------------------------------------------------------------------------------- |
+| `interactive`       | `bool`     | `false`   | Opt-in interactivity. When true: hover/press feedback, focus ring, `clicked()`, AT role, tooltip, keyboard activation. When false: pure surface, **not in keyboard tab order**. |
+| `disabled`          | `bool`     | `false`   | Only effective when `interactive: true`.                                                     |
+| `shape`             | `Shape`    | `default` | Follows `Theme.card-shape`. `rounded → Radius.lg` (14px, larger than buttons). `pill` and `circle` fall back to `rounded`. |
+| `bordered`          | `bool`     | `true`    | 1px `Theme.border`. Safe default — guarantees visibility even with `elevated: false`.        |
+| `padding-density`   | `Density`  | `default` | `compact / default / comfortable`. Renamed from `padding` (Slint reserves the bare name).    |
+| `padding-override`  | `length`   | `0px`     | **Dual-sentinel.** `0px` = use preset. `0.001px` = explicit zero (full-bleed images). Any other positive value forces that padding. |
+| `max-content-width` | `length`   | `0px`     | `0px` = no cap. Renamed from `max-width` (Rectangle's reserved property).                    |
+| `aria-label`        | `string`   | `""`      | Required when `interactive`. Cascade: `aria-label → tooltip → "Card"`.                       |
+| `tooltip`           | `string`   | `""`      | Only rendered when `interactive: true`.                                                      |
 
-**Callbacks:** `clicked()` (only when `interactive: true`)
+Plus the full depth set (`elevated`, `shadow-elevation`, `shadow-color`, `shadow-direction`) and `debug-bounds`. **`thickness` and `press-animation` are accepted but inert in v1** — they're API parity placeholders; Card's content-driven sizing creates a circular dependency with Button's two-layer surface/face structure. Phase 1.1 may revisit.
 
-**Reads from environment:** `Theme`, `Radius`, `Animation`
+**Press feedback (v1):** background tint darkens by 4% + opacity dims to 0.96 + shadow returns to rest (effective-hover gated on `!touch.pressed`). No y-shift.
+
+**Children:** wrapped in a `VerticalLayout` with `resolved-padding`. Consumers needing horizontal arrangement nest their own `HorizontalLayout` inside.
+
+**Excluded vs Button/IconButton** (intentional API divergence): `variant`, `tone` (Card is structural, not semantic), `bg-color`, `loading`, `checkable`/`checked`, `label`/`title` (that's SectionCard in Phase 2), `icon-leading`/`icon-trailing`.
+
+**Callbacks:** `clicked()`, `pressed-changed(bool)`, `hover-changed(bool)`, `focus-changed(bool)` — all fire only when `interactive: true`.
+
+**Reads from environment:** `Theme`, `Radius`, `Spacing`, `Sizes`, `Animation`, `Depth`, `Typography` (tooltip only)
 
 ---
 
@@ -296,9 +346,9 @@ Card with a built-in header (icon + title) and content slot. The dominant patter
 
 ---
 
-### KeyValueRow — pending (Phase 1)
+### KeyValueRow — pending (Phase 1, next)
 
-Label on the start side, value on the end side. RTL-aware. The building block for breakdowns, totals, summaries.
+Label on the start side, value on the end side. RTL-aware. The building block for breakdowns, totals, summaries. **The canonical incarnation of the [single-script segmentation principle](#internationalization-single-script-segmentation):** `label` and `value` are each a separate `Text` element, each in one script. The dominant POS use case — Arabic label + Latin numeric value — works correctly because the two scripts never mix in a single `Text`.
 
 | Property        | Type     | Default     | Description                                                       |
 | --------------- | -------- | ----------- | ----------------------------------------------------------------- |
@@ -540,15 +590,16 @@ Read source for *how a component is built*. Run the playground for *how to use i
 | Construction discipline (`CLAUDE.md`)              | done                                               |
 | Roadmap (`ROADMAP.md`)                             | done                                               |
 | Implementation playbook (`IMPL.md`)                | done for Phase 1; later phases sketched            |
-| Per-component design docs (`architecture/`)        | `button.md` + `icon-button.md` + `toggle.md`. Policy: non-trivial components get one |
+| Per-component design docs (`architecture/`)        | `button.md` + `icon-button.md` + `toggle.md` + `card.md`. Policy: non-trivial components get one |
 | Tokens + globals                                   | done (10 globals: `Theme`, `Typography`, `Spacing`, `Radius`, `Sizes`, `Animation`, `Depth`, `Locale`, `CurrencyFormat`, `IconFont`) |
 | Design language                                    | iOS / SwiftUI-derived; documented in HANDOVER      |
+| Single-script segmentation principle               | codified in README + CLAUDE.md; first explicit incarnation lands with KeyValueRow |
 | `Button`                                           | shipped (25 properties, full depth + accessibility) |
 | `IconButton`                                       | shipped (19 properties)                            |
 | `Toggle`                                           | shipped (19 properties, knob-only depth, `accessible-role: switch`) |
-| `Card`                                             | pending — next Phase 1 component                   |
-| `KeyValueRow`                                      | pending                                            |
+| `Card`                                             | shipped (16 properties, opt-in interactivity, conditional accessibility shim) |
+| `KeyValueRow`                                      | pending — next Phase 1 component                   |
 | Phase 1 smoke test (`examples/settings-display.slint`) | pending                                        |
-| Playground app (`abdu-slint-ui-playground`)        | shipped (sidebar + scrollable toolbar + Button & IconButton & Toggle sections + spinner-period live tuning) |
+| Playground app (`abdu-slint-ui-playground`)        | shipped (sidebar + scrollable toolbar + Button & IconButton & Toggle & Card sections + spinner-period live tuning) |
 | Phase 2 primitives (10 more)                       | pending                                            |
 | Workspace integration into `e2manage-pos-terminal`  | pending (Phase 4)                                 |
