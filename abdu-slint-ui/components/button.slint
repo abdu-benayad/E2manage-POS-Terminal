@@ -96,6 +96,14 @@ export component Button inherits Rectangle {
     /// light from the left. Any integer in [0, 359].
     in property <int> shadow-direction: 0;
 
+    /// Visible thickness. When positive, the bottom edge of the button
+    /// shows a darker stripe of this height — the "side wall" of an
+    /// extruded shape. Combined with the existing top highlight and
+    /// drop shadow, it gives the button real 3D depth. `0px` is flat
+    /// (default). 2–6px reads as tactile; values above ~10px start to
+    /// look exaggerated.
+    in property <length> thickness: 0px;
+
     /// Custom height override. `0px` means "use the `size` preset". Any
     /// positive value replaces the preset's height; font size, icon size,
     /// and horizontal padding scale proportionally so the button still
@@ -441,6 +449,22 @@ export component Button inherits Rectangle {
             border-bottom-left-radius: 0px;
             border-bottom-right-radius: 0px;
             background: @linear-gradient(180deg, #ffffff40 0%, #ffffff00 100%);
+        }
+
+        // Bottom edge stripe — the "side wall" of an extruded shape.
+        // Combined with the top highlight and the outer drop-shadow, gives
+        // the button real 3D depth. Pressing the button flattens the stripe
+        // (height → 1px) so it feels like the button compresses on tap.
+        if root.thickness > 0px && !root.disabled: Rectangle {
+            width: parent.width;
+            height: root.visually-pressed ? 1px : root.thickness;
+            y: parent.height - self.height;
+            background: root.active-bg.darker(25%);
+            border-top-left-radius: 0px;
+            border-top-right-radius: 0px;
+            border-bottom-left-radius: parent.border-radius;
+            border-bottom-right-radius: parent.border-radius;
+            animate height { duration: Animation.fast; easing: ease-out; }
         }
     }
 

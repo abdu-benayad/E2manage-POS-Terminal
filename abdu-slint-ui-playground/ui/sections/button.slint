@@ -33,6 +33,8 @@ export component ButtonSection inherits Rectangle {
     in-out property <string> v-shadow-color: "none";
     // Light direction in degrees: 0 = light from above (shadow below).
     in-out property <float>  v-shadow-direction: 0.0;
+    // Visible 3D thickness in px (darker bottom stripe). 0 = flat.
+    in-out property <float>  v-thickness-px: 0.0;
     // Custom button height in px; 0 means "use the size preset".
     in-out property <float>  v-height-override-px: 0.0;
     // Debug visualization: magenta outline on the visual surface.
@@ -187,6 +189,7 @@ export component ButtonSection inherits Rectangle {
                         shadow-elevation: root.shadow-elevation-enum;
                         shadow-color: root.shadow-color-resolved;
                         shadow-direction: floor(root.v-shadow-direction);
+                        thickness: root.v-thickness-px * 1px;
                         height-override: root.v-height-override-px * 1px;
                         debug-bounds: root.v-debug-bounds;
                     }
@@ -222,6 +225,7 @@ export component ButtonSection inherits Rectangle {
                                 + (root.v-shadow-elevation != "sm" ? "    shadow-elevation: Elevation." + root.v-shadow-elevation + ";\n" : "")
                                 + (root.v-shadow-color != "none" ? "    shadow-color: " + root.v-shadow-color + ";  // preset\n" : "")
                                 + (root.v-shadow-direction > 0 ? "    shadow-direction: " + floor(root.v-shadow-direction) + ";\n" : "")
+                                + (root.v-thickness-px > 0 ? "    thickness: " + floor(root.v-thickness-px) + "px;\n" : "")
                                 + (root.v-height-override-px > 0 ? "    height-override: " + floor(root.v-height-override-px) + "px;\n" : "")
                                 + "}";
                             color: #f8fafc;
@@ -442,6 +446,24 @@ export component ButtonSection inherits Rectangle {
                         font-size: 10px;
                         color: Theme.muted-foreground;
                         wrap: word-wrap;
+                    }
+
+                    Text { text: "thickness (3D depth, px)"; font-size: 12px; color: Theme.muted-foreground; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Slider {
+                            minimum: 0;
+                            maximum: 12;
+                            value: root.v-thickness-px;
+                            changed(val) => { root.v-thickness-px = val; }
+                        }
+                        Text {
+                            text: root.v-thickness-px == 0 ? "flat" : floor(root.v-thickness-px) + "px";
+                            vertical-alignment: center;
+                            font-size: 12px;
+                            color: Theme.muted-foreground;
+                            min-width: 40px;
+                        }
                     }
 
                     CheckBox { text: "debug-bounds (magenta outline)"; checked: root.v-debug-bounds; toggled => { root.v-debug-bounds = self.checked; } }
