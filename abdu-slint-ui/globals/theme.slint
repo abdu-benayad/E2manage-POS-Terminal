@@ -61,16 +61,19 @@ export global Theme {
     // Values: "compact" | "default" | "comfortable"
     in-out property <string> density: "default";
 
-    // --- Shadow primitives (iOS-soft: more blur, less opacity than shadcn) ---
-    out property <length> shadow-sm-blur: 4px;
-    out property <length> shadow-sm-y: 1px;
-    out property <color>  shadow-sm-color: #0000000a;     // rgba(0,0,0,0.04)
+    // --- Shadow primitives ---
+    // Tuned for POS tablets, not web pages: shadows are visible from arm's
+    // length under indoor lighting. Subtler shadcn-style values were
+    // washed out on white backgrounds.
+    out property <length> shadow-sm-blur: 6px;
+    out property <length> shadow-sm-y: 2px;
+    out property <color>  shadow-sm-color: #0000001f;     // rgba(0,0,0,0.12)
 
-    out property <length> shadow-md-blur: 12px;
-    out property <length> shadow-md-y: 3px;
-    out property <color>  shadow-md-color: #00000014;     // rgba(0,0,0,0.08)
+    out property <length> shadow-md-blur: 16px;
+    out property <length> shadow-md-y: 4px;
+    out property <color>  shadow-md-color: #00000033;     // rgba(0,0,0,0.20)
 
-    out property <length> shadow-lg-blur: 32px;
-    out property <length> shadow-lg-y: 12px;
-    out property <color>  shadow-lg-color: #0000001a;     // rgba(0,0,0,0.10)
+    out property <length> shadow-lg-blur: 36px;
+    out property <length> shadow-lg-y: 14px;
+    out property <color>  shadow-lg-color: #00000040;     // rgba(0,0,0,0.25)
 }

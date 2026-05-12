@@ -311,7 +311,13 @@ export component Button inherits Rectangle {
         ? root.resolved-height
         : max(content.preferred-width + 2 * root.resolved-padding, root.min-content-width);
     height: root.resolved-height;
-    background: root.active-bg;
+    // Filled-prominent variants get a vertical gradient (lighter at top,
+    // base color at bottom) which gives the button perceived depth. Other
+    // variants stay flat — gradient on a ghost button would look wrong.
+    background:
+        root.variant-is-filled-prominent
+            ? @linear-gradient(180deg, root.active-bg.brighter(12%) 0%, root.active-bg 100%)
+            : root.active-bg;
     border-radius: root.resolved-radius;
     border-width: root.variant == ButtonVariant.outline ? Sizes.border-thin : 0px;
     border-color: root.resolved-border-color;
@@ -340,6 +346,22 @@ export component Button inherits Rectangle {
         border-color: Theme.ring;
         border-width: focus-scope.has-focus ? Sizes.focus-ring : 0px;
         background: transparent;
+    }
+
+    // Inner glossy highlight at the top half of filled-prominent variants.
+    // A white-to-transparent vertical gradient creates the "iOS glossy"
+    // top sheen. Matches parent's top corner radii; hard line at midpoint
+    // is hidden underneath content text.
+    if root.variant-is-filled-prominent && !root.disabled: Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height * 0.55;
+        border-top-left-radius: parent.border-radius;
+        border-top-right-radius: parent.border-radius;
+        border-bottom-left-radius: 0px;
+        border-bottom-right-radius: 0px;
+        background: @linear-gradient(180deg, #ffffff40 0%, #ffffff00 100%);
     }
 
     // Content row: [leading icon] [label] [trailing icon] OR spinner.
