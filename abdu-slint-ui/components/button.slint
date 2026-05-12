@@ -301,67 +301,78 @@ export component Button inherits Rectangle {
         : Theme.shadow-sm-color;
 
     // ===== Visual layer ===================================================
+    //
+    // IMPORTANT: Slint's `lower_shadows` compiler pass silently DROPS
+    // drop-shadow-* properties when set on the root element of a component.
+    // The Button's visual surface therefore lives on an inner Rectangle
+    // (`surface`) and the root keeps only sizing, opacity, and event
+    // wiring. Don't move background/border/shadow/radius back to the root.
 
-    // Width strategy: by default, hug content (preferred size = label + padding).
-    // When `full-width` is requested, expand in the enclosing layout via
-    // horizontal-stretch. Consumers placing a Button outside a layout can set
-    // an explicit width at the use-site.
+    // Root: sizing, opacity, and event scope.
     horizontal-stretch: root.full-width ? 1.0 : 0.0;
     preferred-width: root.size == ButtonSize.icon
         ? root.resolved-height
         : max(content.preferred-width + 2 * root.resolved-padding, root.min-content-width);
     height: root.resolved-height;
-    // Filled-prominent variants get a vertical gradient (lighter at top,
-    // base color at bottom) which gives the button perceived depth. Other
-    // variants stay flat — gradient on a ghost button would look wrong.
-    background:
-        root.variant-is-filled-prominent
-            ? @linear-gradient(180deg, root.active-bg.brighter(12%) 0%, root.active-bg 100%)
-            : root.active-bg;
-    border-radius: root.resolved-radius;
-    border-width: root.variant == ButtonVariant.outline ? Sizes.border-thin : 0px;
-    border-color: root.resolved-border-color;
-    drop-shadow-blur:  root.active-shadow-blur;
-    drop-shadow-offset-y: root.active-shadow-y;
-    drop-shadow-color: root.active-shadow-color;
+    background: transparent;
     // iOS press feel: subtle opacity dim while the user is actively pressing.
-    // This is the SwiftUI default — buttons don't change color, they fade.
     opacity:
           root.disabled         ? 0.5
         : root.visually-pressed ? 0.85
         : 1.0;
+    animate opacity { duration: Animation.fast; easing: ease-out; }
 
-    animate background       { duration: Animation.fast; easing: ease-out; }
-    animate opacity          { duration: Animation.fast; easing: ease-out; }
-    animate border-color     { duration: Animation.fast; easing: ease-out; }
-    animate drop-shadow-blur { duration: Animation.fast; easing: ease-out; }
-
-    // Focus ring (drawn outside the button via a slightly larger Rectangle).
+    // Focus ring (drawn outside the surface).
     Rectangle {
         x: -Sizes.focus-ring-offset;
         y: -Sizes.focus-ring-offset;
         width: parent.width + 2 * Sizes.focus-ring-offset;
         height: parent.height + 2 * Sizes.focus-ring-offset;
-        border-radius: parent.border-radius + Sizes.focus-ring-offset;
+        border-radius: surface.border-radius + Sizes.focus-ring-offset;
         border-color: Theme.ring;
         border-width: focus-scope.has-focus ? Sizes.focus-ring : 0px;
         background: transparent;
     }
 
-    // Inner glossy highlight at the top half of filled-prominent variants.
-    // A white-to-transparent vertical gradient creates the "iOS glossy"
-    // top sheen. Matches parent's top corner radii; hard line at midpoint
-    // is hidden underneath content text.
-    if root.variant-is-filled-prominent && !root.disabled: Rectangle {
+    // Surface: the visual button itself. Drop-shadow works here because
+    // this Rectangle is NOT the component's root.
+    surface := Rectangle {
         x: 0;
         y: 0;
         width: parent.width;
-        height: parent.height * 0.55;
-        border-top-left-radius: parent.border-radius;
-        border-top-right-radius: parent.border-radius;
-        border-bottom-left-radius: 0px;
-        border-bottom-right-radius: 0px;
-        background: @linear-gradient(180deg, #ffffff40 0%, #ffffff00 100%);
+        height: parent.height;
+        // Filled-prominent variants get a vertical gradient (lighter at top,
+        // base color at bottom) which gives the button perceived depth.
+        // Other variants stay flat — gradient on a ghost button would look wrong.
+        background:
+            root.variant-is-filled-prominent
+                ? @linear-gradient(180deg, root.active-bg.brighter(12%) 0%, root.active-bg 100%)
+                : root.active-bg;
+        border-radius: root.resolved-radius;
+        border-width: root.variant == ButtonVariant.outline ? Sizes.border-thin : 0px;
+        border-color: root.resolved-border-color;
+        drop-shadow-blur:  root.active-shadow-blur;
+        drop-shadow-offset-y: root.active-shadow-y;
+        drop-shadow-color: root.active-shadow-color;
+
+        animate background       { duration: Animation.fast; easing: ease-out; }
+        animate border-color     { duration: Animation.fast; easing: ease-out; }
+        animate drop-shadow-blur { duration: Animation.fast; easing: ease-out; }
+
+        // Inner glossy highlight at the top half of filled-prominent variants.
+        // A white-to-transparent vertical gradient creates the "iOS glossy"
+        // top sheen. Top corners match parent's radius; bottom corners flat.
+        if root.variant-is-filled-prominent && !root.disabled: Rectangle {
+            x: 0;
+            y: 0;
+            width: parent.width;
+            height: parent.height * 0.55;
+            border-top-left-radius: parent.border-radius;
+            border-top-right-radius: parent.border-radius;
+            border-bottom-left-radius: 0px;
+            border-bottom-right-radius: 0px;
+            background: @linear-gradient(180deg, #ffffff40 0%, #ffffff00 100%);
+        }
     }
 
     // Content row: [leading icon] [label] [trailing icon] OR spinner.
