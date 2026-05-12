@@ -66,6 +66,19 @@ export enum ToggleSize {
     lg,
 }
 
+// IconButton's size enum. Separate from ButtonSize so the compiler
+// rejects passing `hero` or `icon` to an IconButton (both are
+// meaningless here — `icon` is redundant on an icon-only button,
+// `hero` at 88px feels excessive for icon-only).
+export enum IconButtonSize {
+    xs,    // 32px
+    sm,    // 38px
+    md,    // 44px (default — Apple HIG minimum tap target)
+    lg,    // 52px
+    xl,    // 60px
+    xxl,   // 72px — tablet hero icon actions (back/close on checkout)
+}
+
 export enum TonalSurface {
     on-surface,
     on-primary,

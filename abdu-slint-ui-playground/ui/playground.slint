@@ -11,9 +11,10 @@
 // abdu-slint-ui can be debugged without breaking the harness. Each section
 // renders abdu-slint-ui components directly in its own preview pane.
 
-import { Theme, Locale, IconFont, IconFamily, CurrencyFormat } from "@abdu-slint-ui";
-import { ComboBox, CheckBox, HorizontalBox, VerticalBox, ListView, StandardListView, StandardButton, ScrollView } from "std-widgets.slint";
+import { Theme, Locale, IconFont, IconFamily, CurrencyFormat, Animation } from "@abdu-slint-ui";
+import { ComboBox, CheckBox, HorizontalBox, VerticalBox, ListView, StandardListView, StandardButton, ScrollView, Slider } from "std-widgets.slint";
 import { ButtonSection } from "sections/button.slint";
+import { IconButtonSection } from "sections/icon-button.slint";
 
 export component PlaygroundWindow inherits Window {
     title: "abdu-slint-ui Playground";
@@ -59,6 +60,7 @@ export component PlaygroundWindow inherits Window {
         // --- Sidebar ---------------------------------------------------
         Rectangle {
             width: 240px;
+            horizontal-stretch: 0;
             background: #f8fafc;
             Rectangle {
                 x: parent.width - 1px;
@@ -106,8 +108,25 @@ export component PlaygroundWindow inherits Window {
                     }
                 }
 
+                icon-button-tile := Rectangle {
+                    height: 36px;
+                    background: root.selected-section == "icon-button" ? #e2e8f0 : transparent;
+                    border-radius: 6px;
+                    Text {
+                        x: 12px;
+                        text: "IconButton";
+                        font-size: 13px;
+                        vertical-alignment: center;
+                        color: #0f172a;
+                    }
+                    TouchArea {
+                        clicked => { root.selected-section = "icon-button"; }
+                        mouse-cursor: pointer;
+                    }
+                }
+
                 Text {
-                    text: "(IconButton, Toggle, Card, KeyValueRow appear here as their sections land)";
+                    text: "(Toggle, Card, KeyValueRow appear here as their sections land)";
                     font-size: 11px;
                     color: #94a3b8;
                     wrap: word-wrap;
@@ -126,6 +145,16 @@ export component PlaygroundWindow inherits Window {
                     height: 1px;
                     background: Theme.border;
                 }
+
+                // ScrollView wrapper so the toolbar stays accessible
+                // when the playground window is narrower than the
+                // toolbar's natural content width. Vertical scrollbar
+                // disabled — toolbar is single-row.
+                toolbar-scroll := ScrollView {
+                    width:  parent.width;
+                    height: parent.height;
+                    vertical-scrollbar-policy: always-off;
+                    horizontal-scrollbar-policy: as-needed;
 
                 HorizontalBox {
                     spacing: 12px;
@@ -199,17 +228,41 @@ export component PlaygroundWindow inherits Window {
                             toggled => { Locale.rtl = self.checked; }
                         }
                     }
+                    HorizontalBox {
+                        spacing: 6px;
+                        Text {
+                            text: "Spinner:";
+                            vertical-alignment: center;
+                            font-size: 12px;
+                        }
+                        Slider {
+                            width: 100px;
+                            minimum: 400;
+                            maximum: 3000;
+                            value: Animation.spinner-period / 1ms;
+                            changed(val) => { Animation.spinner-period = val * 1ms; }
+                        }
+                        Text {
+                            text: floor(Animation.spinner-period / 1ms) + "ms";
+                            vertical-alignment: center;
+                            font-size: 11px;
+                            color: Theme.muted-foreground;
+                            min-width: 48px;
+                        }
+                    }
                 }
+                }   // close toolbar-scroll ScrollView
             }
 
             // Section pane
-            if root.selected-section == "button": ButtonSection { }
-            if root.selected-section != "button": Rectangle {
+            if root.selected-section == "button":      ButtonSection { }
+            if root.selected-section == "icon-button": IconButtonSection { }
+            if root.selected-section != "button" && root.selected-section != "icon-button": Rectangle {
                 background: Theme.surface-muted;
                 Text {
                     x: 32px;
                     y: 32px;
-                    text: "Section '" + root.selected-section + "' not yet implemented. Select Button from the sidebar.";
+                    text: "Section '" + root.selected-section + "' not yet implemented. Select Button or IconButton from the sidebar.";
                     color: Theme.muted-foreground;
                 }
             }

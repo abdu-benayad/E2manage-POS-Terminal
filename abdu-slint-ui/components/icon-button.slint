@@ -1,0 +1,440 @@
+// IconButton — square, icon-only interactive primitive.
+//
+// Sibling of Button. Not derived from Button: both compose the Depth global
+// for shadow math but each owns its own visual structure, sizing rules, and
+// shape resolution. IconButton resolves its default shape against
+// `Theme.icon-button-shape` (default `"circle"`), distinct from Button's
+// `Theme.button-shape`. The default variant is `ghost` — icon buttons are
+// most commonly low-emphasis in-row controls.
+//
+// Per architecture/icon-button.md.
+
+import { ButtonVariant, IconButtonSize, Shape, Tone, Elevation } from "../enums.slint";
+import { Theme } from "../globals/theme.slint";
+import { Typography } from "../globals/typography.slint";
+import { Sizes } from "../globals/sizes.slint";
+import { Radius } from "../globals/radius.slint";
+import { Animation } from "../globals/animation.slint";
+import { IconFont } from "../globals/icon-font.slint";
+import { Depth } from "../globals/depth.slint";
+
+export component IconButton inherits Rectangle {
+    // ===== Public API =====================================================
+
+    /// The icon to render. Library-canonical name (resolved via IconFont)
+    /// or a raw codepoint / emoji fallback.
+    in property <string> icon: "";
+
+    /// Accessibility name. Required for meaningful screen-reader output.
+    /// Falls through the cascade `aria-label → tooltip → icon → "Button"`
+    /// — but a real string here is always the right thing.
+    in property <string> aria-label: "";
+
+    /// Visual variant. Default `ghost` — different from Button (which is
+    /// `default`). Icon buttons are most commonly low-emphasis controls.
+    in property <ButtonVariant> variant: ButtonVariant.ghost;
+
+    /// Vertical scale. Square side from `Sizes.button-{size}`.
+    in property <IconButtonSize> size: IconButtonSize.md;
+
+    /// Corner shape. `default` follows `Theme.icon-button-shape`.
+    /// On a square button `pill` and `circle` both produce radius=side/2.
+    in property <Shape> shape: Shape.default;
+
+    /// Accent tone override. Same semantics as Button.
+    in property <Tone> tone: Tone.default;
+
+    /// Visually muted; blocks click and keyboard activation.
+    in property <bool> disabled: false;
+
+    /// Replaces the icon with a spinner glyph and blocks `clicked`.
+    /// Width is preserved so the button doesn't jump on toggle.
+    in property <bool> loading: false;
+
+    /// Hover text shown after a brief delay. Empty disables the tooltip.
+    /// Doubles as the accessible-label fallback when `aria-label` is empty.
+    in property <string> tooltip: "";
+
+    /// When true, the button behaves as a toggle and `checked` drives its
+    /// pressed visual.
+    in property <bool> checkable: false;
+
+    /// Controlled checked state for toggle behaviour.
+    in-out property <bool> checked: false;
+
+    /// Custom side override. `0px` = use the `size` preset. Any positive
+    /// value forces a square of that side; the icon glyph scales as
+    /// `max(14px, side * 0.5)`.
+    in property <length> height-override: 0px;
+
+    /// Master shadow on/off switch. When `false`, the button is flat
+    /// regardless of `shadow-elevation`.
+    in property <bool> elevated: true;
+
+    /// Shadow magnitude when elevated. Hover bumps one step (sm→md→lg→xl).
+    in property <Elevation> shadow-elevation: Elevation.sm;
+
+    /// Custom shadow color override. Transparent means use the Theme
+    /// token for the level.
+    in property <color> shadow-color: transparent;
+
+    /// Direction the simulated light comes from, in degrees [0, 359].
+    /// 0 = light from above (shadow falls below).
+    in property <int> shadow-direction: 0;
+
+    /// Visible 3D thickness. Two-layer surface/face extrusion — the base
+    /// peeks out under the face at the bottom by `thickness` px. `0px`
+    /// is flat (default). 2–6px reads as tactile.
+    in property <length> thickness: 0px;
+
+    /// Controls the "press into the base" face-slide animation. When
+    /// `true` (default), pressing slides the face down by 70% of
+    /// `thickness` and back up on release.
+    in property <bool> press-animation: true;
+
+    /// Debug helper. When true, draws a magenta border on the surface
+    /// Rectangle and, if the accessibility cascade is falling through
+    /// to the `"Button"` default, renders a magenta dot at the top-right.
+    in property <bool> debug-bounds: false;
+
+    // ===== Callbacks ======================================================
+
+    callback clicked();
+    callback pressed-changed(bool);
+    callback hover-changed(bool);
+    callback focus-changed(bool);
+
+    // ===== Internal derived state =========================================
+
+    // Resolve `Shape.default` against the icon-button theme token.
+    property <string> resolved-shape:
+          root.shape == Shape.default ? Theme.icon-button-shape
+        : root.shape == Shape.rounded ? "rounded"
+        : root.shape == Shape.pill    ? "pill"
+        : root.shape == Shape.circle  ? "circle"
+        : root.shape == Shape.square  ? "square"
+        : Theme.icon-button-shape;
+
+    // Preset-derived square side.
+    property <length> preset-side:
+          root.size == IconButtonSize.xs  ? Sizes.button-xs
+        : root.size == IconButtonSize.sm  ? Sizes.button-sm
+        : root.size == IconButtonSize.md  ? Sizes.button-md
+        : root.size == IconButtonSize.lg  ? Sizes.button-lg
+        : root.size == IconButtonSize.xl  ? Sizes.button-xl
+        : root.size == IconButtonSize.xxl ? Sizes.button-xxl
+        : Sizes.button-md;
+
+    property <bool>   side-overridden: root.height-override > 0px;
+    property <length> resolved-side: root.side-overridden ? root.height-override : root.preset-side;
+
+    // Icon glyph size — see architecture doc: 0.5 is the icon-only
+    // coefficient (Button uses 0.42 because it has text companion).
+    property <length> resolved-icon-size: max(14px, root.resolved-side * 0.5);
+
+    // Effective corner radius. On a square button "pill" and "circle"
+    // both collapse to side/2 — kept as distinct values in the API for
+    // consistency, but visually identical here.
+    property <length> resolved-radius:
+          root.resolved-shape == "square"  ? 0px
+        : root.resolved-shape == "rounded" ? Radius.md
+        : root.resolved-side / 2;
+
+    // ===== Variant × tone color resolution ================================
+
+    property <color> tone-color:
+          root.tone == Tone.primary     ? Theme.primary
+        : root.tone == Tone.success     ? Theme.success
+        : root.tone == Tone.warning     ? Theme.warning
+        : root.tone == Tone.destructive ? Theme.destructive
+        : root.tone == Tone.info        ? Theme.info
+        : root.tone == Tone.muted       ? Theme.muted-foreground
+        : transparent;
+
+    property <color> tone-foreground:
+          root.tone == Tone.primary     ? Theme.primary-foreground
+        : root.tone == Tone.success     ? Theme.success-foreground
+        : root.tone == Tone.warning     ? Theme.warning-foreground
+        : root.tone == Tone.destructive ? Theme.destructive-foreground
+        : root.tone == Tone.info        ? Theme.info-foreground
+        : root.tone == Tone.muted       ? Theme.surface
+        : transparent;
+
+    property <bool> tone-active: root.tone != Tone.default;
+
+    property <color> variant-base-bg:
+          root.variant == ButtonVariant.default     ? Theme.primary
+        : root.variant == ButtonVariant.destructive ? Theme.destructive
+        : root.variant == ButtonVariant.secondary   ? Theme.secondary
+        : root.variant == ButtonVariant.outline     ? Theme.surface
+        : root.variant == ButtonVariant.ghost       ? transparent
+        : root.variant == ButtonVariant.link        ? transparent
+        : Theme.primary;
+
+    property <color> variant-hover-bg:
+          root.variant == ButtonVariant.default     ? Theme.primary-hover
+        : root.variant == ButtonVariant.destructive ? Theme.destructive-hover
+        : root.variant == ButtonVariant.secondary   ? Theme.secondary-hover
+        : root.variant == ButtonVariant.outline     ? Theme.accent
+        : root.variant == ButtonVariant.ghost       ? Theme.accent
+        : root.variant == ButtonVariant.link        ? transparent
+        : Theme.primary-hover;
+
+    property <color> variant-foreground:
+          root.variant == ButtonVariant.default     ? Theme.primary-foreground
+        : root.variant == ButtonVariant.destructive ? Theme.destructive-foreground
+        : root.variant == ButtonVariant.secondary   ? Theme.secondary-foreground
+        : root.variant == ButtonVariant.outline     ? Theme.foreground
+        : root.variant == ButtonVariant.ghost       ? Theme.foreground
+        : root.variant == ButtonVariant.link        ? Theme.primary
+        : Theme.primary-foreground;
+
+    property <bool> variant-is-solid:
+        root.variant == ButtonVariant.default
+        || root.variant == ButtonVariant.destructive
+        || root.variant == ButtonVariant.secondary;
+
+    property <bool> variant-is-filled-prominent:
+        root.variant == ButtonVariant.default
+        || root.variant == ButtonVariant.destructive;
+
+    property <color> base-bg:
+          !root.tone-active            ? root.variant-base-bg
+        : root.variant-is-solid        ? root.tone-color
+        : root.variant == ButtonVariant.outline ? Theme.surface
+        : transparent;
+
+    property <color> hover-bg:
+          !root.tone-active            ? root.variant-hover-bg
+        : root.variant-is-solid        ? root.tone-color.darker(15%)
+        : root.tone-color.with-alpha(0.12);
+
+    property <color> foreground-color:
+          !root.tone-active                              ? root.variant-foreground
+        : root.variant-is-solid                          ? root.tone-foreground
+        : root.variant == ButtonVariant.link             ? root.tone-color
+        : root.tone-color;
+
+    property <color> resolved-border-color:
+          root.variant != ButtonVariant.outline ? transparent
+        : root.tone-active                      ? root.tone-color
+        : Theme.border;
+
+    // Loading suppresses any pressed visual — see architecture doc.
+    property <bool> visually-pressed:
+        !root.loading && ((root.checkable && root.checked) || touch.pressed);
+
+    property <color> active-bg:
+          root.disabled         ? root.base-bg
+        : root.visually-pressed ? root.hover-bg
+        : touch.has-hover       ? root.hover-bg
+        : root.base-bg;
+
+    // ===== Depth (delegated to the Depth global) ==========================
+
+    property <Elevation> eff-level:     Depth.bumped(root.shadow-elevation, touch.has-hover);
+    property <bool>      apply-shadow:  Depth.applies(root.elevated, root.disabled, root.shadow-elevation);
+    property <length>    eff-magnitude: Depth.magnitude(root.eff-level);
+
+    // ===== Root: sizing, opacity, events, accessibility ===================
+
+    horizontal-stretch: 0.0;
+    preferred-width:  root.resolved-side;
+    preferred-height: root.resolved-side;
+    width:  root.resolved-side;
+    height: root.resolved-side;
+    background: transparent;
+
+    opacity:
+          root.disabled         ? 0.5
+        : root.visually-pressed ? 0.85
+        : 1.0;
+    animate opacity { duration: Animation.fast; easing: ease-out; }
+
+    // Accessibility — name cascade. `icon` is the icon-only equivalent
+    // of Button's `label` step: a screen reader announcing the kebab-case
+    // icon name ("trash", "chevron-right") is degraded but better than
+    // a nameless interactive node.
+    accessible-role: button;
+    accessible-label:
+          root.aria-label != "" ? root.aria-label
+        : root.tooltip    != "" ? root.tooltip
+        : root.icon       != "" ? root.icon
+        : "Button";
+    accessible-checkable: root.checkable;
+    accessible-checked:   root.checked;
+    accessible-enabled:   !root.disabled && !root.loading;
+    accessible-action-default => {
+        if (root.checkable) { root.checked = !root.checked; }
+        root.clicked();
+    }
+
+    // Focus ring drawn outside the surface.
+    Rectangle {
+        x: -Sizes.focus-ring-offset;
+        y: -Sizes.focus-ring-offset;
+        width:  parent.width  + 2 * Sizes.focus-ring-offset;
+        height: parent.height + 2 * Sizes.focus-ring-offset;
+        border-radius: surface.border-radius + Sizes.focus-ring-offset;
+        border-color: Theme.ring;
+        border-width: focus-scope.has-focus ? Sizes.focus-ring : 0px;
+        background: transparent;
+    }
+
+    // Two-layer surface/face extrusion. Identical structure to Button —
+    // the surface is the dark "skirt" with the drop-shadow, the face is
+    // the gradient top that slides down on press. When thickness=0 the
+    // face fully covers the surface and the result is a flat button.
+    surface := Rectangle {
+        x: 0;
+        y: 0;
+        width:  parent.width;
+        height: parent.height;
+        background: root.active-bg.darker(0.4);
+        border-radius: root.resolved-radius;
+        border-width:
+              root.debug-bounds                      ? 2px
+            : root.variant == ButtonVariant.outline  ? Sizes.border-thin
+            : 0px;
+        border-color:
+              root.debug-bounds ? #ff00ff
+                                 : root.resolved-border-color;
+        drop-shadow-blur:     root.apply-shadow ? Depth.blur(root.eff-level) : 0px;
+        drop-shadow-offset-x: root.apply-shadow ? Depth.offset-x(root.shadow-direction, root.eff-magnitude) : 0px;
+        drop-shadow-offset-y: root.apply-shadow ? Depth.offset-y(root.shadow-direction, root.eff-magnitude) : 0px;
+        drop-shadow-color:    root.apply-shadow ? Depth.color-of(root.eff-level, root.shadow-color) : #00000000;
+
+        animate background           { duration: Animation.fast; easing: ease-out; }
+        animate border-color         { duration: Animation.fast; easing: ease-out; }
+        animate drop-shadow-blur     { duration: Animation.fast; easing: ease-out; }
+        animate drop-shadow-offset-x { duration: Animation.fast; easing: ease-out; }
+        animate drop-shadow-offset-y { duration: Animation.fast; easing: ease-out; }
+
+        face := Rectangle {
+            x: 0;
+            y: (root.visually-pressed && root.press-animation) ? root.thickness * 0.7 : 0px;
+            width:  parent.width;
+            height: parent.height - root.thickness;
+            background:
+                root.variant-is-filled-prominent
+                    ? @linear-gradient(180deg, root.active-bg.brighter(12%) 0%, root.active-bg 100%)
+                    : root.active-bg;
+            border-radius: parent.border-radius;
+            clip: true;
+
+            animate y          { duration: Animation.fast; easing: ease-out; }
+            animate height     { duration: Animation.fast; easing: ease-out; }
+            animate background { duration: Animation.fast; easing: ease-out; }
+
+            // Glossy highlight at the top half on filled-prominent variants.
+            if root.variant-is-filled-prominent && !root.disabled: Rectangle {
+                x: 0;
+                y: 0;
+                width: parent.width;
+                height: parent.height * 0.55;
+                border-top-left-radius:     parent.border-radius;
+                border-top-right-radius:    parent.border-radius;
+                border-bottom-left-radius:  0px;
+                border-bottom-right-radius: 0px;
+                background: @linear-gradient(180deg, #ffffff40 0%, #ffffff00 100%);
+            }
+
+            // The icon glyph — centered, sized from the resolved side.
+            // A single Text item handles both the rest and loading
+            // states: content swaps to the loader codepoint, and
+            // transform-rotation drives a continuous spin off
+            // animation-tick() (one revolution per second). When not
+            // loading, rotation is zero so layout is identical to a
+            // static glyph. transform-origin is forced to the glyph's
+            // center; Slint's default (top-left corner) would make the
+            // spinner orbit instead of spinning in place.
+            Text {
+                width:  parent.width;
+                height: parent.height;
+                text: root.loading ? IconFont.resolve("loader") : IconFont.resolve(root.icon);
+                font-family: IconFont.font-family-name();
+                font-size: root.resolved-icon-size;
+                color: root.foreground-color;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                transform-rotation: root.loading
+                    ? mod(animation-tick(), Animation.spinner-period) / Animation.spinner-period * 360deg
+                    : 0deg;
+                transform-origin: { x: self.width / 2, y: self.height / 2 };
+            }
+        }
+    }
+
+    // Debug badge — magenta dot at the top-right when debug-bounds is on
+    // AND the cascade is falling through to "Button" (no aria-label, no
+    // tooltip, no icon). See architecture doc for rationale.
+    if root.debug-bounds && root.aria-label == "" && root.tooltip == "" && root.icon == "": Rectangle {
+        x: parent.width - self.width - 4px;
+        y: 4px;
+        width: 6px;
+        height: 6px;
+        border-radius: 3px;
+        background: #ff00ff;
+    }
+
+    // Link variant underline on hover — included for parity with Button.
+    // Visually unusual on a square button but supported in the variant set.
+    if root.variant == ButtonVariant.link && touch.has-hover: Rectangle {
+        x: 4px;
+        y: parent.height - 2px;
+        width: parent.width - 8px;
+        height: 1px;
+        background: root.foreground-color;
+    }
+
+    // ===== Interaction layer =============================================
+
+    touch := TouchArea {
+        enabled: !root.disabled && !root.loading;
+        mouse-cursor: root.disabled || root.loading ? MouseCursor.default : MouseCursor.pointer;
+
+        clicked => {
+            if (root.checkable) { root.checked = !root.checked; }
+            root.clicked();
+        }
+
+        changed has-hover => { root.hover-changed(self.has-hover); }
+        changed pressed   => { root.pressed-changed(self.pressed); }
+    }
+
+    focus-scope := FocusScope {
+        enabled: !root.disabled && !root.loading;
+        key-pressed(event) => {
+            if (event.text == " " || event.text == "\n") {
+                if (root.checkable) { root.checked = !root.checked; }
+                root.clicked();
+                return accept;
+            }
+            return reject;
+        }
+        changed has-focus => { root.focus-changed(self.has-focus); }
+    }
+
+    // ===== Tooltip ========================================================
+
+    if root.tooltip != "" && touch.has-hover && !root.disabled: Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: -self.height - 6px;
+        width:  tooltip-text.preferred-width + 16px;
+        height: tooltip-text.preferred-height + 8px;
+        background: Theme.tooltip-background;
+        border-radius: Radius.sm;
+        drop-shadow-blur:     Theme.shadow-md-blur;
+        drop-shadow-offset-y: Theme.shadow-md-y;
+        drop-shadow-color:    Theme.shadow-md-color;
+        opacity: 0.96;
+        tooltip-text := Text {
+            x: 8px;
+            y: 4px;
+            text: root.tooltip;
+            color: Theme.tooltip-foreground;
+            font-size: Typography.text-xs;
+            font-family: Typography.font-family;
+        }
+    }
+}
