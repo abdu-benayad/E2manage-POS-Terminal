@@ -12,14 +12,14 @@
 | `CLAUDE.md` — construction discipline  | **Done** (v0). |
 | `ROADMAP.md` — this document           | **Phase 1 in progress.** |
 | `IMPL.md` — per-phase implementation   | **Done for Phase 1.** Button and IconButton sections superseded by what's actually built; remaining components match the spec. |
-| `architecture/` — per-component design docs | **Two entries.** `button.md` (retroactive) and `icon-button.md` (forward). Policy: every non-trivial component gets one; trivial display-only ones don't. |
+| `architecture/` — per-component design docs | **Three entries.** `button.md` (retroactive), `icon-button.md` (forward), `toggle.md` (forward). Policy: every non-trivial component gets one; trivial display-only ones don't. |
 | `HANDOVER.md` — current state snapshot | **Kept current.** Read this before resuming a session. |
-| Code — library                                              | **Phase 1 mid.** Foundation complete (10 globals incl. `Depth`, 11 enums, 2 icon fonts). Button + IconButton fully built with preview files. Toggle / Card / KeyValueRow + smoke-test screen remain. |
-| `abdu-slint-ui-playground/` — interactive catalog crate     | **Phase 1 mid.** Sidebar + scrollable toolbar with theme/locale/currency/icon-family/RTL/spinner-period controls. Button + IconButton sections live with full property panels. Toggle / Card / KeyValueRow sections pending. |
+| Code — library                                              | **Phase 1 mid.** Foundation complete (10 globals incl. `Depth`, 11 enums, 2 icon fonts). Button + IconButton + Toggle fully built with preview files. Card / KeyValueRow + smoke-test screen remain. |
+| `abdu-slint-ui-playground/` — interactive catalog crate     | **Phase 1 mid.** Sidebar + scrollable toolbar with theme/locale/currency/icon-family/RTL/spinner-period controls. Button + IconButton + Toggle sections live with full property panels. Card / KeyValueRow sections pending. |
 | License decision                                            | **Done.** MIT OR Apache-2.0 dual. |
 | Crate location decision                                     | **Done.** Sibling directory `abdu-slint-ui/` next to the parent POS workspace. |
 
-The library has 5 commits' worth of Phase 1 progress on top of the foundation: shadow-math extraction to a `Depth` global, accessibility cascade on Button, rotating loading spinner with a global period token, IconButton vertical slice, and a per-component design-doc convention.
+The library has 7 commits' worth of Phase 1 progress on top of the foundation: shadow-math extraction to a `Depth` global, accessibility cascade on Button, rotating loading spinner with a global period token, IconButton vertical slice, a per-component design-doc convention, the Toggle design contract, and the Toggle vertical slice. The Toggle slice exercised the first non-`button` accessibility role (`switch`) and confirmed the orthogonal-animation pattern (knob x-slide composes with face y-press-dip).
 
 ---
 

@@ -11,18 +11,19 @@
 - ✅ §1.0 — Library crate skeleton, lib.slint entry point.
 - ✅ §1.1 — Enums (now 11 entries; original spec listed 10, `IconButtonSize` was added when IconButton landed).
 - ✅ §1.2 — Globals. Original spec listed 8; actual count is **10** (added `icon-font.slint` during font work, then `depth.slint` for the shadow-math extraction). `Animation.pulse` renamed to `Animation.spinner-period`.
-- 🔄 §1.3 — Components. **Button** and **IconButton** shipped; their property tables below are **SUPERSEDED** by the actual implementations documented in `HANDOVER.md`. **Toggle / Card / KeyValueRow** specs below are still authoritative.
-- 🔄 §1.4 — Preview files. Button and IconButton shipped; others pending.
+- 🔄 §1.3 — Components. **Button**, **IconButton**, and **Toggle** shipped; their property tables below are **SUPERSEDED** by the actual implementations documented in `HANDOVER.md`. **Card / KeyValueRow** specs below are still authoritative.
+- 🔄 §1.4 — Preview files. Button, IconButton, and Toggle shipped; Card / KeyValueRow pending.
 - ✅ §1.5 — Playground crate skeleton.
-- 🔄 §1.6 — Playground sections. Button and IconButton shipped; others pending. **Note:** the playground sections turned out to be pure-Slint with `in-out` state on the section component, not Rust state structs as originally spec'd. The Rust-side state plan in §1.6 below is superseded — actual sections store state directly in Slint properties.
+- 🔄 §1.6 — Playground sections. Button, IconButton, and Toggle shipped; Card / KeyValueRow pending. **Note:** the playground sections turned out to be pure-Slint with `in-out` state on the section component, not Rust state structs as originally spec'd. The Rust-side state plan in §1.6 below is superseded — actual sections store state directly in Slint properties.
 - ❌ §1.7 — Smoke test pending.
 
 ### Net additions beyond the original spec
 
 - `globals/depth.slint` (the Depth global — stateless shadow math, mentioned in HANDOVER's Depth section).
-- `architecture/button.md` (retroactive) + `architecture/icon-button.md` (forward). Convention: each non-trivial component gets a design doc; trivial display-only ones (e.g. KeyValueRow) don't.
-- Accessibility cascade pattern wired on Button and IconButton (was not in the original spec).
+- `architecture/button.md` (retroactive) + `architecture/icon-button.md` (forward) + `architecture/toggle.md` (forward). Convention: each non-trivial component gets a design doc; trivial display-only ones (e.g. KeyValueRow) don't.
+- Accessibility cascade pattern wired on Button, IconButton, and Toggle. Toggle uses `accessible-role: switch` (first non-`button` role in the library); pattern now established for Phase 2 components that need non-button AccessibleRole values.
 - `globals/icon-font.slint` (dual-font with Phosphor + Lucide, runtime-switchable; original spec assumed a single font).
+- Toggle ships with `loading` + `tone` + `tooltip` + `height-override` + `debug-bounds` + `press-animation` + `thickness` — all spec expansions beyond the IMPL.md §1.3 baseline. Justifications in `architecture/toggle.md`.
 
 ---
 

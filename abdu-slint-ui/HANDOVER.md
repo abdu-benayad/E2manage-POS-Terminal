@@ -8,7 +8,7 @@
 
 - **Project:** `abdu-slint-ui` — a Slint UI component library + companion playground app, built to replace the inline Slint patterns currently bloating `e2manage-pos-terminal` and provide a reusable, well-styled foundation.
 - **Phase 0 status:** ✅ complete (design docs).
-- **Phase 1 status:** 🔄 in progress. **Foundation + Button + IconButton fully built**. Depth global extracted, accessibility cascade pattern established, rotating loading spinner with global period token. **3 components + smoke test remain (Toggle → Card → KeyValueRow → settings-display.slint)**.
+- **Phase 1 status:** 🔄 in progress. **Foundation + Button + IconButton + Toggle fully built**. Depth global extracted, accessibility cascade pattern established (now with `accessible-role: switch` proven on Toggle), rotating loading spinner with global period token. **2 components + smoke test remain (Card → KeyValueRow → settings-display.slint)**.
 - **Design language pivoted:** shadcn-inspired → **iOS / SwiftUI**. Larger sizes for POS tablets, glossy gradients, soft drop shadows, system color palette.
 
 ---
@@ -17,9 +17,9 @@
 
 | Path                                                          | What                              |
 | ------------------------------------------------------------- | --------------------------------- |
-| `e2manage-pos-terminal/abdu-slint-ui/`                        | **This library** (compiling, Button + IconButton shipped) |
-| `e2manage-pos-terminal/abdu-slint-ui/architecture/`           | Per-component design docs. Entries: `button.md` (retroactive), `icon-button.md` (forward). |
-| `e2manage-pos-terminal/abdu-slint-ui-playground/`             | **Playground app** (compiling, Button + IconButton sections live) |
+| `e2manage-pos-terminal/abdu-slint-ui/`                        | **This library** (compiling, Button + IconButton + Toggle shipped) |
+| `e2manage-pos-terminal/abdu-slint-ui/architecture/`           | Per-component design docs. Entries: `button.md` (retroactive), `icon-button.md` (forward), `toggle.md` (forward). |
+| `e2manage-pos-terminal/abdu-slint-ui-playground/`             | **Playground app** (compiling, Button + IconButton + Toggle sections live) |
 | `e2manage-pos-terminal/ui/spike/shadcn_button.slint`          | Original Phase 0 spike (kept for reference) |
 | `e2manage-pos-terminal/ui/`                                   | Existing POS UI (untouched, Phase 4 target) |
 
@@ -35,6 +35,7 @@
 6. **`architecture/`** — per-component design docs. Policy: every non-trivial component gets one; trivial display-only primitives (e.g. KeyValueRow) don't. Forward design docs land *before* code (per CLAUDE.md's "Design doc → IMPL doc → code"). Current entries:
    - **`architecture/button.md`** — retroactive consolidation. The depth/lighting system, two-layer surface/face, variant × tone matrix, accessibility cascade, escape hatches — all of Button's load-bearing decisions captured in one place.
    - **`architecture/icon-button.md`** — forward design contract (was written before IconButton's code). Also doubles as the template for the Depth global and the accessibility cascade pattern.
+   - **`architecture/toggle.md`** — forward design contract for Toggle. Settles the knob-carries-depth decision, the orthogonal x-slide/y-press-dip composition, the `accessible-role: switch` divergence, and the locale-independent knob geometry (label column flips in RTL; knob does not).
 
 ---
 
@@ -55,8 +56,9 @@
 | `Button` preview     | `previews/button.slint`                | ✅      |
 | `IconButton` component | `components/icon-button.slint`       | ✅ shipped (19 properties, see API below) |
 | `IconButton` preview | `previews/icon-button.slint`           | ✅      |
-| `Toggle`             | —                                      | ❌ pending (next) |
-| `Card`               | —                                      | ❌ pending |
+| `Toggle` component   | `components/toggle.slint`              | ✅ shipped (19 properties, see API below) — iOS pill switch, knob-only depth, `accessible-role: switch` |
+| `Toggle` preview     | `previews/toggle.slint`                | ✅      |
+| `Card`               | —                                      | ❌ pending (next) |
 | `KeyValueRow`        | —                                      | ❌ pending |
 
 ### Playground (`abdu-slint-ui-playground/`)
@@ -68,7 +70,8 @@
 | Toolbar tokens       | button-shape, icon-btn-shape, card-shape, density, currency, icon-family, RTL, spinner-period | ✅ all wire to globals directly via `selected(v)` (sidebar uses `horizontal-stretch: 0`; toolbar wrapped in horizontal `ScrollView` for future-proofing) |
 | Button section       | `ui/sections/button.slint`             | ✅ full property panel |
 | IconButton section   | `ui/sections/icon-button.slint`        | ✅ full property panel, ~330 lines mirroring Button section's structure |
-| Other sections       | —                                      | ❌ pending per component (Toggle, Card, KeyValueRow) |
+| Toggle section       | `ui/sections/toggle.slint`             | ✅ full property panel, ~290 lines, sidebar tile wired |
+| Other sections       | —                                      | ❌ pending per component (Card, KeyValueRow) |
 | Smoke test           | —                                      | ❌ pending |
 
 ---
@@ -206,6 +209,107 @@ Same five-layer pattern as Button — transparent root, focus-ring, surface Rect
 
 ---
 
+## Toggle API (as built)
+
+iOS-style binary switch. The first interactive primitive whose state semantics are inherent to its visual — `on` is captured by the knob's *position*, not by a depressed look. Not derived from Button or IconButton; consumes the `Depth` global for knob shadow math and adopts the accessibility cascade pattern with the first non-`button` role in the library (`accessible-role: switch`). See `architecture/toggle.md` for the design contract.
+
+### Core properties
+
+| Property      | Type            | Default | Notes |
+| ------------- | --------------- | ------- | ----- |
+| `label`       | `string`        | `""`    | Primary text beside the switch. RTL-aware column position. |
+| `description` | `string`        | `""`    | Caption below `label`, in `Theme.muted-foreground`. **Not** part of the accessibility cascade (captions aren't names). |
+| `tooltip`     | `string`        | `""`    | Hover discoverability + feeds the cascade as fallback. |
+| `aria-label`  | `string`        | `""`    | Explicit a11y name. Always wins the cascade. |
+| `on`          | `bool` (in-out) | `false` | Controlled. Toggle flips it itself on user activation and then fires `toggled(on)`. |
+| `disabled`    | `bool`          | `false` | Opacity dim; blocks click and keyboard. |
+| `loading`     | `bool`          | `false` | Knob glyph swaps to the rotating loader at `Animation.spinner-period`; blocks toggle. `on` is preserved through loading. |
+| `size`        | `ToggleSize`    | `md`    | `sm / md / lg` — `md` is the iOS-canonical 51×31 reference. |
+| `tone`        | `Tone`          | `default` | `default` → `Theme.success` (iOS green). `destructive` → red. Same enum as Button/IconButton. |
+| `on-icon`     | `string`        | `""`    | Rendered inside the knob when `on` (iOS pattern). |
+| `off-icon`    | `string`        | `""`    | Inside the knob when off. Cross-fades with `on-icon` over `Animation.normal` (same duration as the slide). |
+
+### Depth / lighting properties (knob, not track)
+
+Same six properties as Button/IconButton. The knob carries depth; the track is flat with a subtle inner-edge border.
+
+| Property            | Type        | Default       | Notes |
+| ------------------- | ----------- | ------------- | ----- |
+| `elevated`          | `bool`      | `true`        | Master shadow gate on the knob. |
+| `shadow-elevation`  | `Elevation` | `sm`          | Hover bumps one step (via `Depth.bumped()`). |
+| `shadow-color`      | `color`     | `transparent` | Transparent = Theme token for the level. |
+| `shadow-direction`  | `int`       | `0`           | Degrees [0, 359]. |
+| `thickness`         | `length`    | `0px`         | Knob extrusion. Two-layer surface/face — the skirt peeks under the face by `thickness` px on press. |
+| `press-animation`   | `bool`      | `true`        | Knob face slides down by 70% of `thickness` on press. **Composes orthogonally with the x-slide** between off and on positions. |
+
+### Escape & debug
+
+| Property          | Type     | Default | Notes |
+| ----------------- | -------- | ------- | ----- |
+| `height-override` | `length` | `0px`   | Forces track height; knob diameter and track width scale at the iOS aspect ratio (51/31 ≈ 1.645). |
+| `debug-bounds`    | `bool`   | `false` | Magenta border on the track + corner aria badge when the cascade falls through to `"Toggle"`. |
+
+### Callbacks
+
+| Callback                | Notes |
+| ----------------------- | ----- |
+| `toggled(bool)`         | Fires *after* `on` has been flipped by user activation. Argument is the new value. |
+| `pressed-changed(bool)` | Physical press state transitions. |
+| `hover-changed(bool)`   | Mouse enters / leaves the track or label. |
+| `focus-changed(bool)`   | Keyboard focus gained / lost. |
+
+### Not present on Toggle (intentional API divergence)
+
+`variant` (Toggle has one canonical iOS visual — variant proliferation would dilute the look); `shape` (track is pill-locked); `bg-color` / `track-color-on` / `track-color-off` (curated `tone` palette wins, matches IconButton's first move away from Button's escape hatches); `checkable` / `checked` (Toggle is by definition checkable — `on` IS the checked state). No `icon-leading` / `icon-trailing` (icons go inside the knob, not beside the track).
+
+### Sizing
+
+| Size | Track W×H | Knob ⌀ | Gap |
+| ---- | --------- | ------ | --- |
+| `sm` | 44 × 26   | 22px   | 2px |
+| `md` | 51 × 31   | 27px   | 2px (iOS reference) |
+| `lg` | 60 × 36   | 32px   | 2px |
+
+The `gap` is a fixed 2px inset between knob edge and track edge in both x and y, locked across sizes and `height-override`. The aspect ratio (51/31) is preserved when `height-override` is set, giving a smooth scale-up path for tablet hero toggles without adding an `xl` preset.
+
+### Internal visual structure
+
+```
+Toggle (root, transparent, sizing dictated by inner HorizontalLayout)
+├── HorizontalLayout (alignment: start, spacing: Spacing.md when column present)
+│   ├── [if Locale.rtl && has-column] VerticalLayout — label + description (right-aligned text)
+│   ├── track-container Rectangle (fixed width × height from size)
+│   │   └── track Rectangle (pill, animated background between off and on colors)
+│   │       └── knob-surface Rectangle (skirt — animated x, carries drop-shadow via Depth.*)
+│   │           └── knob-face Rectangle (top face — gradient white→#f5f5f5, animated y for press-dip)
+│   │               ├── highlight Rectangle (top-half glossy sheen)
+│   │               ├── off-icon-text   (opacity ↔ !on, cross-fades over Animation.normal)
+│   │               ├── on-icon-text    (opacity ↔ on,  cross-fades over Animation.normal)
+│   │               └── loader-text     (opacity ↔ loading, rotation via animation-tick())
+│   └── [if !Locale.rtl && has-column] VerticalLayout — label + description
+├── focus-ring Rectangle (encompasses entire control)
+├── debug aria badge (debug-bounds + cascade-falls-through)
+├── TouchArea          (covers the whole control — tap on track OR label flips on)
+├── FocusScope         (Enter/Space activates)
+└── tooltip Rectangle  (anchored to track-container, not full control width)
+```
+
+**Knob carries depth, not track.** A track shadow would weld the pill to its substrate; iOS knobs float over a recessed channel. The track gets a flat fill + subtle inner-edge border (`Theme.border` darker by 5–10%); the knob carries the drop-shadow and optional extrusion.
+
+**Two animations compose orthogonally.** Knob `x` slides via `Animation.normal + ease-out` (200ms) between off and on. Knob-face `y` dips via `Animation.fast + ease-out` (120ms) on press. Both can fire simultaneously without interference. Cross-fade between on-icon and off-icon shares `Animation.normal` with the slide so they read as a single motion; the loader uses `Animation.fast` because the load-state transition is a distinct semantic event.
+
+**RTL geometry rule.** The knob's off/on x-positions do **NOT** flip in RTL — off is always physical-left of the track, on is always physical-right. Matches iOS Arabic behavior. The label/description column position *does* flip via two `if Locale.rtl` branches around the always-rendered track-container (mirrors Button's `icon-leading` / `icon-trailing` duplication pattern).
+
+**State vs. interaction.** `on` does **not** feed `visually-pressed` (deliberate divergence from Button's `checkable && checked` path). The toggle's state lives in the knob position; only live tactile press triggers the knob face's dip.
+
+### Accessibility cascade
+
+`accessible-role: switch` — first non-`button` role in the library, exercising Slint's broader AccessibleRole enum. Cascade: `aria-label → tooltip → label → "Toggle"`. `accessible-checkable: true` (always — switches are checkable by definition). `accessible-checked: root.on`. `accessible-action-default` flips `on` and fires `toggled(on)`.
+
+The magenta corner aria badge renders when `debug-bounds && aria-label == "" && tooltip == "" && label == ""` (description is excluded — captions are not names).
+
+---
+
 ## Depth global (`globals/depth.slint`)
 
 Stateless math provider for drop-shadow computation. Each consuming component owns the six depth input properties (the public contract); this global owns the resolution.
@@ -222,22 +326,23 @@ Depth.offset-y(direction-deg, mag)     → length      //  cos(deg) * mag
 
 All `pure public function`. They read `Theme.shadow-*` tokens but take all variable inputs as parameters — true stateless math. No inheritance, no slot-based composition; components stay flat and declarative.
 
-Button currently consumes it; IconButton consumes it. Toggle and Card will compose the same global when they land.
+Button, IconButton, and Toggle all consume it (Toggle threads it through its knob, not its track). Card will compose the same global when it lands.
 
 ---
 
 ## Accessibility cascade pattern
 
-Both Button and IconButton wire Slint's `accessible-*` properties to the platform AT tree. A nameless interactive node is worse than a degraded name, so each component resolves `accessible-label` via a cascading fallback:
+All three shipped interactive components wire Slint's `accessible-*` properties to the platform AT tree. A nameless interactive node is worse than a degraded name, so each component resolves `accessible-label` via a cascading fallback:
 
-- **Button:** `aria-label → tooltip → label → "Button"`
-- **IconButton:** `aria-label → tooltip → icon → "Button"`
+- **Button:** `aria-label → tooltip → label → "Button"` (role: `button`)
+- **IconButton:** `aria-label → tooltip → icon → "Button"` (role: `button`)
+- **Toggle:** `aria-label → tooltip → label → "Toggle"` (role: `switch` — Slint's distinct AccessibleRole.Switch)
 
-Plus `accessible-role: button`, `accessible-checkable: root.checkable`, `accessible-checked: root.checked`, `accessible-enabled: !disabled && !loading`, and `accessible-action-default` so AT-driven activations fire `clicked()` (and toggle `checked` when `checkable`).
+Plus the role-appropriate state properties: `accessible-checkable` (true on Toggle by definition; tied to `root.checkable` on Button/IconButton), `accessible-checked` (`root.on` on Toggle, `root.checked` elsewhere), `accessible-enabled: !disabled && !loading`, and `accessible-action-default` so AT-driven activations fire `clicked()` / `toggled(on)`.
 
-Authoring-time debug: when `debug-bounds: true` AND all three cascade sources are empty (the accessibility name is genuinely falling through to `"Button"`), a 6×6px magenta dot renders at the top-right corner of the button. Invisible in production builds; conspicuous in the playground.
+Authoring-time debug: when `debug-bounds: true` AND all three cascade sources are empty (the accessibility name is genuinely falling through to the default), a 6×6px magenta dot renders at the top-right corner. Invisible in production builds; conspicuous in the playground. Note that Toggle's `description` is **not** part of its cascade or debug condition (captions aren't names).
 
-The cascade pattern propagates to every future interactive component. Toggle, Card-when-interactive, and any Phase-2 component with a clickable surface should adopt the same shape.
+The cascade pattern propagates to every future interactive component. Card-when-interactive and any Phase-2 component with a clickable surface should adopt the same shape; non-button roles (e.g. `accessible-role: slider` for a slider primitive in Phase 2) are now an established option after Toggle exercised the first non-`button` role.
 
 ---
 
@@ -279,7 +384,7 @@ cargo run
 ```
 
 In the playground:
-- Sidebar shows **Button** and **IconButton**. Click either to mount its section.
+- Sidebar shows **Button**, **IconButton**, and **Toggle**. Click any to mount its section.
 - Toolbar across the top: theme-shape combos, density, currency, icon-family swap, RTL toggle, **spinner-period slider** (retune `Animation.spinner-period` live). Wrapped in a horizontal `ScrollView` so adding more tokens doesn't compress the sidebar.
 - Right panel: every public property surfaced as an interactive control (LineEdits, ComboBoxes, swatch grids, sliders).
 - Bottom of preview pane: live code snippet of the current configuration.
@@ -291,7 +396,7 @@ cd abdu-slint-ui/         && cargo check
 cd abdu-slint-ui-playground/ && cargo build
 ```
 
-Both should build clean. Expect two harmless library-level warnings about Button and IconButton not inheriting Window (`No code will be generated for it` / `This is deprecated`) — same root cause, the components are mounted by `lib.slint` re-exports and used by other Slint files, not instantiated from Rust. Can't easily silence in Slint 1.14.
+Both should build clean. Expect three harmless library-level warnings — one each for Button, IconButton, and Toggle not inheriting Window (`No code will be generated for it` / `This is deprecated`) — same root cause, the components are mounted by `lib.slint` re-exports and used by other Slint files, not instantiated from Rust. Can't easily silence in Slint 1.14.
 
 ---
 
@@ -299,21 +404,21 @@ Both should build clean. Expect two harmless library-level warnings about Button
 
 In priority order:
 
-1. **`Toggle`** — iOS-style switch with the rounded knob. iOS has a specific look (green-when-on, gradient knob, subtle inner shadow). The internal-state machine for the slide animation is the trickier part. Should consume `Depth` for the knob shadow and adopt the accessibility cascade pattern (`accessible-role: switch` or `Switch` per Slint's AccessibleRole enum).
+1. **`Card`** — surface container. Reads `Theme.card-shape`, exposes `elevation`, `padding`, `interactive`. The depth properties (shadow-elevation/color/direction) plug directly into `Depth`. When `interactive: true`, adopt the accessibility cascade and emit `clicked()` like Button. Will be the *third* call site for variant×tone resolution after Button and IconButton — by the end of Card, the case for extracting a `Variant` global parallel to `Depth` should be conclusive.
 
-2. **`Card`** — surface container. Reads `Theme.card-shape`, exposes `elevation`, `padding`, `interactive`. The depth properties (shadow-elevation/color/direction) plug directly into `Depth`. When `interactive: true`, add the accessibility cascade and emit `clicked()` like Button.
+2. **`KeyValueRow`** — display-only, RTL-aware. Trivial relative to the above. No depth, no accessibility wiring needed (`accessible-role: none` since it's text). Per the architecture-doc policy, this one *doesn't* get a forward design doc — IMPL spec is sufficient.
 
-3. **`KeyValueRow`** — display-only, RTL-aware. Trivial relative to the above. No depth, no accessibility wiring needed (`accessible-role: none` since it's text).
-
-4. **Smoke test:** `examples/settings-display.slint` — rewrite the existing 700-line `ui/screens/settings/display.slint` using only Phase 1 primitives. Confirms the API survives contact with a real screen.
+3. **Smoke test:** `examples/settings-display.slint` — rewrite the existing 700-line `ui/screens/settings/display.slint` using only Phase 1 primitives. Confirms the API survives contact with a real screen.
 
 ### Open API questions for Phase 2 entry
 
-- Should `bg-color` and `height-override` on Button move to a private extension or stay as escape hatches? They make the API less curated but real-life POS sometimes needs them. **IconButton intentionally omitted `bg-color`** as the first move in this direction. Decision still deferred for Button itself.
+- Should `bg-color` and `height-override` on Button move to a private extension or stay as escape hatches? They make the API less curated but real-life POS sometimes needs them. **IconButton intentionally omitted `bg-color`** as the first move in this direction; **Toggle followed the same pattern** (no `bg-color`, no `track-color-on`/`track-color-off`). Decision still deferred for Button itself.
 - ~~Should the depth system be factored into a shared mixin?~~ **RESOLVED.** Extracted as the `Depth` global (stateless math provider). Each component declares its own 6 depth input properties; the global owns the resolution math. See section above.
-- Should variant/tone color resolution also become a global (parallel to `Depth`)? Button and IconButton now duplicate `variant-base-bg / variant-hover-bg / variant-foreground / tone-color / tone-foreground / base-bg / hover-bg / foreground-color / resolved-border-color`. Likely yes, once Card lands and confirms three real call sites. Deferred to Phase 1.5 / Phase 2.
+- Should variant/tone color resolution also become a global (parallel to `Depth`)? Button, IconButton, and Toggle now duplicate the `tone-color` resolution (Toggle only needs the track-on color so its duplication is smaller, but the pattern is identical). Card will be the fourth call site — by the end of Card, the case should be conclusive. Deferred to Phase 1.5 / Phase 2.
+- **`Tone.muted` on Toggle.** Identified during Toggle design as a contrast risk: `Theme.muted-foreground` (#8e8e93) as a track-on color is close to the off color (#c6c6c8), so a `muted`-toned toggle reads as "off-ish" even when on. Currently shipping; revisit if real consumers find it confusing. May drop from Toggle's supported tone set in v1.1 if the Variant global doesn't fix it first.
 - The `tone` enum override is implemented but not heavily exercised. Worth a playground tour to make sure every `variant × tone` combo looks reasonable before more components rely on the same pattern.
 - The icon-only `loader` glyph quality depends on the icon font (Phosphor's looks like a tasteful spinner; Lucide's similar). A future Phase 2 task could lift Slint's own `SpinnerBase` Path math into a private `Spinner` micro-component so the loading visual is identical across icon-family swaps — explored once, rolled back as "doesn't look right yet"; revisit after design-direction stabilizes.
+- **Toggle knob-drag interaction.** v1 is tap-only (tap track or label flips `on`). iOS supports drag-the-knob. Listed in `architecture/toggle.md` for v1.1 — needs careful `TouchArea` event-model work to distinguish a press-with-no-movement from a press-with-drag.
 
 ---
 
@@ -332,10 +437,12 @@ The library evolves in isolation. POS integration is its own phase with its own 
 
 ## Commit history
 
-Read `git log --oneline` for the full chronology. The most recent five — IconButton vertical slice plus the foundation that supports it — are:
+Read `git log --oneline` for the full chronology. The most recent commits — the Toggle vertical slice on top of the IconButton work — are:
 
 | Commit | Summary |
 | -- | -- |
+| `39eb66d feat(abdu-slint-ui): Toggle component + preview + playground section` | The full Toggle slice. Adds `components/toggle.slint` (~370 lines), preview, playground section (~290 lines), sidebar tile + section routing. Knob carries depth via `Depth` global; track is flat with subtle inner border. Cross-fade between on-icon and off-icon shares the slide's `Animation.normal` timing. First library component with `accessible-role: switch`. |
+| `e4d6f72 docs(abdu-slint-ui): Toggle design contract` | Forward design doc at `architecture/toggle.md`. Settles 19 properties (4 identity + 3 state + 2 visual + 2 knob-icon + 6 depth + 2 escape/debug) and four callbacks. Key load-bearing decisions captured: depth-on-knob-not-track, orthogonal x-slide / y-press-dip composition, locale-independent knob geometry, `accessible-role: switch` cascade. |
 | `91e8fae feat(abdu-slint-ui): IconButton component + preview + playground section` | The full IconButton slice. Adds `IconButtonSize` enum, new `components/icon-button.slint` (~340 lines), preview, playground section (~330 lines), sidebar tile + section routing. Also adds the toolbar spinner-period slider and sidebar lock. |
 | `56c93c9 fix(abdu-slint-ui): rotating loading spinner with global period` | Replaces Button's opacity-pulse fallback with real rotation via `transform-rotation` + `animation-tick()`. Renames the unused `Animation.pulse` (1500ms) to `Animation.spinner-period` (1200ms, in-out for runtime tuning). Corrects HANDOVER quirk #3. |
 | `3c67439 feat(abdu-slint-ui): accessible-* wiring on Button with aria cascade` | Wires `accessible-role/label/checkable/checked/enabled/action-default` on Button. Cascade `aria-label → tooltip → label → "Button"`. Adds the debug-bounds magenta corner dot for missing accessibility metadata. |
