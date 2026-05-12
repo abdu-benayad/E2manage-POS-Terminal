@@ -1,0 +1,410 @@
+// Card — surface container with optional interactivity.
+//
+// Fourth sibling primitive after Button, IconButton, and Toggle. Shares the
+// Depth global for shadow math and the accessibility cascade pattern, but
+// adopts both conditionally: a non-interactive Card has no AT role, no
+// FocusScope, no hover/press feedback, no tooltip. Interactivity is opt-in
+// via `interactive: true`.
+//
+// Card is a structural primitive (no `variant`, no `tone`). Coloring the
+// whole surface to imply semantics is inaccessible — semantic content
+// belongs inside the card, not painted onto it. SectionCard (Phase 2)
+// composes Card + a header row; for now, Card is the pure surface.
+//
+// The `@children` slot is wrapped in a VerticalLayout with the resolved
+// padding. The Card sizes to that layout's preferred size (capped by
+// max-content-width when set). Consumers needing horizontal arrangement
+// nest their own HorizontalLayout inside.
+//
+// SIMPLIFIED FROM DESIGN DOC: Card v1 ships a single-layer surface, not
+// the two-layer surface/face split used by Button / IconButton / Toggle.
+// Reason: a two-layer split with content-driven sizing creates a circular
+// size dependency in Slint (surface sizes to face which sizes to surface).
+// `thickness` is therefore rendered as a press-dip on the whole surface
+// rather than as a face-slide-into-base extrusion. Documented as a Card
+// limitation; v1.1 may revisit if a hero card with true extrusion is
+// needed.
+//
+// Per architecture/card.md.
+
+import { Shape, Density, Elevation } from "../enums.slint";
+import { Theme } from "../globals/theme.slint";
+import { Typography } from "../globals/typography.slint";
+import { Sizes } from "../globals/sizes.slint";
+import { Radius } from "../globals/radius.slint";
+import { Spacing } from "../globals/spacing.slint";
+import { Animation } from "../globals/animation.slint";
+import { Depth } from "../globals/depth.slint";
+
+export component Card inherits Rectangle {
+    // ===== Public API =====================================================
+
+    /// Explicit accessibility name. Required when `interactive: true`.
+    /// Falls through the cascade `aria-label → tooltip → "Card"`. Has no
+    /// effect when `interactive: false` (the Card has no AT role).
+    in property <string> aria-label: "";
+
+    /// Hover text shown after a brief delay above the card.
+    /// **Only rendered when `interactive: true`** — a tooltip on a static
+    /// surface promises interaction that doesn't exist. Also feeds the
+    /// accessibility cascade as fallback.
+    in property <string> tooltip: "";
+
+    /// Corner shape. `default` follows `Theme.card-shape`. `rounded`
+    /// resolves to `Radius.lg` (14px, larger than buttons). `pill` and
+    /// `circle` fall back to `rounded` — they don't compose meaningfully
+    /// on a wide rectangular surface.
+    in property <Shape> shape: Shape.default;
+
+    /// 1px border in `Theme.border`. Safe default — guarantees visibility
+    /// even when `elevated: false` and `shadow-elevation: none`. Set
+    /// `false` for pure-shadow cards (e.g. dialog overlays).
+    in property <bool> bordered: true;
+
+    /// Content padding via Density preset.
+    /// `compact → Spacing.md (12px)`, `default → Spacing.lg (16px)`,
+    /// `comfortable → Spacing.xl (24px)`. Use `padding-override` for
+    /// arbitrary lengths.
+    ///
+    /// Named `padding-density` (not `padding`) because Slint reserves
+    /// the bare `padding` identifier — see HANDOVER's Slint quirks list.
+    in property <Density> padding-density: Density.default;
+
+    /// Opt-in interactivity. When true: hover/press feedback, focus ring,
+    /// accessibility cascade activates (`accessible-role: button`), the
+    /// `clicked()` callback fires, tooltip renders, keyboard activation
+    /// works. When false: pure surface, no events, no role, **not in the
+    /// keyboard tab order**.
+    in property <bool> interactive: false;
+
+    /// Visually muted; blocks click and keyboard activation. Only
+    /// effective when `interactive: true`.
+    in property <bool> disabled: false;
+
+    /// Maximum content width. `0px` = no cap. Renamed from IMPL spec's
+    /// `max-width` to avoid Rectangle's reserved property name.
+    in property <length> max-content-width: 0px;
+
+    /// **Dual-sentinel padding override.**
+    /// `0px` = use the `padding-density` Density preset (the common case).
+    /// `0.001px` = **explicit zero padding** (full-bleed image cards,
+    /// edge-to-edge list rows).
+    /// Any other positive length forces that padding on all four sides.
+    ///
+    /// See architecture/card.md → "Padding sentinel" for the three-way
+    /// resolution rationale. **Do not collapse the conditional below into
+    /// a two-way `padding-override > 0 ? padding-override : preset`** —
+    /// that would silently break the full-bleed case.
+    in property <length> padding-override: 0px;
+
+    /// Master shadow on/off gate.
+    in property <bool> elevated: true;
+
+    /// Shadow magnitude when elevated. Hover bumps one step
+    /// (sm→md→lg→xl) **only when `interactive: true`** — non-interactive
+    /// cards in long settings lists shouldn't ripple shadow on mouse-over.
+    in property <Elevation> shadow-elevation: Elevation.sm;
+
+    /// Custom shadow color override. Transparent = use Theme token.
+    in property <color> shadow-color: transparent;
+
+    /// Direction the simulated light comes from, in degrees [0, 359].
+    in property <int> shadow-direction: 0;
+
+    /// API-parity property. Accepted for consistency with Button /
+    /// IconButton / Toggle's depth set, but **renders no visible effect
+    /// in Card v1**. Card v1 ships subtle press feedback only:
+    /// background darken + opacity dim + shadow returning to rest.
+    /// A true two-layer extrusion (skirt + face) introduces a circular
+    /// size dependency on content-driven Cards; deferred to v1.1.
+    in property <length> thickness: 0px;
+
+    /// API-parity property. Accepted for consistency with Button /
+    /// IconButton / Toggle but inert in Card v1 (see `thickness`).
+    in property <bool> press-animation: true;
+
+    /// Debug helper. When true, draws a magenta border on the surface
+    /// and — if `interactive` AND all naming sources are empty —
+    /// renders a magenta dot at the top-right. The aria badge is gated
+    /// on `interactive` because a non-interactive card with no
+    /// `aria-label` is correct behavior, not a missing-name bug.
+    in property <bool> debug-bounds: false;
+
+    // ===== Callbacks ======================================================
+    //
+    // All four fire only when `interactive: true`. Connecting to
+    // `clicked()` while `interactive: false` is a no-op (the TouchArea
+    // is disabled, so the callback never fires).
+
+    callback clicked();
+    callback pressed-changed(bool);
+    callback hover-changed(bool);
+    callback focus-changed(bool);
+
+    // ===== Internal derived state =========================================
+
+    // Padding sentinel: 0.001px = explicit zero. Comparing against a
+    // small constant rather than the literal lets the runtime tolerate
+    // tiny floating-point drift from the consumer's side.
+    property <length> padding-explicit-zero-sentinel: 1px / 500;
+
+    property <length> density-padding:
+          root.padding-density == Density.compact     ? Spacing.md
+        : root.padding-density == Density.comfortable ? Spacing.xl
+        :                                               Spacing.lg;
+
+    // Three-way resolution. DO NOT collapse — see padding-override doc.
+    property <length> resolved-padding:
+          root.padding-override == 0px                                ? root.density-padding
+        : root.padding-override <= root.padding-explicit-zero-sentinel ? 0px
+        :                                                                root.padding-override;
+
+    // Shape: `pill` and `circle` fall back to `rounded` (see design doc).
+    property <string> resolved-shape:
+          root.shape == Shape.default ? Theme.card-shape
+        : root.shape == Shape.rounded ? "rounded"
+        : root.shape == Shape.square  ? "square"
+        :                               "rounded";
+
+    property <length> resolved-radius:
+        root.resolved-shape == "square" ? 0px : Radius.lg;
+
+    // Interactive-gated state. Non-interactive cards never see hover or
+    // press affordances; the consumer's TouchArea (if they wrap the Card
+    // in one) doesn't change the Card's visual.
+    //
+    // Critical: `effective-hover` is gated on `!touch.pressed`. On press,
+    // the shadow should return to its rest level — that's how a physical
+    // depression reads. If we left effective-hover true during press, the
+    // shadow would stay bumped (md level) under a pressed card, making
+    // it look like the card is growing downward by the shadow delta
+    // (~4–10px) — the opposite of what "pressed" should communicate.
+    property <bool> effective-hover: touch.has-hover && root.interactive && !root.disabled && !touch.pressed;
+    property <bool> visually-pressed: root.interactive && !root.disabled && touch.pressed;
+
+    // Background tint reacts to hover/press only when interactive.
+    property <color> base-bg-resolved:
+          root.interactive && root.disabled ? Theme.surface
+        : root.visually-pressed             ? Theme.surface.darker(4%)
+        : root.effective-hover              ? Theme.surface.darker(2%)
+        :                                     Theme.surface;
+
+    // ===== Depth (delegated to the Depth global) =========================
+    //
+    // The `effective-hover` indirection (rather than passing
+    // `touch.has-hover` raw) is what gates the hover-bump on
+    // `interactive`. Depth global stays generic; the Card-specific
+    // semantics live at the call site.
+
+    property <Elevation> eff-level:     Depth.bumped(root.shadow-elevation, root.effective-hover);
+    // Disabled gate only applies when interactive — a non-interactive
+    // "disabled" Card is inert per the API contract, so the disabled
+    // flag shouldn't suppress its shadow either.
+    property <bool>      apply-shadow:  Depth.applies(root.elevated, root.disabled && root.interactive, root.shadow-elevation);
+    property <length>    eff-magnitude: Depth.magnitude(root.eff-level);
+
+    // ===== Root: sizing + opacity ========================================
+    //
+    // Slint doesn't automatically propagate preferred-size from a child
+    // Rectangle's content up through nested Rectangles. We bind the
+    // root's preferred-width/height explicitly to the inner content
+    // layout's preferred-width/height. Without these, the root collapses
+    // to 0×0 because none of the conditional children (focus-ring,
+    // accessibility shim, tooltip) contribute size, and the surface
+    // Rectangle's content-driven size doesn't bubble up through Slint's
+    // layout resolution for this pattern.
+    //
+    // max-content-width caps the root via Rectangle's built-in
+    // max-width property.
+
+    background: transparent;
+    preferred-width:  content-layout.preferred-width;
+    preferred-height: content-layout.preferred-height;
+    min-width:        content-layout.min-width;
+    min-height:       content-layout.min-height;
+    max-width: root.max-content-width > 0px ? root.max-content-width : 99999px;
+
+    opacity:
+          root.interactive && root.disabled ? 0.5
+        : root.visually-pressed             ? 0.96
+        :                                     1.0;
+    animate opacity { duration: Animation.fast; easing: ease-out; }
+
+    // ===== Focus ring (only when interactive) ============================
+    //
+    // Wraps the surface bounds, NOT the shadow's blur radius. Drawn
+    // outside the surface, so it sits 2px beyond the card edges and
+    // never overlaps the shadow. Conditional on `interactive`.
+
+    if root.interactive: Rectangle {
+        x: -Sizes.focus-ring-offset;
+        y: -Sizes.focus-ring-offset;
+        width:  parent.width  + 2 * Sizes.focus-ring-offset;
+        height: parent.height + 2 * Sizes.focus-ring-offset;
+        border-radius: root.resolved-radius + Sizes.focus-ring-offset;
+        border-color: Theme.ring;
+        border-width: focus-scope.has-focus ? Sizes.focus-ring : 0px;
+        background: transparent;
+    }
+
+    // ===== Surface — the visible card ====================================
+    //
+    // No explicit width/height. Slint sizes it from its child
+    // (the VerticalLayout), and the root in turn sizes to this.
+    //
+    // The press-dip on the y axis simulates depression. When
+    // `thickness == 0`, the y stays at 0 and the surface is static.
+
+    surface := Rectangle {
+        x: 0;
+        y: 0;
+        width:  parent.width;
+        height: parent.height;
+        background: root.base-bg-resolved;
+        border-radius: root.resolved-radius;
+        border-width:
+              root.debug-bounds                       ? 2px
+            : (root.bordered ? Sizes.border-thin : 0px);
+        border-color:
+              root.debug-bounds ? #ff00ff
+            :                     Theme.border;
+
+        // Clip children to the rounded corners. Non-negotiable —
+        // without this, a full-bleed image (padding-override: 0.001px)
+        // would render as a square block hanging over the corners.
+        clip: true;
+
+        drop-shadow-blur:     root.apply-shadow ? Depth.blur(root.eff-level) : 0px;
+        drop-shadow-offset-x: root.apply-shadow ? Depth.offset-x(root.shadow-direction, root.eff-magnitude) : 0px;
+        drop-shadow-offset-y: root.apply-shadow ? Depth.offset-y(root.shadow-direction, root.eff-magnitude) : 0px;
+        drop-shadow-color:    root.apply-shadow ? Depth.color-of(root.eff-level, root.shadow-color) : #00000000;
+
+        animate background           { duration: Animation.fast; easing: ease-out; }
+        animate border-color         { duration: Animation.fast; easing: ease-out; }
+        animate drop-shadow-blur     { duration: Animation.fast; easing: ease-out; }
+        animate drop-shadow-offset-x { duration: Animation.fast; easing: ease-out; }
+        animate drop-shadow-offset-y { duration: Animation.fast; easing: ease-out; }
+
+        // Content layout — VerticalLayout wraps @children with the
+        // resolved padding. Named so root can bind its preferred-size
+        // to this element's preferred-size (see root's binding block
+        // for why this indirection is needed).
+        content-layout := VerticalLayout {
+            padding: root.resolved-padding;
+            @children
+        }
+    }
+
+    // ===== Debug aria badge ==============================================
+    //
+    // Only renders when interactive AND debug-bounds AND no aria-label
+    // AND no tooltip. The `interactive` gate is critical — a
+    // non-interactive card with no aria-label is correct (it has no AT
+    // role to be missing a name for), not a bug worth flagging.
+
+    if root.debug-bounds && root.interactive && root.aria-label == "" && root.tooltip == "": Rectangle {
+        x: parent.width - self.width - 4px;
+        y: 4px;
+        width: 6px;
+        height: 6px;
+        border-radius: 3px;
+        background: #ff00ff;
+    }
+
+    // ===== Interaction layer =============================================
+    //
+    // Both TouchArea and FocusScope are always present but their
+    // `enabled` flag gates participation. A disabled FocusScope is
+    // removed from the keyboard tab order — that's how
+    // `interactive: false` keeps the card out of the focus chain
+    // entirely (WCAG 2.4.3 compliance).
+
+    touch := TouchArea {
+        enabled: root.interactive && !root.disabled;
+        mouse-cursor: (root.interactive && !root.disabled) ? MouseCursor.pointer : MouseCursor.default;
+
+        clicked => {
+            if (root.interactive && !root.disabled) {
+                root.clicked();
+            }
+        }
+
+        changed has-hover => {
+            if (root.interactive) {
+                root.hover-changed(self.has-hover);
+            }
+        }
+        changed pressed => {
+            if (root.interactive) {
+                root.pressed-changed(self.pressed);
+            }
+        }
+    }
+
+    focus-scope := FocusScope {
+        enabled: root.interactive && !root.disabled;
+        key-pressed(event) => {
+            if ((event.text == " " || event.text == "\n") && root.interactive && !root.disabled) {
+                root.clicked();
+                return accept;
+            }
+            return reject;
+        }
+        changed has-focus => {
+            if (root.interactive) {
+                root.focus-changed(self.has-focus);
+            }
+        }
+    }
+
+    // ===== Accessibility shim (only when interactive) ====================
+    //
+    // A transparent overlay carrying the button role. Conditional on
+    // `interactive`, so non-interactive Cards never enter the AT tree.
+    // Slint 1.14's compile-time-constant requirement on
+    // `accessible-role` forces this indirection (we cannot ternary the
+    // role on the root); the resulting behavior is identical to a
+    // direct role assignment.
+
+    if root.interactive: Rectangle {
+        x: 0;
+        y: 0;
+        width:  parent.width;
+        height: parent.height;
+        background: transparent;
+        accessible-role: button;
+        accessible-label:
+              root.aria-label != "" ? root.aria-label
+            : root.tooltip    != "" ? root.tooltip
+            :                         "Card";
+        accessible-enabled: !root.disabled;
+        accessible-action-default => {
+            if (!root.disabled) {
+                root.clicked();
+            }
+        }
+    }
+
+    // ===== Tooltip (only when interactive) ===============================
+
+    if root.interactive && root.tooltip != "" && touch.has-hover && !root.disabled: Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: -self.height - 6px;
+        width:  tooltip-text.preferred-width + 16px;
+        height: tooltip-text.preferred-height + 8px;
+        background: Theme.tooltip-background;
+        border-radius: Radius.sm;
+        drop-shadow-blur:     Theme.shadow-md-blur;
+        drop-shadow-offset-y: Theme.shadow-md-y;
+        drop-shadow-color:    Theme.shadow-md-color;
+        opacity: 0.96;
+        tooltip-text := Text {
+            x: 8px;
+            y: 4px;
+            text: root.tooltip;
+            color: Theme.tooltip-foreground;
+            font-size: Typography.text-xs;
+            font-family: Typography.font-family;
+        }
+    }
+}

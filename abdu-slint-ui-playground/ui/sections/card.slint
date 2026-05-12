@@ -1,0 +1,418 @@
+// Card playground section.
+//
+// Same shape as the other sections: in-out properties hold live state,
+// derived properties translate slug-strings into library enums, a
+// preview pane mounts the component with the density-demo content
+// inside it, a code-snippet panel shows the current configuration,
+// and a property panel exposes every public property.
+//
+// Card is the first section whose preview embeds *real library content*
+// inside the demoed component (Text + Toggle inside the Card). This is
+// the composition test — Card holds other primitives, not just static
+// surface chrome.
+
+import { Card, Toggle, Shape, Density, Elevation, Theme, Typography, Spacing } from "@abdu-slint-ui";
+import { ComboBox, CheckBox, LineEdit, HorizontalBox, VerticalBox, ScrollView, Slider } from "std-widgets.slint";
+
+export component CardSection inherits Rectangle {
+    // ===== Live property state ===========================================
+    in-out property <string> v-aria-label: "";
+    in-out property <string> v-tooltip: "";
+    in-out property <string> v-shape: "default";
+    in-out property <bool>   v-bordered: true;
+    in-out property <string> v-padding-density: "default";
+    in-out property <bool>   v-interactive: false;
+    in-out property <bool>   v-disabled: false;
+    in-out property <float>  v-max-content-width-px: 0.0;
+    in-out property <float>  v-padding-override-px: 0.0;
+    in-out property <bool>   v-padding-explicit-zero: false;
+    in-out property <bool>   v-elevated: true;
+    in-out property <string> v-shadow-elevation: "sm";
+    in-out property <string> v-shadow-color: "none";
+    in-out property <float>  v-shadow-direction: 0.0;
+    in-out property <float>  v-thickness-px: 0.0;
+    in-out property <bool>   v-press-animation: true;
+    in-out property <bool>   v-debug-bounds: false;
+
+    in-out property <bool>   v-demo-toggle: true;
+    in-out property <int>    v-click-count: 0;
+
+    // ===== Derived enum values ==========================================
+    property <Shape> shape-enum:
+          v-shape == "rounded" ? Shape.rounded
+        : v-shape == "pill"    ? Shape.pill
+        : v-shape == "circle"  ? Shape.circle
+        : v-shape == "square"  ? Shape.square
+        : Shape.default;
+
+    property <Density> padding-density-enum:
+          v-padding-density == "compact"     ? Density.compact
+        : v-padding-density == "comfortable" ? Density.comfortable
+        : Density.default;
+
+    property <Elevation> shadow-elevation-enum:
+          v-shadow-elevation == "none" ? Elevation.none
+        : v-shadow-elevation == "md"   ? Elevation.md
+        : v-shadow-elevation == "lg"   ? Elevation.lg
+        : v-shadow-elevation == "xl"   ? Elevation.xl
+        : Elevation.sm;
+
+    // Resolved padding-override: when "explicit zero" is on, force the
+    // sentinel value (1px / 1000 ≈ 0.001px). Otherwise pass-through.
+    property <length> padding-override-resolved:
+          v-padding-explicit-zero ? 1px / 1000
+        :                           v-padding-override-px * 1px;
+
+    // Palette for shadow-color (matches Button / IconButton / Toggle).
+    property <[{slug: string, swatch: color}]> palette: [
+        { slug: "none",     swatch: #00000000 },
+        { slug: "red",      swatch: #ef4444 },
+        { slug: "orange",   swatch: #f97316 },
+        { slug: "amber",    swatch: #f59e0b },
+        { slug: "yellow",   swatch: #eab308 },
+        { slug: "lime",     swatch: #84cc16 },
+        { slug: "green",    swatch: #22c55e },
+        { slug: "emerald",  swatch: #10b981 },
+        { slug: "teal",     swatch: #14b8a6 },
+        { slug: "cyan",     swatch: #06b6d4 },
+        { slug: "sky",      swatch: #0ea5e9 },
+        { slug: "blue",     swatch: #3b82f6 },
+        { slug: "indigo",   swatch: #6366f1 },
+        { slug: "violet",   swatch: #8b5cf6 },
+        { slug: "purple",   swatch: #a855f7 },
+        { slug: "fuchsia",  swatch: #d946ef },
+        { slug: "pink",     swatch: #ec4899 },
+        { slug: "rose",     swatch: #f43f5e },
+        { slug: "slate",    swatch: #475569 },
+    ];
+
+    property <color> shadow-color-resolved:
+          v-shadow-color == "red"      ? #ef4444b3
+        : v-shadow-color == "orange"   ? #f97316b3
+        : v-shadow-color == "amber"    ? #f59e0bb3
+        : v-shadow-color == "yellow"   ? #eab308b3
+        : v-shadow-color == "lime"     ? #84cc16b3
+        : v-shadow-color == "green"    ? #22c55eb3
+        : v-shadow-color == "emerald"  ? #10b981b3
+        : v-shadow-color == "teal"     ? #14b8a6b3
+        : v-shadow-color == "cyan"     ? #06b6d4b3
+        : v-shadow-color == "sky"      ? #0ea5e9b3
+        : v-shadow-color == "blue"     ? #3b82f6b3
+        : v-shadow-color == "indigo"   ? #6366f1b3
+        : v-shadow-color == "violet"   ? #8b5cf6b3
+        : v-shadow-color == "purple"   ? #a855f7b3
+        : v-shadow-color == "fuchsia"  ? #d946efb3
+        : v-shadow-color == "pink"     ? #ec4899b3
+        : v-shadow-color == "rose"     ? #f43f5eb3
+        : v-shadow-color == "slate"    ? #475569b3
+        : transparent;
+
+    background: transparent;
+
+    HorizontalLayout {
+        // --- Preview pane ------------------------------------------------
+        Rectangle {
+            background: Theme.surface-muted;
+            VerticalBox {
+                padding: 32px;
+                spacing: Spacing.lg;
+                alignment: center;
+                Text {
+                    text: "Live preview — density-demo content inside the demoed Card";
+                    font-size: Typography.text-sm;
+                    color: Theme.muted-foreground;
+                }
+                HorizontalLayout {
+                    alignment: center;
+                    Card {
+                        aria-label: root.v-aria-label;
+                        tooltip: root.v-tooltip;
+                        shape: root.shape-enum;
+                        bordered: root.v-bordered;
+                        padding-density: root.padding-density-enum;
+                        interactive: root.v-interactive;
+                        disabled: root.v-disabled;
+                        max-content-width: root.v-max-content-width-px * 1px;
+                        padding-override: root.padding-override-resolved;
+                        elevated: root.v-elevated;
+                        shadow-elevation: root.shadow-elevation-enum;
+                        shadow-color: root.shadow-color-resolved;
+                        shadow-direction: floor(root.v-shadow-direction);
+                        thickness: root.v-thickness-px * 1px;
+                        press-animation: root.v-press-animation;
+                        debug-bounds: root.v-debug-bounds;
+
+                        clicked => { root.v-click-count = root.v-click-count + 1; }
+
+                        VerticalLayout {
+                            spacing: Spacing.xs;
+                            Text {
+                                text: "Receipt printing";
+                                font-size: Typography.text-base;
+                                font-weight: Typography.weight-semibold;
+                                color: Theme.foreground;
+                            }
+                            Text {
+                                text: "Print receipts automatically after each transaction.";
+                                font-size: Typography.text-sm;
+                                color: Theme.muted-foreground;
+                                wrap: word-wrap;
+                            }
+                            Toggle {
+                                on: root.v-demo-toggle;
+                                toggled(v) => { root.v-demo-toggle = v; }
+                            }
+                            if root.v-interactive: Text {
+                                text: "Card clicks: " + root.v-click-count;
+                                font-size: Typography.text-xs;
+                                color: Theme.primary;
+                            }
+                        }
+                    }
+                }
+
+                // Code snippet panel.
+                Rectangle {
+                    background: #0f172a;
+                    border-radius: 8px;
+                    height: 280px;
+                    ScrollView {
+                        Text {
+                            x: 16px;
+                            y: 12px;
+                            text:
+                                  "Card {\n"
+                                + (root.v-aria-label != ""           ? "    aria-label: \"" + root.v-aria-label + "\";\n" : "")
+                                + (root.v-tooltip != ""              ? "    tooltip: \"" + root.v-tooltip + "\";\n" : "")
+                                + (root.v-shape != "default"         ? "    shape: Shape." + root.v-shape + ";\n" : "")
+                                + (!root.v-bordered                  ? "    bordered: false;\n" : "")
+                                + (root.v-padding-density != "default" ? "    padding-density: Density." + root.v-padding-density + ";\n" : "")
+                                + (root.v-interactive                ? "    interactive: true;\n" : "")
+                                + (root.v-disabled                   ? "    disabled: true;\n" : "")
+                                + (root.v-max-content-width-px > 0   ? "    max-content-width: " + floor(root.v-max-content-width-px) + "px;\n" : "")
+                                + (root.v-padding-explicit-zero      ? "    padding-override: 0.001px;  // explicit zero — full bleed\n"
+                                   : root.v-padding-override-px > 0  ? "    padding-override: " + floor(root.v-padding-override-px) + "px;\n"
+                                   :                                   "")
+                                + (!root.v-elevated                  ? "    elevated: false;\n" : "")
+                                + (root.v-shadow-elevation != "sm"   ? "    shadow-elevation: Elevation." + root.v-shadow-elevation + ";\n" : "")
+                                + (root.v-shadow-color != "none"     ? "    shadow-color: " + root.v-shadow-color + ";  // preset\n" : "")
+                                + (root.v-shadow-direction > 0       ? "    shadow-direction: " + floor(root.v-shadow-direction) + ";\n" : "")
+                                + (root.v-thickness-px > 0           ? "    thickness: " + floor(root.v-thickness-px) + "px;\n" : "")
+                                + (!root.v-press-animation           ? "    press-animation: false;\n" : "")
+                                + (root.v-debug-bounds               ? "    debug-bounds: true;\n" : "")
+                                + "    // ... content ...\n"
+                                + "}";
+                            color: #f8fafc;
+                            font-family: "monospace";
+                            font-size: 12px;
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- Property panel ----------------------------------------------
+        Rectangle {
+            width: 320px;
+            background: Theme.surface;
+            Rectangle { width: 1px; background: Theme.border; }
+
+            ScrollView {
+                VerticalBox {
+                    padding: 16px;
+                    spacing: 10px;
+
+                    Text { text: "Properties"; font-weight: 600; font-size: 14px; }
+
+                    Text { text: "aria-label"; font-size: 12px; color: Theme.muted-foreground; }
+                    LineEdit {
+                        text: root.v-aria-label;
+                        placeholder-text: "a11y name (required when interactive)";
+                        edited(s) => { root.v-aria-label = s; }
+                    }
+
+                    Text { text: "tooltip (only renders when interactive)"; font-size: 12px; color: Theme.muted-foreground; }
+                    LineEdit {
+                        text: root.v-tooltip;
+                        edited(s) => { root.v-tooltip = s; }
+                    }
+
+                    Text { text: "shape"; font-size: 12px; color: Theme.muted-foreground; }
+                    ComboBox {
+                        model: ["default", "rounded", "square", "pill", "circle"];
+                        current-value: root.v-shape;
+                        selected(v) => { root.v-shape = v; }
+                    }
+                    Text {
+                        text: root.v-shape == "pill" || root.v-shape == "circle"
+                            ? "Note: " + root.v-shape + " falls back to rounded on Card."
+                            : "";
+                        font-size: 11px;
+                        color: Theme.warning;
+                        wrap: word-wrap;
+                    }
+
+                    CheckBox { text: "bordered (1px Theme.border)"; checked: root.v-bordered; toggled => { root.v-bordered = self.checked; } }
+
+                    Text { text: "padding-density"; font-size: 12px; color: Theme.muted-foreground; }
+                    ComboBox {
+                        model: ["compact", "default", "comfortable"];
+                        current-value: root.v-padding-density;
+                        selected(v) => { root.v-padding-density = v; }
+                    }
+
+                    CheckBox { text: "interactive (opt-in clickable)"; checked: root.v-interactive; toggled => { root.v-interactive = self.checked; } }
+                    CheckBox {
+                        text: "disabled (only meaningful when interactive)";
+                        enabled: root.v-interactive;
+                        checked: root.v-disabled;
+                        toggled => { root.v-disabled = self.checked; }
+                    }
+
+                    Text { text: "max-content-width (px) — 0 = no cap"; font-size: 12px; color: Theme.muted-foreground; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Slider {
+                            minimum: 0;
+                            maximum: 600;
+                            value: root.v-max-content-width-px;
+                            changed(val) => { root.v-max-content-width-px = val; }
+                        }
+                        Text {
+                            text: root.v-max-content-width-px == 0 ? "no cap" : floor(root.v-max-content-width-px) + "px";
+                            vertical-alignment: center;
+                            font-size: 12px;
+                            color: Theme.muted-foreground;
+                            min-width: 56px;
+                        }
+                    }
+
+                    Text { text: "padding-override (px) — 0 = use preset"; font-size: 12px; color: Theme.muted-foreground; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Slider {
+                            minimum: 0;
+                            maximum: 64;
+                            enabled: !root.v-padding-explicit-zero;
+                            value: root.v-padding-override-px;
+                            changed(val) => { root.v-padding-override-px = val; }
+                        }
+                        Text {
+                            text: root.v-padding-explicit-zero ? "explicit 0"
+                                : root.v-padding-override-px == 0 ? "preset"
+                                : floor(root.v-padding-override-px) + "px";
+                            vertical-alignment: center;
+                            font-size: 12px;
+                            color: Theme.muted-foreground;
+                            min-width: 56px;
+                        }
+                    }
+                    CheckBox {
+                        text: "padding-override: 0.001px (explicit zero — full bleed)";
+                        checked: root.v-padding-explicit-zero;
+                        toggled => { root.v-padding-explicit-zero = self.checked; }
+                    }
+
+                    CheckBox { text: "elevated (shadow master)"; checked: root.v-elevated; toggled => { root.v-elevated = self.checked; } }
+
+                    Text { text: "shadow-elevation"; font-size: 12px; color: Theme.muted-foreground; }
+                    ComboBox {
+                        model: ["none", "sm", "md", "lg", "xl"];
+                        current-index: root.v-shadow-elevation == "none" ? 0
+                                     : root.v-shadow-elevation == "md"   ? 2
+                                     : root.v-shadow-elevation == "lg"   ? 3
+                                     : root.v-shadow-elevation == "xl"   ? 4 : 1;
+                        selected(v) => { root.v-shadow-elevation = v; }
+                    }
+
+                    Text { text: "shadow-color (tint)"; font-size: 12px; color: Theme.muted-foreground; }
+                    Text {
+                        text: root.v-shadow-color == "none" ? "Theme default (gray)" : root.v-shadow-color;
+                        font-size: 11px;
+                        color: Theme.muted-foreground;
+                    }
+                    Rectangle {
+                        height: 4 * 32px;
+                        background: transparent;
+                        for entry[idx] in root.palette: Rectangle {
+                            x: mod(idx, 6) * 32px;
+                            y: floor(idx / 6) * 32px;
+                            width: 28px;
+                            height: 28px;
+                            background: entry.swatch;
+                            border-radius: 6px;
+                            border-width: root.v-shadow-color == entry.slug ? 2px : 1px;
+                            border-color: root.v-shadow-color == entry.slug ? Theme.foreground : Theme.border;
+                            if entry.slug == "none": Rectangle {
+                                background: Theme.surface;
+                                border-radius: 6px;
+                                Text {
+                                    text: "Ø";
+                                    color: Theme.muted-foreground;
+                                    font-size: 16px;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                            }
+                            TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { root.v-shadow-color = entry.slug; }
+                            }
+                        }
+                    }
+
+                    Text { text: "shadow-direction (light angle, degrees)"; font-size: 12px; color: Theme.muted-foreground; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Slider {
+                            minimum: 0;
+                            maximum: 359;
+                            value: root.v-shadow-direction;
+                            changed(val) => { root.v-shadow-direction = val; }
+                        }
+                        Text {
+                            text:
+                                  floor(root.v-shadow-direction) + "° "
+                                + (root.v-shadow-direction < 22  ? "↑"
+                                 : root.v-shadow-direction < 67  ? "↗"
+                                 : root.v-shadow-direction < 112 ? "→"
+                                 : root.v-shadow-direction < 157 ? "↘"
+                                 : root.v-shadow-direction < 202 ? "↓"
+                                 : root.v-shadow-direction < 247 ? "↙"
+                                 : root.v-shadow-direction < 292 ? "←"
+                                 : root.v-shadow-direction < 337 ? "↖"
+                                 : "↑");
+                            vertical-alignment: center;
+                            font-size: 12px;
+                            color: Theme.muted-foreground;
+                            min-width: 56px;
+                        }
+                    }
+
+                    Text { text: "thickness (3D depth, px)"; font-size: 12px; color: Theme.muted-foreground; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Slider {
+                            minimum: 0;
+                            maximum: 12;
+                            value: root.v-thickness-px;
+                            changed(val) => { root.v-thickness-px = val; }
+                        }
+                        Text {
+                            text: root.v-thickness-px == 0 ? "flat" : floor(root.v-thickness-px) + "px";
+                            vertical-alignment: center;
+                            font-size: 12px;
+                            color: Theme.muted-foreground;
+                            min-width: 40px;
+                        }
+                    }
+
+                    CheckBox { text: "press-animation (face dips on press)"; checked: root.v-press-animation; toggled => { root.v-press-animation = self.checked; } }
+                    CheckBox { text: "debug-bounds (magenta outline + aria badge)"; checked: root.v-debug-bounds; toggled => { root.v-debug-bounds = self.checked; } }
+                }
+            }
+        }
+    }
+}

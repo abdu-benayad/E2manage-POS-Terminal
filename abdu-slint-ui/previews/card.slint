@@ -1,0 +1,460 @@
+// Card preview — shape × density × bordered × elevation × interactive × thickness × clipping in one window.
+// Run: `slint-viewer abdu-slint-ui/previews/card.slint`
+
+import { Card } from "../components/card.slint";
+import { Button } from "../components/button.slint";
+import { Toggle } from "../components/toggle.slint";
+import { Shape, Density, Elevation, Tone } from "../enums.slint";
+import { Theme } from "../globals/theme.slint";
+import { Locale } from "../globals/locale.slint";
+import { Spacing } from "../globals/spacing.slint";
+import { Typography } from "../globals/typography.slint";
+
+import "../assets/phosphor.ttf";
+import "../assets/lucide.ttf";
+
+component Section inherits VerticalLayout {
+    in property <string> title;
+    spacing: Spacing.sm;
+    Text {
+        text: root.title;
+        font-size: Typography.text-sm;
+        font-weight: Typography.weight-semibold;
+        color: Theme.muted-foreground;
+    }
+}
+
+// The "density-demo content" used identically across compact/default/comfortable
+// so the only variable in that row is the padding.
+component DensityDemoContent inherits VerticalLayout {
+    spacing: Spacing.xs;
+    Text {
+        text: "Receipt printing";
+        font-size: Typography.text-base;
+        font-weight: Typography.weight-semibold;
+        color: Theme.foreground;
+    }
+    Text {
+        text: "Print receipts automatically after each transaction.";
+        font-size: Typography.text-sm;
+        color: Theme.muted-foreground;
+        wrap: word-wrap;
+    }
+    Toggle { on: true; }
+}
+
+export component CardPreview inherits Window {
+    title: "Card — preview";
+    preferred-width: 1200px;
+    preferred-height: 1400px;
+    background: Theme.background;
+
+    in-out property <bool> rtl-toggle: false;
+    changed rtl-toggle => { Locale.rtl = self.rtl-toggle; }
+
+    // For the interactive section
+    in-out property <int> interactive-clicks: 0;
+
+    // For the thickness section
+    in-out property <bool> thickness-card-pressed: false;
+
+    VerticalLayout {
+        padding: Spacing.xl;
+        spacing: Spacing.xl;
+
+        Text {
+            text: "Card";
+            font-size: Typography.text-xxl;
+            font-weight: Typography.weight-bold;
+            color: Theme.foreground;
+        }
+        Text {
+            text: "Structural surface container. No variant, no tone — semantic meaning belongs inside the card, not painted onto it. Opt-in interactivity via `interactive: true`.";
+            font-size: Typography.text-sm;
+            color: Theme.muted-foreground;
+            wrap: word-wrap;
+        }
+
+        // --- Density comparison — identical content, padding varies ---
+        Section {
+            title: "Density — same content, three padding presets (compact / default / comfortable)";
+            HorizontalLayout {
+                spacing: Spacing.md;
+                alignment: start;
+                Card {
+                    padding-density: Density.compact;
+                    max-content-width: 240px;
+                    DensityDemoContent { }
+                }
+                Card {
+                    padding-density: Density.default;
+                    max-content-width: 240px;
+                    DensityDemoContent { }
+                }
+                Card {
+                    padding-density: Density.comfortable;
+                    max-content-width: 240px;
+                    DensityDemoContent { }
+                }
+            }
+        }
+
+        // --- Shape variants ---
+        Section {
+            title: "Shape — default (→ rounded), rounded, square. pill / circle fall back to rounded.";
+            HorizontalLayout {
+                spacing: Spacing.md;
+                alignment: start;
+                Card {
+                    shape: Shape.default;
+                    max-content-width: 180px;
+                    Text {
+                        text: "default";
+                        horizontal-alignment: center;
+                        font-size: Typography.text-base;
+                    }
+                }
+                Card {
+                    shape: Shape.rounded;
+                    max-content-width: 180px;
+                    Text {
+                        text: "rounded";
+                        horizontal-alignment: center;
+                        font-size: Typography.text-base;
+                    }
+                }
+                Card {
+                    shape: Shape.square;
+                    max-content-width: 180px;
+                    Text {
+                        text: "square";
+                        horizontal-alignment: center;
+                        font-size: Typography.text-base;
+                    }
+                }
+                Card {
+                    shape: Shape.pill;
+                    max-content-width: 180px;
+                    Text {
+                        text: "pill → rounded";
+                        horizontal-alignment: center;
+                        font-size: Typography.text-base;
+                    }
+                }
+                Card {
+                    shape: Shape.circle;
+                    max-content-width: 180px;
+                    Text {
+                        text: "circle → rounded";
+                        horizontal-alignment: center;
+                        font-size: Typography.text-base;
+                    }
+                }
+            }
+        }
+
+        // --- bordered × shadow-elevation matrix ---
+        Section {
+            title: "bordered × shadow-elevation — borderless + none = invisible card (validates the bordered: true default)";
+            VerticalLayout {
+                spacing: Spacing.md;
+                // Bordered row
+                HorizontalLayout {
+                    spacing: Spacing.md;
+                    alignment: start;
+                    Text { text: "bordered:"; vertical-alignment: center; font-size: Typography.text-sm; color: Theme.muted-foreground; min-width: 80px; }
+                    Card { shadow-elevation: Elevation.none; max-content-width: 120px; Text { text: "none";  horizontal-alignment: center; font-size: Typography.text-sm; } }
+                    Card { shadow-elevation: Elevation.sm;   max-content-width: 120px; Text { text: "sm";    horizontal-alignment: center; font-size: Typography.text-sm; } }
+                    Card { shadow-elevation: Elevation.md;   max-content-width: 120px; Text { text: "md";    horizontal-alignment: center; font-size: Typography.text-sm; } }
+                    Card { shadow-elevation: Elevation.lg;   max-content-width: 120px; Text { text: "lg";    horizontal-alignment: center; font-size: Typography.text-sm; } }
+                    Card { shadow-elevation: Elevation.xl;   max-content-width: 120px; Text { text: "xl";    horizontal-alignment: center; font-size: Typography.text-sm; } }
+                }
+                // Borderless row — first cell should be invisible
+                HorizontalLayout {
+                    spacing: Spacing.md;
+                    alignment: start;
+                    Text { text: "borderless:"; vertical-alignment: center; font-size: Typography.text-sm; color: Theme.muted-foreground; min-width: 80px; }
+                    Card { bordered: false; shadow-elevation: Elevation.none; max-content-width: 120px; Text { text: "(invisible)"; horizontal-alignment: center; font-size: Typography.text-sm; color: Theme.muted-foreground; } }
+                    Card { bordered: false; shadow-elevation: Elevation.sm;   max-content-width: 120px; Text { text: "sm"; horizontal-alignment: center; font-size: Typography.text-sm; } }
+                    Card { bordered: false; shadow-elevation: Elevation.md;   max-content-width: 120px; Text { text: "md"; horizontal-alignment: center; font-size: Typography.text-sm; } }
+                    Card { bordered: false; shadow-elevation: Elevation.lg;   max-content-width: 120px; Text { text: "lg"; horizontal-alignment: center; font-size: Typography.text-sm; } }
+                    Card { bordered: false; shadow-elevation: Elevation.xl;   max-content-width: 120px; Text { text: "xl"; horizontal-alignment: center; font-size: Typography.text-sm; } }
+                }
+            }
+        }
+
+        // --- Interactive cards — clicks fire, focus rings render, Button inside composes correctly ---
+        Section {
+            title: "interactive — hover + press + focus, composes with nested Button";
+            HorizontalLayout {
+                spacing: Spacing.md;
+                alignment: start;
+                Card {
+                    interactive: true;
+                    aria-label: "Open settings";
+                    tooltip: "Open settings panel";
+                    max-content-width: 280px;
+                    clicked => { interactive-clicks = interactive-clicks + 1; }
+                    VerticalLayout {
+                        spacing: Spacing.xs;
+                        Text {
+                            text: "Settings";
+                            font-size: Typography.text-base;
+                            font-weight: Typography.weight-semibold;
+                        }
+                        Text {
+                            text: "Click anywhere on the card";
+                            font-size: Typography.text-sm;
+                            color: Theme.muted-foreground;
+                        }
+                        Text {
+                            text: "Card clicks: " + interactive-clicks;
+                            font-size: Typography.text-xs;
+                            color: Theme.primary;
+                        }
+                    }
+                }
+                Card {
+                    interactive: true;
+                    aria-label: "Card with nested Button";
+                    max-content-width: 280px;
+                    VerticalLayout {
+                        spacing: Spacing.sm;
+                        Text {
+                            text: "Card + Button composition";
+                            font-size: Typography.text-base;
+                            font-weight: Typography.weight-semibold;
+                        }
+                        Text {
+                            text: "The Button inside should swallow its own clicks; clicking outside the Button (on padding) fires the Card's clicked.";
+                            font-size: Typography.text-sm;
+                            color: Theme.muted-foreground;
+                            wrap: word-wrap;
+                        }
+                        Button { label: "Inner action"; }
+                    }
+                }
+                Card {
+                    interactive: true;
+                    disabled: true;
+                    aria-label: "Disabled interactive";
+                    max-content-width: 200px;
+                    VerticalLayout {
+                        spacing: Spacing.xs;
+                        Text { text: "Disabled"; font-size: Typography.text-base; font-weight: Typography.weight-semibold; }
+                        Text { text: "Half opacity, no clicks, not in tab order."; font-size: Typography.text-sm; color: Theme.muted-foreground; wrap: word-wrap; }
+                    }
+                }
+            }
+        }
+
+        // --- Full-bleed (padding-override: 0.001px) — clipping correctness test ---
+        Section {
+            title: "padding-override: 0.001px — full-bleed content (clipping must respect the rounded corners)";
+            HorizontalLayout {
+                spacing: Spacing.md;
+                alignment: start;
+                Card {
+                    padding-override: 1px / 1000;   // explicit zero — full bleed
+                    max-content-width: 280px;
+                    VerticalLayout {
+                        // Bleeding-color block at top — corners MUST be clipped
+                        Rectangle {
+                            height: 80px;
+                            background: Theme.primary;
+                            Text {
+                                text: "Hero image stand-in";
+                                color: Theme.primary-foreground;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: parent.width;
+                                height: parent.height;
+                                font-size: Typography.text-sm;
+                                font-weight: Typography.weight-semibold;
+                            }
+                        }
+                        // Content below gets its own internal padding
+                        Rectangle {
+                            background: Theme.surface;
+                            VerticalLayout {
+                                padding: Spacing.lg;
+                                spacing: Spacing.xs;
+                                Text {
+                                    text: "Full-bleed Card";
+                                    font-size: Typography.text-base;
+                                    font-weight: Typography.weight-semibold;
+                                }
+                                Text {
+                                    text: "padding-override at 0.001px = explicit zero. The top block fills edge-to-edge and the corners get clipped to Radius.lg.";
+                                    font-size: Typography.text-sm;
+                                    color: Theme.muted-foreground;
+                                    wrap: word-wrap;
+                                }
+                            }
+                        }
+                    }
+                }
+                Card {
+                    padding-override: 1px / 1000;
+                    shape: Shape.square;
+                    max-content-width: 280px;
+                    Rectangle {
+                        height: 120px;
+                        background: Theme.success;
+                        Text {
+                            text: "square shape + full bleed (no corner clipping)";
+                            color: Theme.success-foreground;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                            wrap: word-wrap;
+                            font-size: Typography.text-sm;
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- thickness + press-animation — interactive hero card ---
+        Section {
+            title: "interactive + thickness — press to see the face dip into the base";
+            HorizontalLayout {
+                spacing: Spacing.md;
+                alignment: start;
+                Card {
+                    interactive: true;
+                    aria-label: "Hero pay";
+                    thickness: 4px;
+                    shadow-elevation: Elevation.md;
+                    max-content-width: 240px;
+                    pressed-changed(p) => { thickness-card-pressed = p; }
+                    VerticalLayout {
+                        spacing: Spacing.xs;
+                        alignment: center;
+                        Text {
+                            text: "thickness: 4px";
+                            font-size: Typography.text-base;
+                            font-weight: Typography.weight-semibold;
+                            horizontal-alignment: center;
+                        }
+                        Text {
+                            text: thickness-card-pressed ? "pressed" : "rest";
+                            font-size: Typography.text-sm;
+                            color: thickness-card-pressed ? Theme.primary : Theme.muted-foreground;
+                            horizontal-alignment: center;
+                        }
+                    }
+                }
+                Card {
+                    interactive: true;
+                    aria-label: "Hero pay 8px";
+                    thickness: 8px;
+                    shadow-elevation: Elevation.lg;
+                    max-content-width: 240px;
+                    VerticalLayout {
+                        spacing: Spacing.xs;
+                        alignment: center;
+                        Text {
+                            text: "thickness: 8px";
+                            font-size: Typography.text-lg;
+                            font-weight: Typography.weight-bold;
+                            horizontal-alignment: center;
+                        }
+                        Text {
+                            text: "PAY";
+                            font-size: Typography.text-xl;
+                            font-weight: Typography.weight-bold;
+                            color: Theme.primary;
+                            horizontal-alignment: center;
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- max-content-width comparison ---
+        Section {
+            title: "max-content-width — cap the card width when the parent has more horizontal space";
+            VerticalLayout {
+                spacing: Spacing.md;
+                Card {
+                    // No cap → stretches to the parent's available width
+                    Text {
+                        text: "Uncapped (stretches to available width). This long wrapping paragraph fills the line and should reach the trailing padding boundary, demonstrating both horizontal padding edges in one go. The card stretches because horizontal-stretch is 1.0 by default.";
+                        font-size: Typography.text-sm;
+                        wrap: word-wrap;
+                    }
+                }
+                Card {
+                    max-content-width: 360px;
+                    Text {
+                        text: "Capped at 360px — same paragraph, narrower line, the trailing padding boundary moves in.";
+                        font-size: Typography.text-sm;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+        }
+
+        // --- Clipping safety: oversized child ---
+        Section {
+            title: "Clipping safety — an oversized red child must not escape the rounded corners";
+            HorizontalLayout {
+                spacing: Spacing.md;
+                alignment: start;
+                Card {
+                    padding-override: 1px / 1000;
+                    max-content-width: 220px;
+                    // Child sized larger than parent intentionally
+                    Rectangle {
+                        height: 140px;
+                        background: Theme.destructive;
+                        Text {
+                            text: "Corners clipped, not escaped";
+                            color: Theme.destructive-foreground;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                            wrap: word-wrap;
+                            font-size: Typography.text-sm;
+                            font-weight: Typography.weight-semibold;
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- RTL — surface is symmetric; children flip per their own RTL ---
+        Section {
+            title: "RTL — Card surface is locale-symmetric; children flip per their own RTL behavior";
+            HorizontalLayout {
+                spacing: Spacing.md;
+                alignment: start;
+                Card {
+                    max-content-width: 280px;
+                    VerticalLayout {
+                        spacing: Spacing.xs;
+                        Text {
+                            text: rtl-toggle ? "طباعة الإيصالات" : "Receipt printing";
+                            font-family: rtl-toggle ? Typography.font-family-ar : Typography.font-family;
+                            font-size: Typography.text-base;
+                            font-weight: Typography.weight-semibold;
+                            horizontal-alignment: rtl-toggle ? right : left;
+                        }
+                        Text {
+                            text: rtl-toggle ? "طباعة تلقائية بعد كل عملية." : "Print automatically after each transaction.";
+                            font-family: rtl-toggle ? Typography.font-family-ar : Typography.font-family;
+                            font-size: Typography.text-sm;
+                            color: Theme.muted-foreground;
+                            wrap: word-wrap;
+                            horizontal-alignment: rtl-toggle ? right : left;
+                        }
+                        Toggle { on: rtl-toggle; label: rtl-toggle ? "أوقف RTL" : "Toggle RTL"; toggled(v) => { rtl-toggle = v; } }
+                    }
+                }
+            }
+        }
+    }
+}
