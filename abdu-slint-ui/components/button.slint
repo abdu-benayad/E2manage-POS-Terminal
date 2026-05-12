@@ -353,6 +353,27 @@ export component Button inherits Rectangle {
         : 1.0;
     animate opacity { duration: Animation.fast; easing: ease-out; }
 
+    // Accessibility — name cascade with explicit fallbacks. A nameless
+    // interactive node in the platform AT tree is worse than a degraded
+    // name; the cascade ensures something useful is always announced.
+    //   1. aria-label (explicit caller intent — always wins)
+    //   2. tooltip    (already user-facing copy in the caller's locale)
+    //   3. label      (visible button text)
+    //   4. "Button"   (pathological — nothing visible anyway)
+    accessible-role: button;
+    accessible-label:
+          root.aria-label != "" ? root.aria-label
+        : root.tooltip    != "" ? root.tooltip
+        : root.label      != "" ? root.label
+        : "Button";
+    accessible-checkable: root.checkable;
+    accessible-checked:   root.checked;
+    accessible-enabled:   !root.disabled && !root.loading;
+    accessible-action-default => {
+        if (root.checkable) { root.checked = !root.checked; }
+        root.clicked();
+    }
+
     // Focus ring (drawn outside the surface).
     Rectangle {
         x: -Sizes.focus-ring-offset;
@@ -524,6 +545,20 @@ export component Button inherits Rectangle {
             }   // close content HorizontalLayout
         }       // close face Rectangle
     }           // close surface Rectangle
+
+    // Debug badge — magenta dot at the top-right corner when debug-bounds
+    // is enabled AND the accessibility name cascade is in the fallback
+    // path (no aria-label, tooltip, or label set). Invisible in production
+    // (consumers don't enable debug-bounds); conspicuous in the playground
+    // so developers catch missing accessibility metadata at authoring time.
+    if root.debug-bounds && root.aria-label == "" && root.tooltip == "" && root.label == "": Rectangle {
+        x: parent.width - self.width - 4px;
+        y: 4px;
+        width: 6px;
+        height: 6px;
+        border-radius: 3px;
+        background: #ff00ff;
+    }
 
     // Link variant — underline on hover.
     if root.variant == ButtonVariant.link && touch.has-hover: Rectangle {

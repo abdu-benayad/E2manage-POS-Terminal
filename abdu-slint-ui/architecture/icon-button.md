@@ -301,7 +301,7 @@ accessible-enabled:   !root.disabled && !root.loading;
 3. `icon` — last-ditch. A screen reader announcing "trash" is degraded but not silent. Icon names are kebab-case identifiers; pronunciation is imperfect but better than a nameless node.
 4. `"Button"` — pathological case. Component has nothing visible anyway; AT tree gets a labeled node.
 
-**Debug surfacing.** When `debug-bounds: true` and `aria-label == ""`, render a 6×6px magenta dot at the top-right corner of the surface Rectangle. Invisible in production builds (consumers don't ship with debug-bounds enabled); conspicuous in the playground so developers catch missing aria-labels during component authoring.
+**Debug surfacing.** When `debug-bounds: true` AND the accessibility cascade is falling through to the `"Button"` default (i.e. `aria-label`, `tooltip`, and `icon` are all empty for IconButton; or `aria-label`, `tooltip`, and `label` for Button), render a 6×6px magenta dot at the top-right corner of the button. Invisible in production (consumers don't enable debug-bounds), conspicuous in the playground. The stricter condition avoids false positives: a button with a working `label` or `tooltip` already feeds the platform AT tree a sensible name through the cascade — flagging it as "missing aria" would be noise.
 
 **Button gets the same cascade.** Button is already shipping in the codebase without `accessible-*` wiring. This is a separate small fix landing as its own commit in the build order below.
 
