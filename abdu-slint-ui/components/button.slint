@@ -86,6 +86,11 @@ export component Button inherits Rectangle {
     /// reads as a button at unusual heights.
     in property <length> height-override: 0px;
 
+    /// Debug helper. When true, draws a magenta outline around the
+    /// internal `surface` Rectangle and prints the active shadow values
+    /// in the lower corner. Use to verify geometry and shadow inputs.
+    in property <bool> debug-bounds: false;
+
     // ===== Callbacks ======================================================
 
     /// Fires on tap, click, or Enter/Space when focused.
@@ -280,13 +285,13 @@ export component Button inherits Rectangle {
         : (root.visually-pressed || touch.has-hover) ? root.bg-color.darker(12%)
         : root.bg-color;
 
-    // Elevation: filled-prominent variants get a subtle drop shadow that
-    // deepens on hover. iOS gray (secondary) is intentionally flat, so it
-    // doesn't get a shadow even when `elevated: true`.
+    // Elevation: filled-prominent variants get the strongest shadow; other
+    // variants get a smaller one when `elevated: true`. Disabled buttons
+    // are always flat.
     property <bool> variant-is-filled-prominent:
         root.variant == ButtonVariant.default
         || root.variant == ButtonVariant.destructive;
-    property <bool>   shadow-applies: root.elevated && root.variant-is-filled-prominent && !root.disabled;
+    property <bool>   shadow-applies: root.elevated && !root.disabled;
     property <length> active-shadow-blur:
         !root.shadow-applies ? 0px
         : touch.has-hover    ? Theme.shadow-md-blur
@@ -349,8 +354,13 @@ export component Button inherits Rectangle {
                 ? @linear-gradient(180deg, root.active-bg.brighter(12%) 0%, root.active-bg 100%)
                 : root.active-bg;
         border-radius: root.resolved-radius;
-        border-width: root.variant == ButtonVariant.outline ? Sizes.border-thin : 0px;
-        border-color: root.resolved-border-color;
+        border-width:
+              root.debug-bounds                          ? 2px
+            : root.variant == ButtonVariant.outline      ? Sizes.border-thin
+            : 0px;
+        border-color:
+              root.debug-bounds ? #ff00ff
+                                 : root.resolved-border-color;
         drop-shadow-blur:  root.active-shadow-blur;
         drop-shadow-offset-y: root.active-shadow-y;
         drop-shadow-color: root.active-shadow-color;

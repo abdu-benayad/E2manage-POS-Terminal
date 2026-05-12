@@ -29,6 +29,8 @@ export component ButtonSection inherits Rectangle {
     in-out property <bool>   v-elevated: true;
     // Custom button height in px; 0 means "use the size preset".
     in-out property <float>  v-height-override-px: 0.0;
+    // Debug visualization: magenta outline on the visual surface.
+    in-out property <bool>   v-debug-bounds: false;
 
     // ===== Derived enum values ==========================================
     property <ButtonVariant> variant-enum:
@@ -146,6 +148,7 @@ export component ButtonSection inherits Rectangle {
                         bg-color: root.bg-color-resolved;
                         elevated: root.v-elevated;
                         height-override: root.v-height-override-px * 1px;
+                        debug-bounds: root.v-debug-bounds;
                     }
                 }
 
@@ -315,6 +318,7 @@ export component ButtonSection inherits Rectangle {
                     }
 
                     CheckBox { text: "elevated (shadow)"; checked: root.v-elevated; toggled => { root.v-elevated = self.checked; } }
+                    CheckBox { text: "debug-bounds (magenta outline)"; checked: root.v-debug-bounds; toggled => { root.v-debug-bounds = self.checked; } }
 
                     Text { text: "height-override (px) — 0 = use preset"; font-size: 12px; color: Theme.muted-foreground; }
                     HorizontalLayout {
