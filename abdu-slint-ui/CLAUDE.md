@@ -166,6 +166,12 @@ Required environment globals (defined in `globals/`):
 
 Consumers populate these once from Rust at app startup. Components read from them everywhere.
 
+### Density is per-component-tuned
+
+`Density { compact, default, comfortable }` names the same relative gradient across all components — "tighter / standard / looser" — but the absolute pixel values are calibrated to each component's role. A container (`Card`) and content (`KeyValueRow`) have different role-appropriate insets even at the same nominal density: Card maps to `Spacing.md / lg / xl` (12/16/24px), KeyValueRow maps to `Spacing.sm / md / lg` (8/12/16px). This is by design, not a contract violation.
+
+Document the absolute mapping in each component's design doc; don't try to share absolute values across components. The composition works correctly by construction — "tighter" composed with "tighter" produces less whitespace than "default" composed with "default" — so role-appropriate calibration never produces a wrong-feeling result.
+
 ---
 
 ## Slint conventions for this library
