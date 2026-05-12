@@ -8,7 +8,7 @@
 
 - **Project:** `abdu-slint-ui` — a Slint UI component library + companion playground app, built to replace the inline Slint patterns currently bloating `e2manage-pos-terminal` and provide a reusable, well-styled foundation.
 - **Phase 0 status:** ✅ complete (design docs).
-- **Phase 1 status:** 🔄 in progress. **Foundation complete + Button fully built**. 4 components + smoke test remain.
+- **Phase 1 status:** 🔄 in progress. **Foundation + Button + IconButton fully built**. Depth global extracted, accessibility cascade pattern established, rotating loading spinner with global period token. **3 components + smoke test remain (Toggle → Card → KeyValueRow → settings-display.slint)**.
 - **Design language pivoted:** shadcn-inspired → **iOS / SwiftUI**. Larger sizes for POS tablets, glossy gradients, soft drop shadows, system color palette.
 
 ---
@@ -17,8 +17,9 @@
 
 | Path                                                          | What                              |
 | ------------------------------------------------------------- | --------------------------------- |
-| `e2manage-pos-terminal/abdu-slint-ui/`                        | **This library** (compiling, Button shipped) |
-| `e2manage-pos-terminal/abdu-slint-ui-playground/`             | **Playground app** (compiling, Button section live) |
+| `e2manage-pos-terminal/abdu-slint-ui/`                        | **This library** (compiling, Button + IconButton shipped) |
+| `e2manage-pos-terminal/abdu-slint-ui/architecture/`           | Per-component design docs. First entry: `icon-button.md` |
+| `e2manage-pos-terminal/abdu-slint-ui-playground/`             | **Playground app** (compiling, Button + IconButton sections live) |
 | `e2manage-pos-terminal/ui/spike/shadcn_button.slint`          | Original Phase 0 spike (kept for reference) |
 | `e2manage-pos-terminal/ui/`                                   | Existing POS UI (untouched, Phase 4 target) |
 
@@ -30,7 +31,8 @@
 2. **`README.md`** — Phase 0 design contract. **Partially stale** — written with shadcn assumptions before the iOS pivot. The high-level philosophy still applies; the specific styling assertions (button heights, palette, "narrow APIs") have evolved. Revisit before Phase 2.
 3. **`CLAUDE.md`** — construction discipline that overrides `~/.claude/CLAUDE.md` inside this directory.
 4. **`ROADMAP.md`** — phase plan with decision gates.
-5. **`IMPL.md`** — Phase 1 file-creation spec. The Button section is **superseded by the actual implementation** (see `Button API` below); the other 4 components still match the spec.
+5. **`IMPL.md`** — Phase 1 file-creation spec. The Button and IconButton sections are **superseded by the actual implementations** (see API tables below); the other 3 components still match the spec.
+6. **`architecture/icon-button.md`** — design contract for IconButton (what & why), plus the rationale for the Depth global and the accessibility cascade pattern. Template for future per-component design docs.
 
 ---
 
@@ -43,13 +45,15 @@
 | Crate scaffold       | `Cargo.toml`, `build.rs`, `src/lib.rs` | ✅      |
 | LICENSEs             | `LICENSE-MIT`, `LICENSE-APACHE`        | ✅      |
 | Public entry         | `lib.slint`                            | ✅      |
-| Enums                | `enums.slint` (10 enums)               | ✅      |
-| Globals              | 9 files under `globals/`               | ✅ iOS-tuned |
+| Enums                | `enums.slint` (11 enums)               | ✅ adds `IconButtonSize` |
+| Globals              | 10 files under `globals/`              | ✅ iOS-tuned; `depth.slint` added, `Animation.pulse` renamed to `Animation.spinner-period` |
 | Fonts                | `assets/phosphor.ttf`, `assets/lucide.ttf` | ✅ both bundled, switchable at runtime |
-| `Button` component   | `components/button.slint`              | ✅ extensively iterated, see API below |
+| Design docs          | `architecture/icon-button.md`          | ✅ first per-component spec |
+| `Button` component   | `components/button.slint`              | ✅ extensively iterated, depth math now via `Depth` global, accessibility cascade wired |
 | `Button` preview     | `previews/button.slint`                | ✅      |
-| `IconButton`         | —                                      | ❌ pending |
-| `Toggle`             | —                                      | ❌ pending |
+| `IconButton` component | `components/icon-button.slint`       | ✅ shipped (19 properties, see API below) |
+| `IconButton` preview | `previews/icon-button.slint`           | ✅      |
+| `Toggle`             | —                                      | ❌ pending (next) |
 | `Card`               | —                                      | ❌ pending |
 | `KeyValueRow`        | —                                      | ❌ pending |
 
@@ -58,10 +62,11 @@
 | Layer                | File(s)                                | Status |
 | -------------------- | -------------------------------------- | ------ |
 | Crate scaffold       | `Cargo.toml`, `build.rs`, `src/main.rs` | ✅      |
-| Window shell         | `ui/playground.slint`                  | ✅ sidebar + toolbar |
-| Toolbar tokens       | button-shape, icon-btn-shape, card-shape, density, currency, icon-family, RTL | ✅ all wire to globals directly via `selected(v)` callback (not via intermediate state) |
+| Window shell         | `ui/playground.slint`                  | ✅ sidebar locked at 240px, scrollable toolbar |
+| Toolbar tokens       | button-shape, icon-btn-shape, card-shape, density, currency, icon-family, RTL, spinner-period | ✅ all wire to globals directly via `selected(v)` (sidebar uses `horizontal-stretch: 0`; toolbar wrapped in horizontal `ScrollView` for future-proofing) |
 | Button section       | `ui/sections/button.slint`             | ✅ full property panel |
-| Other sections       | —                                      | ❌ pending per component |
+| IconButton section   | `ui/sections/icon-button.slint`        | ✅ full property panel, ~330 lines mirroring Button section's structure |
+| Other sections       | —                                      | ❌ pending per component (Toggle, Card, KeyValueRow) |
 | Smoke test           | —                                      | ❌ pending |
 
 ---
@@ -98,7 +103,7 @@ The Button has grown substantially beyond IMPL.md's original 15 properties. This
 | `shape`                | `Shape`         | `default`          | sentinel — follows `Theme.button-shape` |
 | `tone`                 | `Tone`          | `default`          | overrides variant's color family — `success` makes a green variant of any variant |
 | `disabled`             | `bool`          | `false`            | |
-| `loading`              | `bool`          | `false`            | spinner pulses opacity; blocks click |
+| `loading`              | `bool`          | `false`            | loader glyph rotates at `Animation.spinner-period`; blocks click |
 | `full-width`           | `bool`          | `false`            | uses `horizontal-stretch` |
 | `checkable`            | `bool`          | `false`            | toggle-button behavior |
 | `checked`              | `bool` (in-out) | `false`            | |
@@ -145,6 +150,95 @@ The two-layer surface/face structure is what gives `thickness` its real 3D look.
 
 ---
 
+## IconButton API (as built)
+
+Square, icon-only sibling of Button. Not derived from Button — both compose the `Depth` global for shadow math; each owns its own visual structure, sizing, and shape resolution. Default variant is `ghost` (icon buttons are typically low-emphasis controls). See `architecture/icon-button.md` for the design contract.
+
+### Core properties
+
+| Property         | Type             | Default   | Notes |
+| ---------------- | ---------------- | --------- | ----- |
+| `icon`           | `string`         | `""`      | Library-canonical icon name or raw codepoint / emoji. |
+| `aria-label`     | `string`         | `""`      | Falls through cascade `aria-label → tooltip → icon → "Button"` — see accessibility section below. |
+| `variant`        | `ButtonVariant`  | `ghost`   | Different default from Button. Same enum, all six values supported. |
+| `size`           | `IconButtonSize` | `md`      | `xs / sm / md / lg / xl / xxl` (32 / 38 / 44 / 52 / 60 / 72 px square). Distinct from `ButtonSize` so the compiler rejects `hero` / `icon`. |
+| `shape`          | `Shape`          | `default` | Sentinel — follows `Theme.icon-button-shape` (default `"circle"`). On a square button `pill` and `circle` produce the same radius (height/2). |
+| `tone`           | `Tone`           | `default` | Same semantics as Button. |
+| `disabled`       | `bool`           | `false`   | |
+| `loading`        | `bool`           | `false`   | Loader glyph replaces icon, rotates at `Animation.spinner-period`; blocks click. |
+| `tooltip`        | `string`         | `""`      | Critical for icon-only buttons — primary discoverability. Also feeds accessibility cascade. |
+| `checkable`      | `bool`           | `false`   | Favorite / pin / mute / star use cases. |
+| `checked`        | `bool` (in-out)  | `false`   | |
+
+### Depth / lighting properties
+
+Same six properties as Button, delegated to the `Depth` global from day one.
+
+| Property            | Type         | Default       | Notes |
+| ------------------- | ------------ | ------------- | ----- |
+| `elevated`          | `bool`       | `true`        | |
+| `shadow-elevation`  | `Elevation`  | `sm`          | Hover bumps one step via `Depth.bumped()`. |
+| `shadow-color`      | `color`      | `transparent` | Transparent = use Theme token. |
+| `shadow-direction`  | `int`        | `0`           | Degrees. |
+| `thickness`         | `length`     | `0px`         | Two-layer surface/face extrusion (same as Button). |
+| `press-animation`   | `bool`       | `true`        | Face slides down on press. |
+
+### Escape & debug
+
+| Property            | Type      | Default | Notes |
+| ------------------- | --------- | ------- | ----- |
+| `height-override`   | `length`  | `0px`   | `0` = use `size` preset. Positive = square of that side; icon glyph scales as `max(14px, side * 0.5)`. |
+| `debug-bounds`      | `bool`    | `false` | Magenta border on surface + magenta corner dot when the accessibility cascade is genuinely falling through to `"Button"`. |
+
+### Not present on IconButton (intentional divergence from Button)
+
+`label`, `icon-leading`, `icon-trailing` (consolidated to `icon`); `full-width` (always square); `min-content-width` (size dictates width); `bg-color` (curated palette wins — use `tone` or `variant` instead).
+
+### Callbacks
+
+`clicked()`, `pressed-changed(bool)`, `hover-changed(bool)`, `focus-changed(bool)`.
+
+### Internal visual structure
+
+Same five-layer pattern as Button — transparent root, focus-ring, surface Rectangle (with the drop-shadow), face Rectangle (with the gradient + highlight on filled-prominent variants), single centered icon Text, TouchArea, FocusScope, tooltip. The two-layer surface/face structure carries over because `thickness` works the same way.
+
+---
+
+## Depth global (`globals/depth.slint`)
+
+Stateless math provider for drop-shadow computation. Each consuming component owns the six depth input properties (the public contract); this global owns the resolution.
+
+```
+Depth.bumped(level, hovered)           → Elevation   // hover bumps sm→md→lg→xl, xl saturates
+Depth.applies(elevated, disabled, level) → bool      // master gate
+Depth.blur(level)                      → length      // Theme.shadow-{level}-blur
+Depth.magnitude(level)                 → length      // Theme.shadow-{level}-y
+Depth.color-of(level, override-color)  → color       // alpha>0 wins, else Theme token
+Depth.offset-x(direction-deg, mag)     → length      // -sin(deg) * mag
+Depth.offset-y(direction-deg, mag)     → length      //  cos(deg) * mag
+```
+
+All `pure public function`. They read `Theme.shadow-*` tokens but take all variable inputs as parameters — true stateless math. No inheritance, no slot-based composition; components stay flat and declarative.
+
+Button currently consumes it; IconButton consumes it. Toggle and Card will compose the same global when they land.
+
+---
+
+## Accessibility cascade pattern
+
+Both Button and IconButton wire Slint's `accessible-*` properties to the platform AT tree. A nameless interactive node is worse than a degraded name, so each component resolves `accessible-label` via a cascading fallback:
+
+- **Button:** `aria-label → tooltip → label → "Button"`
+- **IconButton:** `aria-label → tooltip → icon → "Button"`
+
+Plus `accessible-role: button`, `accessible-checkable: root.checkable`, `accessible-checked: root.checked`, `accessible-enabled: !disabled && !loading`, and `accessible-action-default` so AT-driven activations fire `clicked()` (and toggle `checked` when `checkable`).
+
+Authoring-time debug: when `debug-bounds: true` AND all three cascade sources are empty (the accessibility name is genuinely falling through to `"Button"`), a 6×6px magenta dot renders at the top-right corner of the button. Invisible in production builds; conspicuous in the playground.
+
+The cascade pattern propagates to every future interactive component. Toggle, Card-when-interactive, and any Phase-2 component with a clickable surface should adopt the same shape.
+
+---
+
 ## Slint quirks learned (the trapdoors)
 
 These are non-obvious. Document them so we don't relearn:
@@ -183,9 +277,9 @@ cargo run
 ```
 
 In the playground:
-- Sidebar shows **Button**. Click to mount its section.
-- Toolbar across the top: theme-shape combos, density, currency, icon-family swap, RTL toggle.
-- Right panel: every Button property surfaced as an interactive control (LineEdits, ComboBoxes, swatch grids, sliders).
+- Sidebar shows **Button** and **IconButton**. Click either to mount its section.
+- Toolbar across the top: theme-shape combos, density, currency, icon-family swap, RTL toggle, **spinner-period slider** (retune `Animation.spinner-period` live). Wrapped in a horizontal `ScrollView` so adding more tokens doesn't compress the sidebar.
+- Right panel: every public property surfaced as an interactive control (LineEdits, ComboBoxes, swatch grids, sliders).
 - Bottom of preview pane: live code snippet of the current configuration.
 
 Verify the build:
@@ -195,7 +289,7 @@ cd abdu-slint-ui/         && cargo check
 cd abdu-slint-ui-playground/ && cargo build
 ```
 
-Both should build clean (one harmless deprecation warning about Button's component not inheriting Window — known, library-level, can't easily silence in Slint 1.14).
+Both should build clean. Expect two harmless library-level warnings about Button and IconButton not inheriting Window (`No code will be generated for it` / `This is deprecated`) — same root cause, the components are mounted by `lib.slint` re-exports and used by other Slint files, not instantiated from Rust. Can't easily silence in Slint 1.14.
 
 ---
 
@@ -203,21 +297,21 @@ Both should build clean (one harmless deprecation warning about Button's compone
 
 In priority order:
 
-1. **`IconButton`** — adjacent to Button; should be straightforward. The depth properties (shadow-*, thickness, press-animation) should carry over with minimal changes — possibly extract them into a shared mixin or a private base component.
+1. **`Toggle`** — iOS-style switch with the rounded knob. iOS has a specific look (green-when-on, gradient knob, subtle inner shadow). The internal-state machine for the slide animation is the trickier part. Should consume `Depth` for the knob shadow and adopt the accessibility cascade pattern (`accessible-role: switch` or `Switch` per Slint's AccessibleRole enum).
 
-2. **`Toggle`** — iOS-style switch with the rounded knob. iOS has a specific look (green-when-on, gradient knob, subtle inner shadow). The internal-state machine for the slide animation is the trickier part.
+2. **`Card`** — surface container. Reads `Theme.card-shape`, exposes `elevation`, `padding`, `interactive`. The depth properties (shadow-elevation/color/direction) plug directly into `Depth`. When `interactive: true`, add the accessibility cascade and emit `clicked()` like Button.
 
-3. **`Card`** — surface container. Reads `Theme.card-shape`, exposes `elevation`, `padding`, `interactive`. The depth pattern from Button (shadow-elevation, shadow-color, shadow-direction) should likely apply here too.
+3. **`KeyValueRow`** — display-only, RTL-aware. Trivial relative to the above. No depth, no accessibility wiring needed (`accessible-role: none` since it's text).
 
-4. **`KeyValueRow`** — display-only, RTL-aware. Trivial relative to the above.
-
-5. **Smoke test:** `examples/settings-display.slint` — rewrite the existing 700-line `ui/screens/settings/display.slint` using only Phase 1 primitives. Confirms the API survives contact with a real screen.
+4. **Smoke test:** `examples/settings-display.slint` — rewrite the existing 700-line `ui/screens/settings/display.slint` using only Phase 1 primitives. Confirms the API survives contact with a real screen.
 
 ### Open API questions for Phase 2 entry
 
-- Should `bg-color` and `height-override` on Button move to a private extension or stay as escape hatches? They make the API less curated but real-life POS sometimes needs them. Decision deferred.
-- Should the depth system (shadow-elevation, shadow-color, shadow-direction, thickness, press-animation) be factored out into a shared mixin so IconButton, Toggle, and Card get it without re-declaring 6 properties each? Probably yes; design TBD.
+- Should `bg-color` and `height-override` on Button move to a private extension or stay as escape hatches? They make the API less curated but real-life POS sometimes needs them. **IconButton intentionally omitted `bg-color`** as the first move in this direction. Decision still deferred for Button itself.
+- ~~Should the depth system be factored into a shared mixin?~~ **RESOLVED.** Extracted as the `Depth` global (stateless math provider). Each component declares its own 6 depth input properties; the global owns the resolution math. See section above.
+- Should variant/tone color resolution also become a global (parallel to `Depth`)? Button and IconButton now duplicate `variant-base-bg / variant-hover-bg / variant-foreground / tone-color / tone-foreground / base-bg / hover-bg / foreground-color / resolved-border-color`. Likely yes, once Card lands and confirms three real call sites. Deferred to Phase 1.5 / Phase 2.
 - The `tone` enum override is implemented but not heavily exercised. Worth a playground tour to make sure every `variant × tone` combo looks reasonable before more components rely on the same pattern.
+- The icon-only `loader` glyph quality depends on the icon font (Phosphor's looks like a tasteful spinner; Lucide's similar). A future Phase 2 task could lift Slint's own `SpinnerBase` Path math into a private `Spinner` micro-component so the loading visual is identical across icon-family swaps — explored once, rolled back as "doesn't look right yet"; revisit after design-direction stabilizes.
 
 ---
 
@@ -234,9 +328,19 @@ The library evolves in isolation. POS integration is its own phase with its own 
 
 ---
 
-## Commit history (this Phase 1 session)
+## Commit history
 
-Selected commits in order — read `git log --oneline` for the full chronology:
+Read `git log --oneline` for the full chronology. The most recent five — IconButton vertical slice plus the foundation that supports it — are:
+
+| Commit | Summary |
+| -- | -- |
+| `91e8fae feat(abdu-slint-ui): IconButton component + preview + playground section` | The full IconButton slice. Adds `IconButtonSize` enum, new `components/icon-button.slint` (~340 lines), preview, playground section (~330 lines), sidebar tile + section routing. Also adds the toolbar spinner-period slider and sidebar lock. |
+| `56c93c9 fix(abdu-slint-ui): rotating loading spinner with global period` | Replaces Button's opacity-pulse fallback with real rotation via `transform-rotation` + `animation-tick()`. Renames the unused `Animation.pulse` (1500ms) to `Animation.spinner-period` (1200ms, in-out for runtime tuning). Corrects HANDOVER quirk #3. |
+| `3c67439 feat(abdu-slint-ui): accessible-* wiring on Button with aria cascade` | Wires `accessible-role/label/checkable/checked/enabled/action-default` on Button. Cascade `aria-label → tooltip → label → "Button"`. Adds the debug-bounds magenta corner dot for missing accessibility metadata. |
+| `cb78876 docs(abdu-slint-ui): IconButton design + Depth/accessibility plan` | Per-component design doc at `architecture/icon-button.md`. Documents the API surface, the Depth global signature, the accessibility cascade pattern, and the three-commit build order. |
+| `1dd82cc refactor(abdu-slint-ui): extract shadow math into Depth global` | Pulls Button's ~50 lines of shadow-resolution state into `globals/depth.slint` as seven pure functions. Button keeps its public depth API unchanged, math is now consolidated for IconButton/Toggle/Card to share. |
+
+Prior commits (Foundation + Button iteration, captured in commit `70a6f0f docs(abdu-slint-ui): capture mid-Phase 1 state in HANDOVER`):
 
 | Commit prefix | Summary |
 | -- | -- |
@@ -253,4 +357,4 @@ Selected commits in order — read `git log --oneline` for the full chronology:
 | `feat(abdu-slint-ui): shadow-direction property for simulated light angle` | directional shadow |
 | `feat(abdu-slint-ui): thickness property — visible 3D depth on Button` | first stripe attempt |
 | `fix(abdu-slint-ui): real extrusion for thickness instead of bottom stripe` | two-layer approach |
-| `feat(abdu-slint-ui): expose press-animation as a Button property` | latest |
+| `feat(abdu-slint-ui): expose press-animation as a Button property` | press machinery |

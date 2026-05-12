@@ -6,6 +6,26 @@
 
 ---
 
+## Phase 1 status (as of latest commit)
+
+- ✅ §1.0 — Library crate skeleton, lib.slint entry point.
+- ✅ §1.1 — Enums (now 11 entries; original spec listed 10, `IconButtonSize` was added when IconButton landed).
+- ✅ §1.2 — Globals. Original spec listed 8; actual count is **10** (added `icon-font.slint` during font work, then `depth.slint` for the shadow-math extraction). `Animation.pulse` renamed to `Animation.spinner-period`.
+- 🔄 §1.3 — Components. **Button** and **IconButton** shipped; their property tables below are **SUPERSEDED** by the actual implementations documented in `HANDOVER.md`. **Toggle / Card / KeyValueRow** specs below are still authoritative.
+- 🔄 §1.4 — Preview files. Button and IconButton shipped; others pending.
+- ✅ §1.5 — Playground crate skeleton.
+- 🔄 §1.6 — Playground sections. Button and IconButton shipped; others pending. **Note:** the playground sections turned out to be pure-Slint with `in-out` state on the section component, not Rust state structs as originally spec'd. The Rust-side state plan in §1.6 below is superseded — actual sections store state directly in Slint properties.
+- ❌ §1.7 — Smoke test pending.
+
+### Net additions beyond the original spec
+
+- `globals/depth.slint` (the Depth global — stateless shadow math, mentioned in HANDOVER's Depth section).
+- `architecture/icon-button.md` — first per-component design doc. New convention: each non-trivial component gets a design doc here.
+- Accessibility cascade pattern wired on Button and IconButton (was not in the original spec).
+- `globals/icon-font.slint` (dual-font with Phosphor + Lucide, runtime-switchable; original spec assumed a single font).
+
+---
+
 ## Phase 1 — Foundation
 
 **Goal recap (from ROADMAP):** 8 globals + 5 components (Button, IconButton, Toggle, Card, KeyValueRow) + playground app shell with 5 sections + one smoke-test screen.
@@ -415,6 +435,8 @@ The foundation. Variants and sizes mirror shadcn/ui; convenience features mirror
 - `checkable + checked` shows pressed visual permanently
 
 ### Component 2: `components/icon-button.slint`
+
+> **SUPERSEDED — see `HANDOVER.md` → "IconButton API (as built)" and `architecture/icon-button.md` for the authoritative spec.** The actual implementation has 19 properties (not 9), uses a new `IconButtonSize` enum, ships the full depth set via the `Depth` global, and wires the accessibility cascade. The original spec below is left for historical reference.
 
 Square click target. Convenience over `Button { size: icon; label: ""; icon-leading: ... }` for the common icon-only case.
 
