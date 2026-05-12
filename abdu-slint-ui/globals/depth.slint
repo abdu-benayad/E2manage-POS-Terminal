@@ -1,0 +1,95 @@
+// Depth — stateless math provider for drop-shadow computation.
+//
+// Components own the public depth properties (`elevated`, `shadow-elevation`,
+// `shadow-color`, `shadow-direction`, `thickness`, `press-animation`). This
+// global owns the resolution math: how an Elevation maps to blur/magnitude,
+// how a direction-in-degrees projects onto x/y offsets, how a color override
+// composes with the Theme defaults, and how hover bumps the effective level.
+//
+// Why a global and not a base component:
+//   - Stateless. The functions never read or mutate component state.
+//   - Componsable. Components stay flat and declarative; no inheritance.
+//   - Independently testable. Each function takes its inputs explicitly.
+//
+// Functions read `Theme.shadow-*` tokens but accept all variable inputs as
+// parameters. A caller computes its own `level` (e.g. `Depth.bumped(...)`),
+// then threads it through `blur`, `magnitude`, `color-of` to populate the
+// `drop-shadow-*` properties on its surface Rectangle.
+
+import { Elevation } from "../enums.slint";
+import { Theme } from "theme.slint";
+
+export global Depth {
+    // Returns the elevation that should be rendered, given a hover state.
+    // Hover bumps the level one step (sm→md, md→lg, lg→xl). `xl` saturates.
+    // `none` stays `none`: a flat surface should not gain shadow on hover.
+    pure public function bumped(level: Elevation, hovered: bool) -> Elevation {
+        return !hovered                ? level
+             : level == Elevation.none ? Elevation.none
+             : level == Elevation.sm   ? Elevation.md
+             : level == Elevation.md   ? Elevation.lg
+             : level == Elevation.lg   ? Elevation.xl
+             : Elevation.xl;
+    }
+
+    // Master gate for whether the component should render a shadow at all.
+    // True only when the consumer hasn't disabled elevation, the component
+    // isn't disabled, and the level isn't explicitly `none`.
+    pure public function applies(elevated: bool, disabled: bool, level: Elevation) -> bool {
+        return elevated && !disabled && level != Elevation.none;
+    }
+
+    // Resolved blur radius for a given level. Reads from Theme tokens so
+    // consumers retuning shadow strength change every component at once.
+    pure public function blur(level: Elevation) -> length {
+        return level == Elevation.sm ? Theme.shadow-sm-blur
+             : level == Elevation.md ? Theme.shadow-md-blur
+             : level == Elevation.lg ? Theme.shadow-lg-blur
+             : level == Elevation.xl ? Theme.shadow-xl-blur
+             : 0px;
+    }
+
+    // Radial magnitude — how far the shadow falls from the surface. Used as
+    // the hypotenuse when projecting onto x/y via `offset-x` / `offset-y`.
+    pure public function magnitude(level: Elevation) -> length {
+        return level == Elevation.sm ? Theme.shadow-sm-y
+             : level == Elevation.md ? Theme.shadow-md-y
+             : level == Elevation.lg ? Theme.shadow-lg-y
+             : level == Elevation.xl ? Theme.shadow-xl-y
+             : 0px;
+    }
+
+    // Resolved shadow color. A non-transparent `override-color` always wins
+    // (consumers may pass a tinted alpha to recolor the shadow without
+    // touching its geometry). Otherwise the Theme token for the level is
+    // returned. Color equality isn't a Slint primitive, so we check alpha
+    // to detect whether the caller passed a real color.
+    pure public function color-of(level: Elevation, override-color: color) -> color {
+        return override-color.alpha > 0 ? override-color
+             : level == Elevation.sm   ? Theme.shadow-sm-color
+             : level == Elevation.md   ? Theme.shadow-md-color
+             : level == Elevation.lg   ? Theme.shadow-lg-color
+             : level == Elevation.xl   ? Theme.shadow-xl-color
+             : #00000000;
+    }
+
+    // Projects the radial magnitude onto the x-axis using the light
+    // direction (degrees). The shadow falls opposite the light source, so:
+    //   direction=0   (light above)  →  x = 0
+    //   direction=90  (light right)  →  x = -magnitude (shadow left)
+    //   direction=180 (light below)  →  x = 0
+    //   direction=270 (light left)   →  x = +magnitude (shadow right)
+    pure public function offset-x(direction-deg: int, mag: length) -> length {
+        return -Math.sin(direction-deg * 1deg) * mag;
+    }
+
+    // Projects the radial magnitude onto the y-axis. Screen-y grows
+    // downward, so the sign convention matches Button's existing math:
+    //   direction=0   (light above)  →  y = +magnitude (shadow down — default)
+    //   direction=90  (light right)  →  y = 0
+    //   direction=180 (light below)  →  y = -magnitude (shadow up)
+    //   direction=270 (light left)   →  y = 0
+    pure public function offset-y(direction-deg: int, mag: length) -> length {
+        return Math.cos(direction-deg * 1deg) * mag;
+    }
+}

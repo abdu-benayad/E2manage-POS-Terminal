@@ -14,6 +14,7 @@ import { Spacing } from "../globals/spacing.slint";
 import { Animation } from "../globals/animation.slint";
 import { Locale } from "../globals/locale.slint";
 import { IconFont } from "../globals/icon-font.slint";
+import { Depth } from "../globals/depth.slint";
 
 export component Button inherits Rectangle {
     // ===== Public API =====================================================
@@ -323,57 +324,12 @@ export component Button inherits Rectangle {
         root.variant == ButtonVariant.default
         || root.variant == ButtonVariant.destructive;
 
-    // Hover bumps the effective elevation by one step. xl saturates.
-    property <Elevation> effective-elevation:
-          root.shadow-elevation == Elevation.none ? Elevation.none
-        : !touch.has-hover ? root.shadow-elevation
-        : root.shadow-elevation == Elevation.sm ? Elevation.md
-        : root.shadow-elevation == Elevation.md ? Elevation.lg
-        : root.shadow-elevation == Elevation.lg ? Elevation.xl
-        : Elevation.xl;
-
-    property <bool> shadow-applies:
-        root.elevated && !root.disabled && root.shadow-elevation != Elevation.none;
-
-    property <length> active-shadow-blur:
-          !root.shadow-applies                      ? 0px
-        : root.effective-elevation == Elevation.sm  ? Theme.shadow-sm-blur
-        : root.effective-elevation == Elevation.md  ? Theme.shadow-md-blur
-        : root.effective-elevation == Elevation.lg  ? Theme.shadow-lg-blur
-        : root.effective-elevation == Elevation.xl  ? Theme.shadow-xl-blur
-        : 0px;
-
-    // Radial magnitude — how far the shadow drops from the button. Per
-    // elevation, taken from the Theme.shadow-{level}-y token.
-    property <length> active-shadow-magnitude:
-          !root.shadow-applies                      ? 0px
-        : root.effective-elevation == Elevation.sm  ? Theme.shadow-sm-y
-        : root.effective-elevation == Elevation.md  ? Theme.shadow-md-y
-        : root.effective-elevation == Elevation.lg  ? Theme.shadow-lg-y
-        : root.effective-elevation == Elevation.xl  ? Theme.shadow-xl-y
-        : 0px;
-
-    // Project the radial magnitude onto x/y axes using the light
-    // direction. Screen y grows downward, so:
-    //   direction=0   → cos=1,  -sin=0  → shadow straight down (default)
-    //   direction=90  → cos=0,  -sin=-1 → shadow to the left
-    //   direction=180 → cos=-1, -sin=0  → shadow straight up
-    //   direction=270 → cos=0,  -sin=1  → shadow to the right
-    property <angle> direction-angle: root.shadow-direction * 1deg;
-    property <length> active-shadow-x: -Math.sin(root.direction-angle) * root.active-shadow-magnitude;
-    property <length> active-shadow-y:  Math.cos(root.direction-angle) * root.active-shadow-magnitude;
-
-    // Color: explicit `shadow-color` wins; otherwise pick the Theme token
-    // matching the effective elevation.
-    property <bool>  shadow-color-set: root.shadow-color.alpha > 0;
-    property <color> active-shadow-color:
-          !root.shadow-applies                      ? transparent
-        : root.shadow-color-set                     ? root.shadow-color
-        : root.effective-elevation == Elevation.sm  ? Theme.shadow-sm-color
-        : root.effective-elevation == Elevation.md  ? Theme.shadow-md-color
-        : root.effective-elevation == Elevation.lg  ? Theme.shadow-lg-color
-        : root.effective-elevation == Elevation.xl  ? Theme.shadow-xl-color
-        : transparent;
+    // Depth resolution is delegated to the `Depth` global. The component
+    // owns the public input properties (`elevated`, `shadow-elevation`,
+    // `shadow-color`, `shadow-direction`); the global owns the math.
+    property <Elevation> eff-level:    Depth.bumped(root.shadow-elevation, touch.has-hover);
+    property <bool>      apply-shadow: Depth.applies(root.elevated, root.disabled, root.shadow-elevation);
+    property <length>    eff-magnitude: Depth.magnitude(root.eff-level);
 
     // ===== Visual layer ===================================================
     //
@@ -438,10 +394,10 @@ export component Button inherits Rectangle {
         border-color:
               root.debug-bounds ? #ff00ff
                                  : root.resolved-border-color;
-        drop-shadow-blur:     root.active-shadow-blur;
-        drop-shadow-offset-x: root.active-shadow-x;
-        drop-shadow-offset-y: root.active-shadow-y;
-        drop-shadow-color:    root.active-shadow-color;
+        drop-shadow-blur:     root.apply-shadow ? Depth.blur(root.eff-level) : 0px;
+        drop-shadow-offset-x: root.apply-shadow ? Depth.offset-x(root.shadow-direction, root.eff-magnitude) : 0px;
+        drop-shadow-offset-y: root.apply-shadow ? Depth.offset-y(root.shadow-direction, root.eff-magnitude) : 0px;
+        drop-shadow-color:    root.apply-shadow ? Depth.color-of(root.eff-level, root.shadow-color) : #00000000;
 
         animate background           { duration: Animation.fast; easing: ease-out; }
         animate border-color         { duration: Animation.fast; easing: ease-out; }
