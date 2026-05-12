@@ -403,20 +403,27 @@ export component Button inherits Rectangle {
         background: transparent;
     }
 
-    // Surface: the visual button itself. Drop-shadow works here because
-    // this Rectangle is NOT the component's root.
+    // Visual structure for genuine extrusion:
+    //
+    //   surface (the "base/skirt")   ──┐ darker, full height, drop-shadow
+    //     face (the "top face")      ──┤ gradient, shorter by `thickness`
+    //       highlight                ──┤ glossy top sheen
+    //       content                  ──┘ label + icons
+    //
+    // When thickness=0, face covers the full surface and the base is
+    // invisible — visually identical to a flat button. When thickness>0,
+    // the bottom `thickness` px of the surface shows the darker base,
+    // making the button read as physically extruded.
+
     surface := Rectangle {
         x: 0;
         y: 0;
         width: parent.width;
         height: parent.height;
-        // Filled-prominent variants get a vertical gradient (lighter at top,
-        // base color at bottom) which gives the button perceived depth.
-        // Other variants stay flat — gradient on a ghost button would look wrong.
-        background:
-            root.variant-is-filled-prominent
-                ? @linear-gradient(180deg, root.active-bg.brighter(12%) 0%, root.active-bg 100%)
-                : root.active-bg;
+        // The base color: a darkened version of the button's active color.
+        // The face sits on top, so this only shows where the face doesn't
+        // cover — at the bottom (= the visible side wall).
+        background: root.active-bg.darker(0.4);
         border-radius: root.resolved-radius;
         border-width:
               root.debug-bounds                          ? 2px
@@ -436,57 +443,46 @@ export component Button inherits Rectangle {
         animate drop-shadow-offset-x { duration: Animation.fast; easing: ease-out; }
         animate drop-shadow-offset-y { duration: Animation.fast; easing: ease-out; }
 
-        // Inner glossy highlight at the top half of filled-prominent variants.
-        // A white-to-transparent vertical gradient creates the "iOS glossy"
-        // top sheen. Top corners match parent's radius; bottom corners flat.
-        if root.variant-is-filled-prominent && !root.disabled: Rectangle {
+        // Face: the visible top of the extruded shape. Shorter than the
+        // surface by `thickness` so the surface peeks out at the bottom
+        // as a darker "side wall". On press the face slides down toward
+        // the bottom, so the button reads as physically depressed.
+        face := Rectangle {
             x: 0;
-            y: 0;
+            y: root.visually-pressed ? root.thickness * 0.7 : 0px;
             width: parent.width;
-            height: parent.height * 0.55;
-            border-top-left-radius: parent.border-radius;
-            border-top-right-radius: parent.border-radius;
-            border-bottom-left-radius: 0px;
-            border-bottom-right-radius: 0px;
-            background: @linear-gradient(180deg, #ffffff40 0%, #ffffff00 100%);
-        }
+            height: parent.height - root.thickness;
+            background:
+                root.variant-is-filled-prominent
+                    ? @linear-gradient(180deg, root.active-bg.brighter(12%) 0%, root.active-bg 100%)
+                    : root.active-bg;
+            border-radius: parent.border-radius;
+            clip: true;
 
-        // Bottom edge stripe — the "side wall" of an extruded shape.
-        // Combined with the top highlight and the outer drop-shadow, gives
-        // the button real 3D depth. A semi-transparent black overlay reads
-        // as a darker stripe on any bg color (the previous `darker(25%)`
-        // was too subtle on saturated blues and reds). Pressing flattens
-        // the stripe (height → 1px) so the button visibly compresses.
-        if root.thickness > 0px && !root.disabled: Rectangle {
-            width: parent.width;
-            height: root.visually-pressed ? 1px : root.thickness;
-            y: parent.height - self.height;
-            background: #00000066;  // rgba(0,0,0,0.40)
-            border-top-left-radius: 0px;
-            border-top-right-radius: 0px;
-            border-bottom-left-radius: parent.border-radius;
-            border-bottom-right-radius: parent.border-radius;
-            animate height { duration: Animation.fast; easing: ease-out; }
+            animate y          { duration: Animation.fast; easing: ease-out; }
+            animate height     { duration: Animation.fast; easing: ease-out; }
+            animate background { duration: Animation.fast; easing: ease-out; }
 
-            // Thin lighter highlight at the very top of the stripe — reads
-            // as the "edge" between the face and the side wall, sharpens
-            // the 3D illusion.
-            Rectangle {
+            // Inner glossy highlight at the top half of filled-prominent
+            // variants. White-to-transparent vertical gradient on the face.
+            if root.variant-is-filled-prominent && !root.disabled: Rectangle {
                 x: 0;
                 y: 0;
                 width: parent.width;
-                height: 1px;
-                background: #ffffff26;  // rgba(255,255,255,0.15)
+                height: parent.height * 0.55;
+                border-top-left-radius: parent.border-radius;
+                border-top-right-radius: parent.border-radius;
+                border-bottom-left-radius: 0px;
+                border-bottom-right-radius: 0px;
+                background: @linear-gradient(180deg, #ffffff40 0%, #ffffff00 100%);
             }
-        }
-    }
 
-    // Content row: [leading icon] [label] [trailing icon] OR spinner.
-    content := HorizontalLayout {
-        x: root.resolved-padding;
-        y: 0;
-        width: parent.width - 2 * root.resolved-padding;
-        height: parent.height;
+            // Content row sits on the face so it moves with press.
+            content := HorizontalLayout {
+                x: root.resolved-padding;
+                y: 0;
+                width: parent.width - 2 * root.resolved-padding;
+                height: parent.height;
         spacing: Spacing.sm;
         alignment: center;
 
@@ -563,7 +559,9 @@ export component Button inherits Rectangle {
                 property <int> direction: -1;
             }
         }
-    }
+            }   // close content HorizontalLayout
+        }       // close face Rectangle
+    }           // close surface Rectangle
 
     // Link variant — underline on hover.
     if root.variant == ButtonVariant.link && touch.has-hover: Rectangle {
