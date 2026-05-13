@@ -403,10 +403,13 @@ export component Button inherits Rectangle {
         y: 0;
         width: parent.width;
         height: parent.height;
-        // The base color: a darkened version of the button's active color.
+        // The base color: a side-wall shade of the button's active color.
         // The face sits on top, so this only shows where the face doesn't
         // cover — at the bottom (= the visible side wall).
-        background: root.active-bg.darker(0.4);
+        // skirt-tint reduces the magnitude in dark mode so the side
+        // doesn't saturate to a featureless near-black against a dark
+        // face.
+        background: Theme.skirt-tint(root.active-bg);
         border-radius: root.resolved-radius;
         border-width:
               root.debug-bounds                          ? 2px

@@ -1,0 +1,252 @@
+// KeyValueRow playground section.
+//
+// Same shape as the other sections: in-out state holds live property
+// values, derived properties translate slug-strings into library enums,
+// the preview pane mounts a KeyValueRow (and a column of additional
+// rows showing list composition inside a Card), the code-snippet panel
+// shows the current configuration, and the property panel exposes
+// every public property.
+//
+// KeyValueRow is the first display-only primitive in the library — no
+// callbacks, no click count, no demo-toggle state.
+
+import { KeyValueRow, Card, Emphasis, Tone, Density, Theme, Typography, Spacing } from "@abdu-slint-ui";
+import { ComboBox, CheckBox, LineEdit, HorizontalBox, VerticalBox, ScrollView, Slider } from "std-widgets.slint";
+
+export component KeyValueRowSection inherits Rectangle {
+    // ===== Live property state ===========================================
+    in-out property <string> v-label: "Total";
+    in-out property <string> v-label-icon: "";
+    in-out property <string> v-value: "12.50";
+    in-out property <string> v-value-unit: "SAR";
+    in-out property <string> v-value-icon: "";
+    in-out property <string> v-emphasis: "normal";
+    in-out property <string> v-value-tone: "default";
+    in-out property <string> v-density: "default";
+    in-out property <bool>   v-numeric: true;
+    in-out property <bool>   v-show-divider: false;
+    in-out property <string> v-tooltip: "";
+    in-out property <bool>   v-debug-bounds: false;
+
+    // ===== Derived enum values ==========================================
+    property <Emphasis> emphasis-enum:
+          v-emphasis == "subtle" ? Emphasis.subtle
+        : v-emphasis == "strong" ? Emphasis.strong
+        : v-emphasis == "total"  ? Emphasis.total
+        :                          Emphasis.normal;
+
+    property <Tone> value-tone-enum:
+          v-value-tone == "primary"     ? Tone.primary
+        : v-value-tone == "success"     ? Tone.success
+        : v-value-tone == "warning"     ? Tone.warning
+        : v-value-tone == "destructive" ? Tone.destructive
+        : v-value-tone == "info"        ? Tone.info
+        : v-value-tone == "muted"       ? Tone.muted
+        :                                 Tone.default;
+
+    property <Density> density-enum:
+          v-density == "compact"     ? Density.compact
+        : v-density == "comfortable" ? Density.comfortable
+        :                              Density.default;
+
+    background: transparent;
+
+    HorizontalLayout {
+        // --- Preview pane ------------------------------------------------
+        Rectangle {
+            background: Theme.surface-muted;
+            VerticalBox {
+                padding: 32px;
+                spacing: Spacing.lg;
+                alignment: center;
+
+                Text {
+                    text: "Live preview — single configurable row";
+                    font-size: Typography.text-sm;
+                    color: Theme.muted-foreground;
+                }
+
+                // Single instance of the configurable row inside a Card,
+                // so consumers see the dominant composition (row inside
+                // a padded surface).
+                HorizontalLayout {
+                    alignment: center;
+                    Card {
+                        max-content-width: 480px;
+                        padding-density: Density.comfortable;
+                        KeyValueRow {
+                            label: root.v-label;
+                            label-icon: root.v-label-icon;
+                            value: root.v-value;
+                            value-unit: root.v-value-unit;
+                            value-icon: root.v-value-icon;
+                            emphasis: root.emphasis-enum;
+                            value-tone: root.value-tone-enum;
+                            density: root.density-enum;
+                            numeric: root.v-numeric;
+                            show-divider: root.v-show-divider;
+                            tooltip: root.v-tooltip;
+                            debug-bounds: root.v-debug-bounds;
+                        }
+                    }
+                }
+
+                // Static list composition demo — 4 fixed rows inside a Card
+                // so consumers see a realistic settings-list pattern next
+                // to the configurable single-row preview.
+                Text {
+                    text: "List composition — 4 rows inside a Card (fixed; not affected by controls)";
+                    font-size: Typography.text-sm;
+                    color: Theme.muted-foreground;
+                }
+                HorizontalLayout {
+                    alignment: center;
+                    Card {
+                        max-content-width: 480px;
+                        padding-density: Density.comfortable;
+                        VerticalLayout {
+                            KeyValueRow { label: "Subtotal";    value: "42.00"; value-unit: "SAR"; emphasis: Emphasis.subtle; numeric: true; show-divider: true; }
+                            KeyValueRow { label: "VAT (15%)";   value: "6.30";  value-unit: "SAR"; emphasis: Emphasis.normal; numeric: true; show-divider: true; }
+                            KeyValueRow { label: "Service fee"; value: "2.50";  value-unit: "SAR"; emphasis: Emphasis.strong; numeric: true; show-divider: true; }
+                            KeyValueRow { label: "Total";       value: "50.80"; value-unit: "SAR"; emphasis: Emphasis.total;  numeric: true; }
+                        }
+                    }
+                }
+
+                // Code snippet panel.
+                Rectangle {
+                    background: #0f172a;
+                    border-radius: 8px;
+                    height: 260px;
+                    ScrollView {
+                        Text {
+                            x: 16px;
+                            y: 12px;
+                            text:
+                                  "KeyValueRow {\n"
+                                + (root.v-label != ""                  ? "    label: \"" + root.v-label + "\";\n" : "")
+                                + (root.v-label-icon != ""             ? "    label-icon: \"" + root.v-label-icon + "\";\n" : "")
+                                + (root.v-value != ""                  ? "    value: \"" + root.v-value + "\";\n" : "")
+                                + (root.v-value-unit != ""             ? "    value-unit: \"" + root.v-value-unit + "\";\n" : "")
+                                + (root.v-value-icon != ""             ? "    value-icon: \"" + root.v-value-icon + "\";\n" : "")
+                                + (root.v-emphasis != "normal"         ? "    emphasis: Emphasis." + root.v-emphasis + ";\n" : "")
+                                + (root.v-value-tone != "default"      ? "    value-tone: Tone." + root.v-value-tone + ";\n" : "")
+                                + (root.v-density != "default"         ? "    density: Density." + root.v-density + ";\n" : "")
+                                + (root.v-numeric                      ? "    numeric: true;\n" : "")
+                                + (root.v-show-divider                 ? "    show-divider: true;\n" : "")
+                                + (root.v-tooltip != ""                ? "    tooltip: \"" + root.v-tooltip + "\";\n" : "")
+                                + (root.v-debug-bounds                 ? "    debug-bounds: true;\n" : "")
+                                + "}";
+                            color: #f8fafc;
+                            font-family: "monospace";
+                            font-size: 12px;
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- Property panel ----------------------------------------------
+        Rectangle {
+            width: 320px;
+            background: Theme.surface;
+            Rectangle { width: 1px; background: Theme.border; }
+
+            ScrollView {
+                VerticalBox {
+                    padding: 16px;
+                    spacing: 10px;
+
+                    Text { text: "Properties"; font-weight: 600; font-size: 14px; }
+
+                    Text { text: "label"; font-size: 12px; color: Theme.muted-foreground; }
+                    LineEdit {
+                        text: root.v-label;
+                        edited(s) => { root.v-label = s; }
+                    }
+
+                    Text { text: "label-icon (icon name, optional)"; font-size: 12px; color: Theme.muted-foreground; }
+                    LineEdit {
+                        text: root.v-label-icon;
+                        placeholder-text: "e.g. check, arrow-up";
+                        edited(s) => { root.v-label-icon = s; }
+                    }
+
+                    Text { text: "value"; font-size: 12px; color: Theme.muted-foreground; }
+                    LineEdit {
+                        text: root.v-value;
+                        edited(s) => { root.v-value = s; }
+                    }
+
+                    Text { text: "value-unit (LTR-atomic with value)"; font-size: 12px; color: Theme.muted-foreground; }
+                    LineEdit {
+                        text: root.v-value-unit;
+                        placeholder-text: "e.g. SAR, %, kg";
+                        edited(s) => { root.v-value-unit = s; }
+                    }
+
+                    Text { text: "value-icon (icon name, cluster-leading)"; font-size: 12px; color: Theme.muted-foreground; }
+                    LineEdit {
+                        text: root.v-value-icon;
+                        placeholder-text: "e.g. arrow-up, check";
+                        edited(s) => { root.v-value-icon = s; }
+                    }
+
+                    Text { text: "emphasis (visual weight gradient)"; font-size: 12px; color: Theme.muted-foreground; }
+                    ComboBox {
+                        model: ["subtle", "normal", "strong", "total"];
+                        current-value: root.v-emphasis;
+                        selected(v) => { root.v-emphasis = v; }
+                    }
+
+                    Text { text: "value-tone (colors value cluster only)"; font-size: 12px; color: Theme.muted-foreground; }
+                    ComboBox {
+                        model: ["default", "primary", "success", "warning", "destructive", "info", "muted"];
+                        current-value: root.v-value-tone;
+                        selected(v) => { root.v-value-tone = v; }
+                    }
+
+                    Text { text: "density (per-component-tuned: sm/md/lg)"; font-size: 12px; color: Theme.muted-foreground; }
+                    ComboBox {
+                        model: ["compact", "default", "comfortable"];
+                        current-value: root.v-density;
+                        selected(v) => { root.v-density = v; }
+                    }
+
+                    CheckBox {
+                        text: "numeric (LTR-atomic value cluster)";
+                        checked: root.v-numeric;
+                        toggled => { root.v-numeric = self.checked; }
+                    }
+                    Text {
+                        text: root.v-numeric
+                            ? "Cluster stays [icon, value, unit] regardless of locale."
+                            : "Cluster mirrors to [unit, value, icon] in RTL.";
+                        font-size: 11px;
+                        color: Theme.muted-foreground;
+                        wrap: word-wrap;
+                    }
+
+                    CheckBox {
+                        text: "show-divider (1px bottom border)";
+                        checked: root.v-show-divider;
+                        toggled => { root.v-show-divider = self.checked; }
+                    }
+
+                    Text { text: "tooltip (renders TouchArea — blocks parent Card clicks)"; font-size: 12px; color: Theme.muted-foreground; wrap: word-wrap; }
+                    LineEdit {
+                        text: root.v-tooltip;
+                        placeholder-text: "leave empty for no TouchArea";
+                        edited(s) => { root.v-tooltip = s; }
+                    }
+
+                    CheckBox {
+                        text: "debug-bounds (magenta root + cluster outlines)";
+                        checked: root.v-debug-bounds;
+                        toggled => { root.v-debug-bounds = self.checked; }
+                    }
+                }
+            }
+        }
+    }
+}

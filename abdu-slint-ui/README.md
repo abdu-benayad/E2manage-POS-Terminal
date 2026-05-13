@@ -50,7 +50,7 @@ The library defines these globals. The consumer populates them once at startup (
 
 | Global            | Purpose                                                                 |
 | ----------------- | ----------------------------------------------------------------------- |
-| `Theme`           | Semantic color tokens (primary, foreground, accent, destructive, ring, semantic palettes), shape tokens, shadow scale |
+| `Theme`           | Mode-aware color tokens (light + dark palettes selected by `Theme.mode`), shape tokens, shadow scale, mode-asymmetric tint helpers (`hover-tint`, `press-tint`, `skirt-tint`) |
 | `Typography`      | Font family (incl. Arabic fallback), size scale, weight scale           |
 | `Spacing`         | Spacing scale (`xs` through `4xl`)                                      |
 | `Radius`          | Border-radius scale (`sm`, `md`, `lg`, `xl`, `full`)                    |
@@ -85,6 +85,27 @@ Accepted values:
 **Defaults are deliberate.** The library ships with `rounded` + `circle` to match SwiftUI's primary-action convention on touch hardware. To switch to a capsule look (mid-2020s web aesthetic), set `Theme.button-shape = "pill"` at app startup. To switch to a flat/brutalist look, `"square"`.
 
 **Per-instance override.** Every shape-bearing component accepts a `shape` property. The sentinel value `Shape.default` means "follow the theme token." Explicit values override.
+
+### Dark mode
+
+The library ships parallel light and dark color palettes calibrated to iOS system colors. Switch modes by setting `Theme.mode`:
+
+```rust
+let theme = window.global::<Theme>();
+theme.set_mode(ThemeMode::Dark);
+```
+
+Every component re-renders automatically. Slint's reactive property bindings handle the transition — there are zero per-component code paths that branch on mode. Component code reads tokens like `Theme.surface` and `Theme.foreground`; the active value is derived from `Theme.mode` inside the global.
+
+**System theme detection is the consumer's responsibility.** The library has no platform code. A Rust crate like `dark-light` detects the OS preference; the consumer calls `set_mode` accordingly. This stays out of the library because POS use cases (kiosk-style hardware with manual operator override, time-of-day forced themes for outdoor terminals) often want detection logic that isn't "follow the OS."
+
+**Mode-asymmetric color shifts are centralized in `Theme` helpers.** Components that need a hover or press tint on a surface call `Theme.hover-tint(c)` / `Theme.press-tint(c)` / `Theme.skirt-tint(c)`. The helpers darken in light mode and brighten in dark mode (subject to the rule that *saturated* tones — primary, destructive, success — darken on press in both modes, the way iOS dark mode actually behaves). Components never inline `.darker()` for press feedback on neutral surfaces; that's a footgun in dark mode and the helpers exist to make the right pattern the path of least resistance.
+
+**Tooltips intentionally invert.** A near-black tooltip on a light page in light mode becomes a near-white tooltip on a dark page in dark mode. The tooltip is meant to *pop against* the surrounding UI, not match it.
+
+**Card's `bordered: true` default becomes load-bearing in dark mode.** Dark-mode shadows have boosted opacity (60–90% vs 12–35% in light) to remain visible against near-black surfaces, but even at 90% they don't fully define elevation. The 1px border carries the rest of the separation. The default was already safety-first; dark mode validates it.
+
+**Brand customization requires overriding both palettes.** Setting `Theme.primary` at startup overrides only the *active* derived value; if the consumer wants brand colors that work in both modes, they must also set `Theme.dark-primary`, `Theme.primary-hover`, and `Theme.dark-primary-hover`. The library does not auto-derive hover or pressed shades from a single base color — the hand-tuned light/dark pairs matter visually. Treat the brand palette as a complete bundle of overrides, not a single token.
 
 ### Internationalization: single-script segmentation
 

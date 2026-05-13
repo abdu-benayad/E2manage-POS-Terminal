@@ -1,0 +1,483 @@
+// KeyValueRow — labelled-value display row.
+//
+// Fifth Phase 1 primitive. Display-only (no interactivity, no callbacks).
+// The first explicit incarnation of the single-script segmentation
+// principle: `label` and `value` are SEPARATE properties rendered by
+// SEPARATE Text elements, never concatenated.
+//
+// Two clusters: leading (label-icon + label) and trailing (value-icon
+// + value + value-unit). The outer HorizontalLayout positions the
+// clusters per Locale.rtl. The trailing cluster's INTERNAL order
+// additionally depends on `numeric` — when true, the cluster stays
+// LTR-atomic regardless of locale (CLAUDE.md's LTR-atomic rule for
+// numeric+unit pairs).
+//
+// LeadingCluster and TrailingCluster are inline sub-components to
+// avoid duplicating styled Text declarations across the LTR/RTL
+// branches. The outer-layout duplication (positioning the same cluster
+// on opposite sides) is unavoidable in Slint 1.14 — HorizontalLayout
+// has no direction property; we branch the children on Locale.rtl.
+//
+// Per architecture/key-value-row.md.
+
+import { Emphasis, Tone, Density } from "../enums.slint";
+import { Theme } from "../globals/theme.slint";
+import { Typography } from "../globals/typography.slint";
+import { Sizes } from "../globals/sizes.slint";
+import { Radius } from "../globals/radius.slint";
+import { Spacing } from "../globals/spacing.slint";
+import { Animation } from "../globals/animation.slint";
+import { Locale } from "../globals/locale.slint";
+import { IconFont } from "../globals/icon-font.slint";
+
+// ===== Sub-component: leading cluster ====================================
+//
+// Contains label-icon (optional) and label. The icon position flips
+// with Locale.rtl — in LTR it sits before the label (reading-leading
+// edge), in RTL it sits after the label (still reading-leading, which
+// is the physical right). This mirrors Button's icon-leading behavior.
+//
+// Inherits Rectangle so debug-bounds can render a magenta border
+// around the cluster. The inner HorizontalLayout drives the
+// Rectangle's preferred size.
+
+component LeadingCluster inherits Rectangle {
+    in property <string> label;
+    in property <string> label-icon;
+    in property <length> label-font-size;
+    in property <int>    label-font-weight;
+    in property <color>  label-color;
+    in property <length> icon-size;
+    in property <string> row-font-family;
+    in property <bool>   debug-bounds;
+
+    background: transparent;
+    border-width: root.debug-bounds ? 1px : 0px;
+    border-color: #ff00ff;
+
+    preferred-width:  inner.preferred-width;
+    preferred-height: inner.preferred-height;
+    min-width:        inner.min-width;
+    min-height:       inner.min-height;
+
+    inner := HorizontalLayout {
+        spacing: Spacing.xs;
+        alignment: center;
+
+        // LTR order: [icon, label].
+        if !Locale.rtl && root.label-icon != "": Text {
+            text: IconFont.resolve(root.label-icon);
+            font-family: IconFont.font-family-name();
+            font-size: root.icon-size;
+            color: root.label-color;
+            vertical-alignment: center;
+        }
+
+        Text {
+            text: root.label;
+            font-family: root.row-font-family;
+            font-size: root.label-font-size;
+            font-weight: root.label-font-weight;
+            color: root.label-color;
+            vertical-alignment: center;
+            wrap: no-wrap;
+        }
+
+        // RTL order: label first, icon after — render icon as
+        // declaration-last so the children list resolves to
+        // [label, icon] in RTL.
+        if Locale.rtl && root.label-icon != "": Text {
+            text: IconFont.resolve(root.label-icon);
+            font-family: IconFont.font-family-name();
+            font-size: root.icon-size;
+            color: root.label-color;
+            vertical-alignment: center;
+        }
+    }
+}
+
+// ===== Sub-component: trailing cluster ===================================
+//
+// Contains value-icon (optional), value, value-unit (optional). The
+// cluster's internal order is governed by `ltr-order`:
+//
+//   ltr-order = !Locale.rtl || numeric
+//
+//   true  → [icon, value, unit]   (LTR locale OR LTR-atomic numeric)
+//   false → [unit, value, icon]   (RTL locale AND non-numeric textual)
+//
+// This is the CLAUDE.md segmentation rule operationalized: numeric
+// content stays LTR-internal regardless of locale (so "12.50 SAR"
+// renders consistently), while textual values respect locale flow.
+
+component TrailingCluster inherits Rectangle {
+    in property <string> value;
+    in property <string> value-unit;
+    in property <string> value-icon;
+    in property <length> value-font-size;
+    in property <length> value-unit-font-size;
+    in property <int>    value-font-weight;
+    in property <color>  value-color;
+    in property <length> icon-size;
+    in property <bool>   numeric;
+    in property <string> row-font-family;
+    in property <bool>   debug-bounds;
+
+    background: transparent;
+    border-width: root.debug-bounds ? 1px : 0px;
+    border-color: #ff00ff;
+
+    preferred-width:  inner.preferred-width;
+    preferred-height: inner.preferred-height;
+    min-width:        inner.min-width;
+    min-height:       inner.min-height;
+
+    property <bool> ltr-order: !Locale.rtl || root.numeric;
+
+    inner := HorizontalLayout {
+        spacing: Spacing.xs;
+        alignment: center;
+
+        // Cluster-leading slot (icon when ltr-order, unit when reversed).
+        if  root.ltr-order && root.value-icon != "": Text {
+            text: IconFont.resolve(root.value-icon);
+            font-family: IconFont.font-family-name();
+            font-size: root.icon-size;
+            color: root.value-color;
+            vertical-alignment: center;
+        }
+        if !root.ltr-order && root.value-unit != "": Text {
+            text: root.value-unit;
+            font-family: root.row-font-family;
+            font-size: root.value-unit-font-size;
+            color: root.value-color;
+            vertical-alignment: center;
+            wrap: no-wrap;
+        }
+
+        // Value text always sits in the cluster middle.
+        Text {
+            text: root.value;
+            font-family: root.row-font-family;
+            font-size: root.value-font-size;
+            font-weight: root.value-font-weight;
+            color: root.value-color;
+            vertical-alignment: center;
+            wrap: no-wrap;
+        }
+
+        // Cluster-trailing slot (unit when ltr-order, icon when reversed).
+        if  root.ltr-order && root.value-unit != "": Text {
+            text: root.value-unit;
+            font-family: root.row-font-family;
+            font-size: root.value-unit-font-size;
+            color: root.value-color;
+            vertical-alignment: center;
+            wrap: no-wrap;
+        }
+        if !root.ltr-order && root.value-icon != "": Text {
+            text: IconFont.resolve(root.value-icon);
+            font-family: IconFont.font-family-name();
+            font-size: root.icon-size;
+            color: root.value-color;
+            vertical-alignment: center;
+        }
+    }
+}
+
+// ===== KeyValueRow =======================================================
+
+export component KeyValueRow inherits Rectangle {
+    // ===== Public API =====================================================
+
+    /// Leading-side text. **Single-script content** — do not concatenate
+    /// bidi-mixed text into this string (triggers Slint issue #7267).
+    in property <string> label: "";
+
+    /// Optional icon name (resolved through IconFont.resolve). Rendered
+    /// adjacent to `label`. Position flips with `Locale.rtl`: LTR places
+    /// the icon before the label; RTL places it after.
+    in property <string> label-icon: "";
+
+    /// Trailing-side text. **Single-script content** (same constraint
+    /// as `label`).
+    in property <string> value: "";
+
+    /// Optional unit/suffix rendered immediately after `value`
+    /// (e.g. "kg", "%", "SAR"). One Typography step smaller than `value`.
+    /// Position within cluster is fixed (always paired with value);
+    /// the cluster as a whole follows the row's direction rules.
+    in property <string> value-unit: "";
+
+    /// Optional icon rendered at the start of the value cluster (trend
+    /// arrows etc.). Resolved through IconFont.resolve.
+    in property <string> value-icon: "";
+
+    /// Visual weight gradient: subtle (de-emphasized) → normal →
+    /// strong (semibold value) → total (bold, larger value).
+    /// See architecture/key-value-row.md → Emphasis resolution.
+    in property <Emphasis> emphasis: Emphasis.normal;
+
+    /// Colors the value cluster (value, value-unit, value-icon).
+    /// `default` resolves per emphasis (muted-foreground for subtle,
+    /// foreground otherwise). **The label is never toned** — it stays
+    /// at Theme.muted-foreground regardless of value-tone.
+    in property <Tone> value-tone: Tone.default;
+
+    /// Vertical-padding density. Per architecture/key-value-row.md →
+    /// Density semantics, this maps to tighter values than Card's
+    /// padding-density: compact → Spacing.sm (8px), default →
+    /// Spacing.md (12px), comfortable → Spacing.lg (16px).
+    /// Horizontal padding is always 0 — KeyValueRow expects to be
+    /// placed inside a surface (Card / SectionCard) that owns the
+    /// horizontal inset.
+    in property <Density> density: Density.default;
+
+    /// **Set true when the value is a number, percentage, currency,
+    /// quantity, date, or any other LTR-rendered content.** Keeps the
+    /// value, unit, and icon in left-to-right order regardless of
+    /// locale. Default `false` means the value cluster respects
+    /// `Locale.rtl` (textual values mirror in RTL).
+    in property <bool> numeric: false;
+
+    /// Renders a 1px Theme.border line at the bottom of the row.
+    /// Typical use: enable on every row except the last in a list.
+    /// The divider sits at the bottom edge of the row's bounding box;
+    /// inside a Card with rounded corners and zero padding, the
+    /// divider may visually clip into the corner radius — in that case
+    /// set `show-divider: false` on the last row.
+    in property <bool> show-divider: false;
+
+    /// Hover text shown above the row after a brief delay. Empty
+    /// disables. **A non-empty tooltip causes the row to render a
+    /// TouchArea spanning its bounds**, which means clicks on this
+    /// row will NOT propagate to a wrapping interactive Card. Choose
+    /// one: tooltip OR clickable-row-via-Card.
+    in property <string> tooltip: "";
+
+    /// Debug helper. Magenta 2px border around the row + 1px borders
+    /// around each cluster. No aria badge — KeyValueRow has no AT role
+    /// (it renders as two adjacent accessible Text elements).
+    in property <bool> debug-bounds: false;
+
+    // ===== Derived state ==================================================
+
+    // Density → vertical padding. Per CLAUDE.md's "Density is
+    // per-component-tuned" convention, these are tighter than Card's
+    // mapping (Card: md/lg/xl). KeyValueRow is content, not container.
+    property <length> padding-y:
+          root.density == Density.compact     ? Spacing.sm
+        : root.density == Density.comfortable ? Spacing.lg
+        :                                       Spacing.md;
+
+    // Label is always muted-foreground; never tonable.
+    property <color> label-color: Theme.muted-foreground;
+
+    // Label size is always text-sm; weight bumps only at `total` so
+    // the bolded grand-total value has a label that holds its own
+    // without distracting from the value's prominence.
+    property <length> label-font-size: Typography.text-sm;
+
+    property <int> label-font-weight:
+          root.emphasis == Emphasis.total ? Typography.weight-medium
+        :                                   Typography.weight-regular;
+
+    // Value sizing per emphasis. `subtle` shrinks both label and value
+    // to text-sm; `total` grows the value to text-lg. The intermediate
+    // emphasis levels (normal, strong) share text-base.
+    property <length> value-font-size:
+          root.emphasis == Emphasis.subtle ? Typography.text-sm
+        : root.emphasis == Emphasis.total  ? Typography.text-lg
+        :                                    Typography.text-base;
+
+    // Value-unit is one Typography step below value (per design doc).
+    // The mapping is explicit per emphasis rather than computed,
+    // because Typography's scale doesn't have uniform "step-below"
+    // gaps that produce consistent visual proportion.
+    property <length> value-unit-font-size:
+          root.emphasis == Emphasis.subtle ? Typography.text-xs
+        : root.emphasis == Emphasis.total  ? Typography.text-base
+        :                                    Typography.text-sm;
+
+    property <int> value-font-weight:
+          root.emphasis == Emphasis.strong ? Typography.weight-semibold
+        : root.emphasis == Emphasis.total  ? Typography.weight-bold
+        :                                    Typography.weight-regular;
+
+    // Value color: tone overrides the emphasis-derived default.
+    // Per architecture/key-value-row.md → Emphasis resolution, the
+    // value's default color depends on emphasis — `subtle` keeps the
+    // value muted; everything else uses Theme.foreground.
+    property <color> value-default-color:
+          root.emphasis == Emphasis.subtle ? Theme.muted-foreground
+        :                                    Theme.foreground;
+
+    property <color> value-color:
+          root.value-tone == Tone.primary     ? Theme.primary
+        : root.value-tone == Tone.success     ? Theme.success
+        : root.value-tone == Tone.warning     ? Theme.warning
+        : root.value-tone == Tone.destructive ? Theme.destructive
+        : root.value-tone == Tone.info        ? Theme.info
+        : root.value-tone == Tone.muted       ? Theme.muted-foreground
+        :                                       root.value-default-color;
+
+    // Icon size scales with emphasis — total gets a slightly larger
+    // icon to match the larger value text. Other levels share icon-sm.
+    property <length> icon-size:
+          root.emphasis == Emphasis.total ? Sizes.icon-md
+        :                                   Sizes.icon-sm;
+
+    // Per-row font selection (Option A from the design doc).
+    // Both clusters use the same font family, chosen by Locale.current.
+    // Cairo/Tajawal/Noto Sans Arabic include matched Latin glyphs;
+    // matches iOS Arabic behavior.
+    property <string> row-font:
+        Locale.current == "ar" ? Typography.font-family-ar : Typography.font-family;
+
+    // ===== Root sizing ====================================================
+    //
+    // Slint doesn't auto-propagate intrinsic content size through
+    // nested Rectangles (HANDOVER quirk #15). Bind the root's
+    // preferred-size to the inner HorizontalLayout's so the row
+    // hugs its content vertically and stretches horizontally.
+
+    background: transparent;
+    horizontal-stretch: 1.0;
+    preferred-width:  layout.preferred-width;
+    preferred-height: layout.preferred-height;
+    min-width:        layout.min-width;
+    min-height:       layout.min-height;
+
+    // Debug bounds — magenta 2px border on the root. Slint 1.14's
+    // Rectangle has no border-style; thickness (2px root vs 1px
+    // clusters) is the differentiator.
+    border-width: root.debug-bounds ? 2px : 0px;
+    border-color: #ff00ff;
+
+    // ===== Outer layout — duplicated for LTR / RTL ========================
+    //
+    // Slint HorizontalLayout has no direction property, so we branch
+    // the children on Locale.rtl. The cluster CONTENTS are defined
+    // once each (LeadingCluster / TrailingCluster); only the
+    // *placement* duplicates between branches.
+
+    layout := HorizontalLayout {
+        padding-top:    root.padding-y;
+        padding-bottom: root.padding-y;
+        spacing: Spacing.md;
+        alignment: stretch;
+
+        // LTR: [leading | spacer | trailing]
+        if !Locale.rtl: LeadingCluster {
+            label: root.label;
+            label-icon: root.label-icon;
+            label-font-size: root.label-font-size;
+            label-font-weight: root.label-font-weight;
+            label-color: root.label-color;
+            icon-size: root.icon-size;
+            row-font-family: root.row-font;
+            debug-bounds: root.debug-bounds;
+        }
+        if !Locale.rtl: Rectangle { background: transparent; horizontal-stretch: 1.0; }
+        if !Locale.rtl: TrailingCluster {
+            value: root.value;
+            value-unit: root.value-unit;
+            value-icon: root.value-icon;
+            value-font-size: root.value-font-size;
+            value-unit-font-size: root.value-unit-font-size;
+            value-font-weight: root.value-font-weight;
+            value-color: root.value-color;
+            icon-size: root.icon-size;
+            numeric: root.numeric;
+            row-font-family: root.row-font;
+            debug-bounds: root.debug-bounds;
+        }
+
+        // RTL: [trailing | spacer | leading]
+        if Locale.rtl: TrailingCluster {
+            value: root.value;
+            value-unit: root.value-unit;
+            value-icon: root.value-icon;
+            value-font-size: root.value-font-size;
+            value-unit-font-size: root.value-unit-font-size;
+            value-font-weight: root.value-font-weight;
+            value-color: root.value-color;
+            icon-size: root.icon-size;
+            numeric: root.numeric;
+            row-font-family: root.row-font;
+            debug-bounds: root.debug-bounds;
+        }
+        if Locale.rtl: Rectangle { background: transparent; horizontal-stretch: 1.0; }
+        if Locale.rtl: LeadingCluster {
+            label: root.label;
+            label-icon: root.label-icon;
+            label-font-size: root.label-font-size;
+            label-font-weight: root.label-font-weight;
+            label-color: root.label-color;
+            icon-size: root.icon-size;
+            row-font-family: root.row-font;
+            debug-bounds: root.debug-bounds;
+        }
+    }
+
+    // ===== Divider ========================================================
+    //
+    // Absolute-positioned at the row's bottom edge. Outside the
+    // padding-y region so the visual gap between row content and the
+    // divider matches the consumer's expectation (the line sits at the
+    // exact row boundary, not above the bottom padding).
+
+    if root.show-divider: Rectangle {
+        x: 0;
+        y: parent.height - 1px;
+        width: parent.width;
+        height: 1px;
+        background: Theme.border;
+    }
+
+    // ===== Tooltip ========================================================
+    //
+    // GATED ON `tooltip != ""`. Per architecture/key-value-row.md →
+    // Tooltip TouchArea, the TouchArea is rendered only when a tooltip
+    // is set. Rows without a tooltip have no TouchArea, which lets the
+    // dominant settings-list composition work — a `Card { interactive:
+    // true }` wrapping rows receives clicks because no row-level
+    // TouchArea swallows them.
+
+    // The TouchArea and its conditional tooltip popup are wrapped in
+    // a single `if root.tooltip != ""` Rectangle so the popup can
+    // reference the TouchArea's `has-hover` — sibling `if` blocks
+    // can't see each other's named elements in Slint.
+    if root.tooltip != "": Rectangle {
+        x: 0;
+        y: 0;
+        width:  parent.width;
+        height: parent.height;
+        background: transparent;
+
+        tooltip-area := TouchArea {
+            // No clicked handler — we only consume hover for the tooltip.
+        }
+
+        if tooltip-area.has-hover: Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: -self.height - 6px;
+            width:  tooltip-text.preferred-width + 16px;
+            height: tooltip-text.preferred-height + 8px;
+            background: Theme.tooltip-background;
+            border-radius: Radius.sm;
+            drop-shadow-blur:     Theme.shadow-md-blur;
+            drop-shadow-offset-y: Theme.shadow-md-y;
+            drop-shadow-color:    Theme.shadow-md-color;
+            opacity: 0.96;
+            tooltip-text := Text {
+                x: 8px;
+                y: 4px;
+                text: root.tooltip;
+                color: Theme.tooltip-foreground;
+                font-size: Typography.text-xs;
+                font-family: Typography.font-family;
+            }
+        }
+    }
+}

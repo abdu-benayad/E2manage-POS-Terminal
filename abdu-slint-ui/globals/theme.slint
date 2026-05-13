@@ -1,55 +1,214 @@
-// Theme — semantic colors, shape tokens, density, and shadow primitives.
+// Theme — semantic colors, shape tokens, density, shadow primitives,
+// and color-derivation helpers.
 //
-// Current palette: iOS / SwiftUI system colors (Light mode). Tap targets
-// follow Apple HIG (44pt minimum). Shadows are softer and more diffuse
-// than the shadcn web aesthetic to match how iOS buttons feel under touch.
+// Palette: iOS / SwiftUI system colors. The library ships parallel
+// light and dark palettes — every color token has a `light-X` and
+// `dark-X` sub-token, and the public `X` is a derived property that
+// selects between them based on `mode`. Components read the public
+// name unchanged; flipping `mode` re-renders the whole UI via Slint's
+// reactive bindings.
+//
+// Color-derivation helpers (`hover-tint`, `press-tint`, `skirt-tint`)
+// centralize the light-vs-dark direction of luminance shifts: in light
+// mode "go darker on hover" reads as depression; in dark mode the
+// same metaphor is "go brighter" (a dark surface depressed catches
+// more reflected light). Mirrors the Depth global's pattern of
+// centralizing per-mode math so components stay mode-agnostic.
+
+import { ThemeMode } from "../enums.slint";
 
 export global Theme {
-    // --- Surfaces & foregrounds (iOS systemBackground hierarchy) ---
-    out property <color> background: #ffffff;             // systemBackground
-    out property <color> foreground: #1c1c1e;             // label
-    out property <color> surface: #ffffff;                // tertiarySystemBackground
-    out property <color> surface-muted: #f2f2f7;          // secondarySystemBackground
+    // --- Mode (consumer-controlled) ---
+    in-out property <ThemeMode> mode: ThemeMode.light;
 
-    // --- Primary palette (iOS systemBlue — the global tint) ---
-    out property <color> primary: #007aff;                // systemBlue
-    out property <color> primary-hover: #0066d6;          // slightly darker
-    out property <color> primary-foreground: #ffffff;
+    // ====================================================================
+    // SURFACES & FOREGROUNDS — iOS systemBackground hierarchy
+    // ====================================================================
 
-    // --- Destructive palette (iOS systemRed) ---
-    out property <color> destructive: #ff3b30;
-    out property <color> destructive-hover: #d70015;
-    out property <color> destructive-foreground: #ffffff;
+    out property <color> light-background: #ffffff;         // systemBackground
+    out property <color> dark-background:  #000000;         // systemBackground (dark)
+    out property <color> background:
+        mode == ThemeMode.dark ? dark-background : light-background;
 
-    // --- Secondary palette (iOS systemGray / fill) ---
-    out property <color> secondary: #f2f2f7;              // secondarySystemBackground
-    out property <color> secondary-hover: #e5e5ea;        // tertiarySystemFill darker
-    out property <color> secondary-foreground: #1c1c1e;
+    out property <color> light-foreground: #1c1c1e;         // label
+    out property <color> dark-foreground:  #ffffff;
+    out property <color> foreground:
+        mode == ThemeMode.dark ? dark-foreground : light-foreground;
 
-    // --- Accent (hover bg for plain / bordered buttons — iOS quaternary fill) ---
-    out property <color> accent: #f2f2f7;
-    out property <color> accent-foreground: #007aff;      // iOS tint on accent
+    out property <color> light-surface: #ffffff;            // card / sheet
+    out property <color> dark-surface:  #1c1c1e;            // secondarySystemBackground (dark)
+    out property <color> surface:
+        mode == ThemeMode.dark ? dark-surface : light-surface;
 
-    // --- Semantic palettes (iOS system colors) ---
-    out property <color> success: #34c759;                // systemGreen
-    out property <color> success-foreground: #ffffff;
-    out property <color> warning: #ff9500;                // systemOrange
-    out property <color> warning-foreground: #ffffff;
-    out property <color> info: #5ac8fa;                   // systemCyan (legacy lighter blue)
-    out property <color> info-foreground: #ffffff;
+    out property <color> light-surface-muted: #f2f2f7;      // secondarySystemBackground
+    out property <color> dark-surface-muted:  #2c2c2e;      // tertiarySystemBackground (dark)
+    out property <color> surface-muted:
+        mode == ThemeMode.dark ? dark-surface-muted : light-surface-muted;
 
-    // --- Structural ---
-    out property <color> border: #c6c6c8;                 // iOS separator (opaque)
-    out property <color> ring: #007aff;                   // focus ring matches tint
-    out property <color> muted-foreground: #8e8e93;       // iOS systemGray
+    // ====================================================================
+    // PRIMARY PALETTE — iOS systemBlue, the global tint
+    // ====================================================================
 
-    // --- Overlays ---
-    out property <color> tooltip-background: #1c1c1e;     // iOS label (near-black)
-    out property <color> tooltip-foreground: #ffffff;
+    out property <color> light-primary: #007aff;
+    out property <color> dark-primary:  #0a84ff;
+    out property <color> primary:
+        mode == ThemeMode.dark ? dark-primary : light-primary;
 
-    // --- Shape tokens (consumer-configurable) ---
-    // iOS defaults: continuous-corner rounded for primary buttons, no
-    // hard squares. The "pill" shape is the SwiftUI capsule.
+    out property <color> light-primary-hover: #0066d6;
+    out property <color> dark-primary-hover:  #409cff;
+    out property <color> primary-hover:
+        mode == ThemeMode.dark ? dark-primary-hover : light-primary-hover;
+
+    // White on saturated blue in both modes.
+    out property <color> light-primary-foreground: #ffffff;
+    out property <color> dark-primary-foreground:  #ffffff;
+    out property <color> primary-foreground:
+        mode == ThemeMode.dark ? dark-primary-foreground : light-primary-foreground;
+
+    // ====================================================================
+    // DESTRUCTIVE PALETTE — iOS systemRed
+    // ====================================================================
+
+    out property <color> light-destructive: #ff3b30;
+    out property <color> dark-destructive:  #ff453a;
+    out property <color> destructive:
+        mode == ThemeMode.dark ? dark-destructive : light-destructive;
+
+    out property <color> light-destructive-hover: #d70015;
+    out property <color> dark-destructive-hover:  #ff6961;
+    out property <color> destructive-hover:
+        mode == ThemeMode.dark ? dark-destructive-hover : light-destructive-hover;
+
+    out property <color> light-destructive-foreground: #ffffff;
+    out property <color> dark-destructive-foreground:  #ffffff;
+    out property <color> destructive-foreground:
+        mode == ThemeMode.dark ? dark-destructive-foreground : light-destructive-foreground;
+
+    // ====================================================================
+    // SECONDARY PALETTE — iOS systemGray / fill
+    // ====================================================================
+
+    out property <color> light-secondary: #f2f2f7;
+    out property <color> dark-secondary:  #2c2c2e;
+    out property <color> secondary:
+        mode == ThemeMode.dark ? dark-secondary : light-secondary;
+
+    out property <color> light-secondary-hover: #e5e5ea;
+    out property <color> dark-secondary-hover:  #3a3a3c;
+    out property <color> secondary-hover:
+        mode == ThemeMode.dark ? dark-secondary-hover : light-secondary-hover;
+
+    out property <color> light-secondary-foreground: #1c1c1e;
+    out property <color> dark-secondary-foreground:  #ffffff;
+    out property <color> secondary-foreground:
+        mode == ThemeMode.dark ? dark-secondary-foreground : light-secondary-foreground;
+
+    // ====================================================================
+    // ACCENT — hover background for plain / bordered buttons
+    // ====================================================================
+
+    out property <color> light-accent: #f2f2f7;
+    out property <color> dark-accent:  #2c2c2e;
+    out property <color> accent:
+        mode == ThemeMode.dark ? dark-accent : light-accent;
+
+    out property <color> light-accent-foreground: #007aff;
+    out property <color> dark-accent-foreground:  #0a84ff;
+    out property <color> accent-foreground:
+        mode == ThemeMode.dark ? dark-accent-foreground : light-accent-foreground;
+
+    // ====================================================================
+    // SEMANTIC PALETTES — iOS system green / orange / cyan
+    //
+    // Foreground notes:
+    //   - success / warning / info foregrounds FLIP to #000000 in dark
+    //     mode. The dark-mode variants of these saturated colors are
+    //     bright enough (systemGreen #30d158, systemOrange #ff9f0a,
+    //     systemCyan #64d2ff) that black text reads with higher
+    //     contrast than white. Apple's own Pills/Badges in iOS dark
+    //     mode use black foreground on these colors for the same
+    //     reason.
+    // ====================================================================
+
+    out property <color> light-success: #34c759;
+    out property <color> dark-success:  #30d158;
+    out property <color> success:
+        mode == ThemeMode.dark ? dark-success : light-success;
+
+    out property <color> light-success-foreground: #ffffff;
+    out property <color> dark-success-foreground:  #000000;
+    out property <color> success-foreground:
+        mode == ThemeMode.dark ? dark-success-foreground : light-success-foreground;
+
+    out property <color> light-warning: #ff9500;
+    out property <color> dark-warning:  #ff9f0a;
+    out property <color> warning:
+        mode == ThemeMode.dark ? dark-warning : light-warning;
+
+    out property <color> light-warning-foreground: #ffffff;
+    out property <color> dark-warning-foreground:  #000000;
+    out property <color> warning-foreground:
+        mode == ThemeMode.dark ? dark-warning-foreground : light-warning-foreground;
+
+    out property <color> light-info: #5ac8fa;
+    out property <color> dark-info:  #64d2ff;
+    out property <color> info:
+        mode == ThemeMode.dark ? dark-info : light-info;
+
+    out property <color> light-info-foreground: #ffffff;
+    out property <color> dark-info-foreground:  #000000;
+    out property <color> info-foreground:
+        mode == ThemeMode.dark ? dark-info-foreground : light-info-foreground;
+
+    // ====================================================================
+    // STRUCTURAL
+    //
+    // border becomes load-bearing in dark mode: Card's bordered:true
+    // default carries more separation weight than shadows can in
+    // black-on-near-black surfaces.
+    //
+    // muted-foreground (#8e8e93 — iOS systemGray) is intentionally
+    // unchanged across modes. systemGray's luminance places it between
+    // black and white at comparable contrast on both backgrounds.
+    // ====================================================================
+
+    out property <color> light-border: #c6c6c8;
+    out property <color> dark-border:  #38383a;
+    out property <color> border:
+        mode == ThemeMode.dark ? dark-border : light-border;
+
+    out property <color> light-ring: #007aff;
+    out property <color> dark-ring:  #0a84ff;
+    out property <color> ring:
+        mode == ThemeMode.dark ? dark-ring : light-ring;
+
+    out property <color> light-muted-foreground: #8e8e93;
+    out property <color> dark-muted-foreground:  #8e8e93;
+    out property <color> muted-foreground:
+        mode == ThemeMode.dark ? dark-muted-foreground : light-muted-foreground;
+
+    // ====================================================================
+    // OVERLAYS — TOOLTIPS INTENTIONALLY INVERT
+    //
+    // Tooltip background pops AGAINST the surrounding UI, not WITH it:
+    // a near-black tooltip on a light page is the iOS convention; a
+    // light tooltip on a dark page is the dark-mode mirror image.
+    // ====================================================================
+
+    out property <color> light-tooltip-background: #1c1c1e;
+    out property <color> dark-tooltip-background:  #f2f2f7;
+    out property <color> tooltip-background:
+        mode == ThemeMode.dark ? dark-tooltip-background : light-tooltip-background;
+
+    out property <color> light-tooltip-foreground: #ffffff;
+    out property <color> dark-tooltip-foreground:  #1c1c1e;
+    out property <color> tooltip-foreground:
+        mode == ThemeMode.dark ? dark-tooltip-foreground : light-tooltip-foreground;
+
+    // ====================================================================
+    // SHAPE TOKENS — consumer-configurable, mode-independent
+    // ====================================================================
+
     // Values: "rounded" | "pill" | "square"
     in-out property <string> button-shape: "rounded";
     // Values: "rounded" | "square"
@@ -57,25 +216,86 @@ export global Theme {
     // Values: "rounded" | "pill" | "circle" | "square"
     in-out property <string> icon-button-shape: "circle";
 
-    // --- Density (consumer-configurable) ---
+    // --- Density ---
     // Values: "compact" | "default" | "comfortable"
     in-out property <string> density: "default";
 
-    // --- Shadow primitives ---
-    // Tasteful POS-tablet defaults. Visible without overpowering content.
+    // ====================================================================
+    // SHADOW PRIMITIVES
+    //
+    // Blur and y-offset are mode-independent; only the color (alpha)
+    // changes. Dark-mode shadows need much higher opacity because
+    // black-on-near-black has near-zero contrast otherwise.
+    //
+    // Card's bordered:true default becomes load-bearing here — even
+    // at 60-90% alpha, dark-mode shadows alone don't fully define
+    // elevation against a #1c1c1e surface on a #000000 background.
+    // ====================================================================
+
     out property <length> shadow-sm-blur: 8px;
     out property <length> shadow-sm-y: 2px;
-    out property <color>  shadow-sm-color: #0000001f;     // rgba(0,0,0,0.12)
+    out property <color>  light-shadow-sm-color: #0000001f;   // 12%
+    out property <color>  dark-shadow-sm-color:  #00000099;   // 60%
+    out property <color>  shadow-sm-color:
+        mode == ThemeMode.dark ? dark-shadow-sm-color : light-shadow-sm-color;
 
     out property <length> shadow-md-blur: 18px;
     out property <length> shadow-md-y: 6px;
-    out property <color>  shadow-md-color: #00000038;     // rgba(0,0,0,0.22)
+    out property <color>  light-shadow-md-color: #00000038;   // 22%
+    out property <color>  dark-shadow-md-color:  #000000b3;   // 70%
+    out property <color>  shadow-md-color:
+        mode == ThemeMode.dark ? dark-shadow-md-color : light-shadow-md-color;
 
     out property <length> shadow-lg-blur: 32px;
     out property <length> shadow-lg-y: 14px;
-    out property <color>  shadow-lg-color: #00000047;     // rgba(0,0,0,0.28)
+    out property <color>  light-shadow-lg-color: #00000047;   // 28%
+    out property <color>  dark-shadow-lg-color:  #000000cc;   // 80%
+    out property <color>  shadow-lg-color:
+        mode == ThemeMode.dark ? dark-shadow-lg-color : light-shadow-lg-color;
 
     out property <length> shadow-xl-blur: 56px;
     out property <length> shadow-xl-y: 28px;
-    out property <color>  shadow-xl-color: #00000059;     // rgba(0,0,0,0.35)
+    out property <color>  light-shadow-xl-color: #00000059;   // 35%
+    out property <color>  dark-shadow-xl-color:  #000000e6;   // 90%
+    out property <color>  shadow-xl-color:
+        mode == ThemeMode.dark ? dark-shadow-xl-color : light-shadow-xl-color;
+
+    // ====================================================================
+    // COLOR-DERIVATION HELPERS
+    //
+    // Centralize mode-asymmetric luminance shifts so components stop
+    // computing colors and instead bind to these helpers. Mirrors the
+    // Depth global's pattern (math in the global, mode-agnostic
+    // components at the call site).
+    //
+    // Three magnitude families:
+    //   - hover-tint: subtle surface tint (Card hover, etc.)
+    //   - press-tint: deeper surface or saturated-tone press feedback
+    //   - skirt-tint: aggressive shift for two-layer button extrusion
+    //                 side-walls (~40% in light = darker side; reduced
+    //                 in dark mode because near-black skirts saturate)
+    //
+    // Each function returns the input color shifted in the direction
+    // that produces the right visual metaphor for the current mode:
+    // "deeper into the surface" in light mode (darker), "more lit by
+    // contact" in dark mode (brighter).
+    // ====================================================================
+
+    pure public function hover-tint(base: color) -> color {
+        return mode == ThemeMode.dark ? base.brighter(6%) : base.darker(2%);
+    }
+
+    pure public function press-tint(base: color) -> color {
+        return mode == ThemeMode.dark ? base.brighter(12%) : base.darker(4%);
+    }
+
+    // Skirt is the side-wall of an extruded two-layer surface. In
+    // light mode the side is darker than the face (shadow on the
+    // side). In dark mode the side is also darker but by a smaller
+    // amount — going much darker than the face on an already-dark
+    // surface produces a featureless black hole. The face-vs-skirt
+    // contrast needs to stay perceptible without saturating.
+    pure public function skirt-tint(base: color) -> color {
+        return mode == ThemeMode.dark ? base.darker(0.2) : base.darker(0.4);
+    }
 }

@@ -15,4 +15,13 @@ export global Animation {
     // Components reading this: Button, IconButton. Tune once at startup
     // to slow or quicken every spinner in the app at once.
     in-out property <duration> spinner-period: 1200ms;
+
+    // Suggested duration for theme-mode transitions (light <-> dark).
+    // Currently unused — component-level `animate background` blocks
+    // run at `fast` (120ms), which makes mode flips feel snappy but
+    // slightly rushed for a deliberate visual mode change. This token
+    // is the v1.1 knob: components wanting a more deliberate fade on
+    // mode-driven color changes can substitute this duration. Tuned
+    // once here rather than per-component.
+    out property <duration> theme-transition: 300ms;
 }

@@ -183,10 +183,13 @@ export component Card inherits Rectangle {
     property <bool> visually-pressed: root.interactive && !root.disabled && touch.pressed;
 
     // Background tint reacts to hover/press only when interactive.
+    // Direction of the luminance shift is mode-asymmetric (darker in
+    // light mode, brighter in dark mode) — delegated to Theme tint
+    // helpers so this site stays mode-agnostic.
     property <color> base-bg-resolved:
           root.interactive && root.disabled ? Theme.surface
-        : root.visually-pressed             ? Theme.surface.darker(4%)
-        : root.effective-hover              ? Theme.surface.darker(2%)
+        : root.visually-pressed             ? Theme.press-tint(Theme.surface)
+        : root.effective-hover              ? Theme.hover-tint(Theme.surface)
         :                                     Theme.surface;
 
     // ===== Depth (delegated to the Depth global) =========================

@@ -168,10 +168,14 @@ export component Toggle inherits Rectangle {
     property <color> track-bg-target: root.on ? root.track-on-bg : root.track-off-bg;
 
     // Subtle inner-edge border for channel definition (no inset shadow in v1).
+    // On-track derivation darkens the saturated tone in both modes (works
+    // because the source is saturated). Off-track uses press-tint because
+    // its source (Theme.border) is neutral — darkening a near-black border
+    // in dark mode produces no perceptible edge.
     property <color> track-border-color:
           root.debug-bounds ? #ff00ff
         : root.on           ? root.track-on-bg.darker(10%)
-        :                     root.track-off-bg.darker(5%);
+        :                     Theme.press-tint(root.track-off-bg);
 
     // ===== Press / hover / disabled ======================================
 

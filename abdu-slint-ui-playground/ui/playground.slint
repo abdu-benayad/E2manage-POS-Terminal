@@ -11,12 +11,13 @@
 // abdu-slint-ui can be debugged without breaking the harness. Each section
 // renders abdu-slint-ui components directly in its own preview pane.
 
-import { Theme, Locale, IconFont, IconFamily, CurrencyFormat, Animation } from "@abdu-slint-ui";
+import { Theme, ThemeMode, Locale, IconFont, IconFamily, CurrencyFormat, Animation } from "@abdu-slint-ui";
 import { ComboBox, CheckBox, HorizontalBox, VerticalBox, ListView, StandardListView, StandardButton, ScrollView, Slider } from "std-widgets.slint";
 import { ButtonSection } from "sections/button.slint";
 import { IconButtonSection } from "sections/icon-button.slint";
 import { ToggleSection } from "sections/toggle.slint";
 import { CardSection } from "sections/card.slint";
+import { KeyValueRowSection } from "sections/key-value-row.slint";
 
 export component PlaygroundWindow inherits Window {
     title: "abdu-slint-ui Playground";
@@ -161,11 +162,21 @@ export component PlaygroundWindow inherits Window {
                     }
                 }
 
-                Text {
-                    text: "(KeyValueRow appears here as its section lands)";
-                    font-size: 11px;
-                    color: #94a3b8;
-                    wrap: word-wrap;
+                key-value-row-tile := Rectangle {
+                    height: 36px;
+                    background: root.selected-section == "key-value-row" ? #e2e8f0 : transparent;
+                    border-radius: 6px;
+                    Text {
+                        x: 12px;
+                        text: "KeyValueRow";
+                        font-size: 13px;
+                        vertical-alignment: center;
+                        color: #0f172a;
+                    }
+                    TouchArea {
+                        clicked => { root.selected-section = "key-value-row"; }
+                        mouse-cursor: pointer;
+                    }
                 }
             }
         }
@@ -236,6 +247,17 @@ export component PlaygroundWindow inherits Window {
                     }
                     HorizontalBox {
                         spacing: 6px;
+                        Text { text: "Mode:"; vertical-alignment: center; font-size: 12px; }
+                        ComboBox {
+                            model: ["light", "dark"];
+                            current-index: Theme.mode == ThemeMode.dark ? 1 : 0;
+                            selected(v) => {
+                                Theme.mode = v == "dark" ? ThemeMode.dark : ThemeMode.light;
+                            }
+                        }
+                    }
+                    HorizontalBox {
+                        spacing: 6px;
                         Text { text: "Currency:"; vertical-alignment: center; font-size: 12px; }
                         ComboBox {
                             model: ["USD", "EUR", "SAR", "MAD"];
@@ -295,12 +317,13 @@ export component PlaygroundWindow inherits Window {
             if root.selected-section == "icon-button": IconButtonSection { }
             if root.selected-section == "toggle":      ToggleSection { }
             if root.selected-section == "card":        CardSection { }
-            if root.selected-section != "button" && root.selected-section != "icon-button" && root.selected-section != "toggle" && root.selected-section != "card": Rectangle {
+            if root.selected-section == "key-value-row": KeyValueRowSection { }
+            if root.selected-section != "button" && root.selected-section != "icon-button" && root.selected-section != "toggle" && root.selected-section != "card" && root.selected-section != "key-value-row": Rectangle {
                 background: Theme.surface-muted;
                 Text {
                     x: 32px;
                     y: 32px;
-                    text: "Section '" + root.selected-section + "' not yet implemented. Select Button, IconButton, Toggle, or Card from the sidebar.";
+                    text: "Section '" + root.selected-section + "' not yet implemented. Select Button, IconButton, Toggle, Card, or KeyValueRow from the sidebar.";
                     color: Theme.muted-foreground;
                 }
             }

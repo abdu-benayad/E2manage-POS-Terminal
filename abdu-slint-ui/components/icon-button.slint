@@ -290,7 +290,10 @@ export component IconButton inherits Rectangle {
         y: 0;
         width:  parent.width;
         height: parent.height;
-        background: root.active-bg.darker(0.4);
+        // Side-wall shade for the two-layer extrusion. skirt-tint
+        // reduces the magnitude in dark mode so the side doesn't
+        // saturate against the face.
+        background: Theme.skirt-tint(root.active-bg);
         border-radius: root.resolved-radius;
         border-width:
               root.debug-bounds                      ? 2px

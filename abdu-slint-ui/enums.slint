@@ -90,3 +90,12 @@ export enum IconFamily {
     phosphor,
     lucide,
 }
+
+// Color-palette mode. Theme.mode selects between the parallel light-*
+// and dark-* sub-palettes; every public Theme color token is derived
+// from the active mode. Consumers populate Theme.mode at startup
+// (typically from an OS-preference detection in the Rust host).
+export enum ThemeMode {
+    light,
+    dark,
+}

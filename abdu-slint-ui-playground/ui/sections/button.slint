@@ -198,6 +198,27 @@ export component ButtonSection inherits Rectangle {
                     }
                 }
 
+                // Mode-reference strip. Three fixed-variant Buttons that
+                // exercise both brand and neutral palettes so toggling
+                // Theme.mode visibly flips at least two of them. The
+                // configurable Button above can be hidden under a
+                // `bg-color` override or a brand-only variant; this strip
+                // is always-on, escape-hatch-free, and proves mode
+                // propagation reaches Button regardless of what the
+                // playground panel is currently driving.
+                Text {
+                    text: "Mode reference (fixed variants — should flip when Mode changes)";
+                    font-size: Typography.text-sm;
+                    color: Theme.muted-foreground;
+                }
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: Spacing.md;
+                    Button { label: "default";   variant: ButtonVariant.default;   }
+                    Button { label: "outline";   variant: ButtonVariant.outline;   }
+                    Button { label: "secondary"; variant: ButtonVariant.secondary; }
+                }
+
                 // Code snippet panel.
                 Rectangle {
                     background: #0f172a;

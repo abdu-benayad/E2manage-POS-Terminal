@@ -166,6 +166,35 @@ Required environment globals (defined in `globals/`):
 
 Consumers populate these once from Rust at app startup. Components read from them everywhere.
 
+### Hover / press tints go through `Theme` helpers, not inline `.darker()`
+
+A `.darker(N%)` inline call on a neutral surface (Theme.surface, Theme.border, consumer-supplied background) is a dark-mode footgun. Theme.surface in dark mode is `#1c1c1e`; `.darker(4%)` produces a near-identical near-black, and the press feedback disappears. The fix is `Theme.press-tint(Theme.surface)` — the helper darkens in light mode and brightens in dark mode.
+
+Three helpers exist:
+
+- `Theme.hover-tint(base)` — subtle shift (2–6%) for hover affordance on neutral surfaces.
+- `Theme.press-tint(base)` — deeper shift (4–12%) for press feedback on neutral surfaces.
+- `Theme.skirt-tint(base)` — large shift (20–40%) for the two-layer button extrusion side-wall. Darkens in both modes (sides are darker than faces regardless of theme), but the magnitude shrinks in dark mode to avoid saturating against a near-black face.
+
+**The rule isn't "always use a helper."** Saturated tones (primary blue, destructive red, success green) darken on press in both modes — that's how iOS dark mode actually behaves. For saturated bases, inline `.darker(N%)` is correct. The helpers are specifically for **neutral surface tints** where the direction of luminance shift inverts with mode.
+
+If in doubt: ask "is the input color neutral (a surface, a border, a consumer override of unknown content)?" If yes, use the helper. If it's a saturated tone known at the call site, inline is fine.
+
+### Brand-color overrides require both palettes
+
+Theme tokens have parallel `light-X` and `dark-X` sub-properties; the public `X` is a derived selector on `Theme.mode`. A consumer setting `Theme.primary = brand_blue` overrides only the active value — the dark-mode `dark-primary` retains its iOS default and the brand suddenly looks wrong in dark mode.
+
+The rule: **override both palettes and both hover variants** for any brand-customized token. For a primary override, that's four properties:
+
+```rust
+theme.set_light_primary(brand_blue);
+theme.set_dark_primary(brand_blue_for_dark);
+theme.set_light_primary_hover(brand_blue.darken(6%));
+theme.set_dark_primary_hover(brand_blue_for_dark.brighten(6%));
+```
+
+The library does not auto-derive dark-mode shades from light-mode bases — the hand-tuned light/dark pairs matter visually (iOS systemBlue light `#007aff` and dark `#0a84ff` are not algorithmically related; Apple chose them by eye). Consumers customizing brand colors do the same work.
+
 ### Density is per-component-tuned
 
 `Density { compact, default, comfortable }` names the same relative gradient across all components — "tighter / standard / looser" — but the absolute pixel values are calibrated to each component's role. A container (`Card`) and content (`KeyValueRow`) have different role-appropriate insets even at the same nominal density: Card maps to `Spacing.md / lg / xl` (12/16/24px), KeyValueRow maps to `Spacing.sm / md / lg` (8/12/16px). This is by design, not a contract violation.
