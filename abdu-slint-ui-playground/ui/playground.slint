@@ -288,6 +288,15 @@ export component PlaygroundWindow inherits Window {
                     }
                     HorizontalBox {
                         spacing: 6px;
+                        Text { text: "Locale:"; vertical-alignment: center; font-size: 12px; }
+                        ComboBox {
+                            model: ["en", "ar"];
+                            current-index: Locale.current == "ar" ? 1 : 0;
+                            selected(v) => { Locale.current = v; }
+                        }
+                    }
+                    HorizontalBox {
+                        spacing: 6px;
                         Text {
                             text: "Spinner:";
                             vertical-alignment: center;

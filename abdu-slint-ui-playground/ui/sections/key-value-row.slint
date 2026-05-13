@@ -10,7 +10,7 @@
 // KeyValueRow is the first display-only primitive in the library — no
 // callbacks, no click count, no demo-toggle state.
 
-import { KeyValueRow, Card, Emphasis, Tone, Density, Theme, Typography, Spacing } from "@abdu-slint-ui";
+import { KeyValueRow, Card, Emphasis, Tone, Density, UnitPosition, Theme, Typography, Spacing } from "@abdu-slint-ui";
 import { ComboBox, CheckBox, LineEdit, HorizontalBox, VerticalBox, ScrollView, Slider } from "std-widgets.slint";
 
 export component KeyValueRowSection inherits Rectangle {
@@ -23,8 +23,9 @@ export component KeyValueRowSection inherits Rectangle {
     in-out property <string> v-emphasis: "normal";
     in-out property <string> v-value-tone: "default";
     in-out property <string> v-density: "default";
-    in-out property <bool>   v-numeric: true;
+    in-out property <string> v-unit-position: "trailing";
     in-out property <bool>   v-show-divider: false;
+    in-out property <bool>   v-wrap: false;
     in-out property <string> v-tooltip: "";
     in-out property <bool>   v-debug-bounds: false;
 
@@ -48,6 +49,10 @@ export component KeyValueRowSection inherits Rectangle {
           v-density == "compact"     ? Density.compact
         : v-density == "comfortable" ? Density.comfortable
         :                              Density.default;
+
+    property <UnitPosition> unit-position-enum:
+          v-unit-position == "leading" ? UnitPosition.leading
+        :                                UnitPosition.trailing;
 
     background: transparent;
 
@@ -83,8 +88,9 @@ export component KeyValueRowSection inherits Rectangle {
                             emphasis: root.emphasis-enum;
                             value-tone: root.value-tone-enum;
                             density: root.density-enum;
-                            numeric: root.v-numeric;
+                            unit-position: root.unit-position-enum;
                             show-divider: root.v-show-divider;
+                            wrap: root.v-wrap;
                             tooltip: root.v-tooltip;
                             debug-bounds: root.v-debug-bounds;
                         }
@@ -105,10 +111,10 @@ export component KeyValueRowSection inherits Rectangle {
                         max-content-width: 480px;
                         padding-density: Density.comfortable;
                         VerticalLayout {
-                            KeyValueRow { label: "Subtotal";    value: "42.00"; value-unit: "SAR"; emphasis: Emphasis.subtle; numeric: true; show-divider: true; }
-                            KeyValueRow { label: "VAT (15%)";   value: "6.30";  value-unit: "SAR"; emphasis: Emphasis.normal; numeric: true; show-divider: true; }
-                            KeyValueRow { label: "Service fee"; value: "2.50";  value-unit: "SAR"; emphasis: Emphasis.strong; numeric: true; show-divider: true; }
-                            KeyValueRow { label: "Total";       value: "50.80"; value-unit: "SAR"; emphasis: Emphasis.total;  numeric: true; }
+                            KeyValueRow { label: "Subtotal";    value: "42.00"; value-unit: "SAR"; emphasis: Emphasis.subtle; show-divider: true; }
+                            KeyValueRow { label: "VAT (15%)";   value: "6.30";  value-unit: "SAR"; emphasis: Emphasis.normal; show-divider: true; }
+                            KeyValueRow { label: "Service fee"; value: "2.50";  value-unit: "SAR"; emphasis: Emphasis.strong; show-divider: true; }
+                            KeyValueRow { label: "Total";       value: "50.80"; value-unit: "SAR"; emphasis: Emphasis.total;  }
                         }
                     }
                 }
@@ -132,8 +138,9 @@ export component KeyValueRowSection inherits Rectangle {
                                 + (root.v-emphasis != "normal"         ? "    emphasis: Emphasis." + root.v-emphasis + ";\n" : "")
                                 + (root.v-value-tone != "default"      ? "    value-tone: Tone." + root.v-value-tone + ";\n" : "")
                                 + (root.v-density != "default"         ? "    density: Density." + root.v-density + ";\n" : "")
-                                + (root.v-numeric                      ? "    numeric: true;\n" : "")
+                                + (root.v-unit-position != "trailing"  ? "    unit-position: UnitPosition." + root.v-unit-position + ";\n" : "")
                                 + (root.v-show-divider                 ? "    show-divider: true;\n" : "")
+                                + (root.v-wrap                         ? "    wrap: true;\n" : "")
                                 + (root.v-tooltip != ""                ? "    tooltip: \"" + root.v-tooltip + "\";\n" : "")
                                 + (root.v-debug-bounds                 ? "    debug-bounds: true;\n" : "")
                                 + "}";
@@ -213,15 +220,16 @@ export component KeyValueRowSection inherits Rectangle {
                         selected(v) => { root.v-density = v; }
                     }
 
-                    CheckBox {
-                        text: "numeric (LTR-atomic value cluster)";
-                        checked: root.v-numeric;
-                        toggled => { root.v-numeric = self.checked; }
+                    Text { text: "unit-position (XOR-flips cluster with Locale.rtl)"; font-size: 12px; color: Theme.muted-foreground; }
+                    ComboBox {
+                        model: ["trailing", "leading"];
+                        current-value: root.v-unit-position;
+                        selected(v) => { root.v-unit-position = v; }
                     }
                     Text {
-                        text: root.v-numeric
-                            ? "Cluster stays [icon, value, unit] regardless of locale."
-                            : "Cluster mirrors to [unit, value, icon] in RTL.";
+                        text: root.v-unit-position == "leading"
+                            ? "Currency-prefix style: reader reads unit → value in both locales (LTR flips cluster; RTL un-mirrors it)."
+                            : "Default: reader reads value → unit in both locales (LTR [icon, value, unit]; RTL mirrors to [unit, value, icon]).";
                         font-size: 11px;
                         color: Theme.muted-foreground;
                         wrap: word-wrap;
@@ -231,6 +239,20 @@ export component KeyValueRowSection inherits Rectangle {
                         text: "show-divider (1px bottom border)";
                         checked: root.v-show-divider;
                         toggled => { root.v-show-divider = self.checked; }
+                    }
+
+                    CheckBox {
+                        text: "wrap (multi-line; relaxes height lock)";
+                        checked: root.v-wrap;
+                        toggled => { root.v-wrap = self.checked; }
+                    }
+                    Text {
+                        text: root.v-wrap
+                            ? "Label and value wrap onto multiple lines; the row grows vertically with content."
+                            : "Single-line. Long content truncates with ellipsis. Row height stays locked.";
+                        font-size: 11px;
+                        color: Theme.muted-foreground;
+                        wrap: word-wrap;
                     }
 
                     Text { text: "tooltip (renders TouchArea — blocks parent Card clicks)"; font-size: 12px; color: Theme.muted-foreground; wrap: word-wrap; }

@@ -6,8 +6,24 @@
 
 export global Typography {
     // --- Font families (consumer-configurable) ---
-    in-out property <string> font-family: "Inter, system-ui, -apple-system, sans-serif";
-    in-out property <string> font-family-ar: "Cairo, Tajawal, Noto Sans Arabic, sans-serif";
+    //
+    // Slint's `font-family` property takes a single font name, NOT a
+    // CSS-style fallback list. The string must match a font installed
+    // on the consumer system or one bundled via `import "*.ttf"` in
+    // lib.slint. Comma-separated fallback chains do not work — they
+    // resolve to a literal lookup that fails silently and Slint falls
+    // back to its default font (which usually has no Arabic glyphs,
+    // so RTL text renders as boxes).
+    //
+    // Defaults below are picked for broad availability on Linux/macOS;
+    // consumers shipping their own brand font override these at startup
+    // (e.g. `Typography.font-family = "SF Pro Text";`).
+    //
+    // For guaranteed cross-system availability the library should bundle
+    // an Arabic font (Cairo/Tajawal OFL) under `assets/` and import it
+    // in `lib.slint` — tracked as a v1.1 candidate.
+    in-out property <string> font-family: "Inter";
+    in-out property <string> font-family-ar: "Noto Sans Arabic";
 
     // --- Size scale ---
     out property <length> text-xs: 12px;
