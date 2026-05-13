@@ -1,13 +1,13 @@
-// KeyValueRow preview — emphasis × tone × density × numeric × RTL × composition matrix.
+// KeyValueRow preview — emphasis × tone × density × unit-position × RTL × composition matrix.
 // Run: `slint-viewer abdu-slint-ui/previews/key-value-row.slint`
 //
-// The most important section is "Numeric × RTL" — it validates the load-bearing
-// design decision (`numeric: bool` gating LTR-atomic behavior on the value cluster).
+// The most important section is "Unit-position × locale" — it validates the
+// XOR flip between Locale.rtl and `unit-position` on the value cluster.
 
 import { KeyValueRow } from "../components/key-value-row.slint";
 import { Card } from "../components/card.slint";
 import { Button } from "../components/button.slint";
-import { Emphasis, Tone, Density, Shape, Elevation } from "../enums.slint";
+import { Emphasis, Tone, Density, Shape, Elevation, ThemeMode, UnitPosition } from "../enums.slint";
 import { Theme } from "../globals/theme.slint";
 import { Typography } from "../globals/typography.slint";
 import { Spacing } from "../globals/spacing.slint";
@@ -32,7 +32,7 @@ component Section inherits VerticalLayout {
 export component KeyValueRowPreview inherits Window {
     title: "KeyValueRow — preview";
     preferred-width: 1200px;
-    preferred-height: 1700px;
+    preferred-height: 2200px;
     background: Theme.background;
 
     in-out property <bool> rtl-toggle: false;
@@ -40,6 +40,9 @@ export component KeyValueRowPreview inherits Window {
 
     in-out property <bool> arabic-locale: false;
     changed arabic-locale => { Locale.current = self.arabic-locale ? "ar" : "en"; }
+
+    in-out property <bool> dark-mode: false;
+    changed dark-mode => { Theme.mode = self.dark-mode ? ThemeMode.dark : ThemeMode.light; }
 
     VerticalLayout {
         padding: Spacing.xl;
@@ -52,7 +55,7 @@ export component KeyValueRowPreview inherits Window {
             color: Theme.foreground;
         }
         Text {
-            text: "Labelled-value display row. First explicit incarnation of the single-script segmentation principle: label and value render in SEPARATE Text elements, never concatenated. The `numeric` property gates LTR-atomic behavior for numeric+unit pairs.";
+            text: "Labelled-value display row. First explicit incarnation of the single-script segmentation principle: label and value render in SEPARATE Text elements, never concatenated. The `unit-position` property flips the unit between the reading-trailing edge (default — reader reads value→unit) and reading-leading edge (currency-prefix style — reader reads unit→value).";
             font-size: Typography.text-sm;
             color: Theme.muted-foreground;
             wrap: word-wrap;
@@ -68,6 +71,10 @@ export component KeyValueRowPreview inherits Window {
                 label: root.arabic-locale ? "Switch font: Latin" : "Switch font: Arabic";
                 clicked => { root.arabic-locale = !root.arabic-locale; }
             }
+            Button {
+                label: root.dark-mode ? "Switch to light mode" : "Switch to dark mode";
+                clicked => { root.dark-mode = !root.dark-mode; }
+            }
         }
 
         // --- Emphasis ---
@@ -77,10 +84,10 @@ export component KeyValueRowPreview inherits Window {
                 max-content-width: 480px;
                 padding-density: Density.comfortable;
                 VerticalLayout {
-                    KeyValueRow { label: "Subtotal";     value: "42.00"; value-unit: "SAR"; emphasis: Emphasis.subtle; numeric: true; show-divider: true; }
-                    KeyValueRow { label: "VAT (15%)";    value: "6.30";  value-unit: "SAR"; emphasis: Emphasis.normal; numeric: true; show-divider: true; }
-                    KeyValueRow { label: "Service fee";  value: "2.50";  value-unit: "SAR"; emphasis: Emphasis.strong; numeric: true; show-divider: true; }
-                    KeyValueRow { label: "Total";        value: "50.80"; value-unit: "SAR"; emphasis: Emphasis.total;  numeric: true; }
+                    KeyValueRow { label: "Subtotal";     value: "42.00"; value-unit: "SAR"; emphasis: Emphasis.subtle; show-divider: true; }
+                    KeyValueRow { label: "VAT (15%)";    value: "6.30";  value-unit: "SAR"; emphasis: Emphasis.normal; show-divider: true; }
+                    KeyValueRow { label: "Service fee";  value: "2.50";  value-unit: "SAR"; emphasis: Emphasis.strong; show-divider: true; }
+                    KeyValueRow { label: "Total";        value: "50.80"; value-unit: "SAR"; emphasis: Emphasis.total;  }
                 }
             }
         }
@@ -92,11 +99,11 @@ export component KeyValueRowPreview inherits Window {
                 max-content-width: 480px;
                 padding-density: Density.comfortable;
                 VerticalLayout {
-                    KeyValueRow { label: "Default";     value: "42.00"; value-unit: "SAR"; value-tone: Tone.default;     numeric: true; show-divider: true; }
-                    KeyValueRow { label: "Primary";     value: "42.00"; value-unit: "SAR"; value-tone: Tone.primary;     numeric: true; show-divider: true; }
-                    KeyValueRow { label: "Success";     value: "+12.5"; value-unit: "%";   value-tone: Tone.success;     numeric: true; value-icon: "arrow-up"; show-divider: true; }
+                    KeyValueRow { label: "Default";     value: "42.00"; value-unit: "SAR"; value-tone: Tone.default;     show-divider: true; }
+                    KeyValueRow { label: "Primary";     value: "42.00"; value-unit: "SAR"; value-tone: Tone.primary;     show-divider: true; }
+                    KeyValueRow { label: "Success";     value: "+12.5"; value-unit: "%";   value-tone: Tone.success;     value-icon: "arrow-up"; show-divider: true; }
                     KeyValueRow { label: "Warning";     value: "Low";   value-tone: Tone.warning;     show-divider: true; }
-                    KeyValueRow { label: "Destructive"; value: "-3.2";  value-unit: "%";   value-tone: Tone.destructive; numeric: true; value-icon: "arrow-down"; show-divider: true; }
+                    KeyValueRow { label: "Destructive"; value: "-3.2";  value-unit: "%";   value-tone: Tone.destructive; value-icon: "arrow-down"; show-divider: true; }
                     KeyValueRow { label: "Info";        value: "Synced"; value-tone: Tone.info;        show-divider: true; }
                     KeyValueRow { label: "Muted";       value: "—";     value-tone: Tone.muted; }
                 }
@@ -113,8 +120,8 @@ export component KeyValueRowPreview inherits Window {
                     max-content-width: 280px;
                     VerticalLayout {
                         Text { text: "compact"; font-size: Typography.text-xs; color: Theme.muted-foreground; }
-                        KeyValueRow { label: "Brightness"; value: "80"; value-unit: "%";  density: Density.compact; numeric: true; show-divider: true; }
-                        KeyValueRow { label: "Volume";     value: "60"; value-unit: "%";  density: Density.compact; numeric: true; show-divider: true; }
+                        KeyValueRow { label: "Brightness"; value: "80"; value-unit: "%";  density: Density.compact; show-divider: true; }
+                        KeyValueRow { label: "Volume";     value: "60"; value-unit: "%";  density: Density.compact; show-divider: true; }
                         KeyValueRow { label: "Theme";      value: "Dark";                  density: Density.compact; }
                     }
                 }
@@ -122,8 +129,8 @@ export component KeyValueRowPreview inherits Window {
                     max-content-width: 280px;
                     VerticalLayout {
                         Text { text: "default"; font-size: Typography.text-xs; color: Theme.muted-foreground; }
-                        KeyValueRow { label: "Brightness"; value: "80"; value-unit: "%";  density: Density.default; numeric: true; show-divider: true; }
-                        KeyValueRow { label: "Volume";     value: "60"; value-unit: "%";  density: Density.default; numeric: true; show-divider: true; }
+                        KeyValueRow { label: "Brightness"; value: "80"; value-unit: "%";  density: Density.default; show-divider: true; }
+                        KeyValueRow { label: "Volume";     value: "60"; value-unit: "%";  density: Density.default; show-divider: true; }
                         KeyValueRow { label: "Theme";      value: "Dark";                  density: Density.default; }
                     }
                 }
@@ -131,8 +138,8 @@ export component KeyValueRowPreview inherits Window {
                     max-content-width: 280px;
                     VerticalLayout {
                         Text { text: "comfortable"; font-size: Typography.text-xs; color: Theme.muted-foreground; }
-                        KeyValueRow { label: "Brightness"; value: "80"; value-unit: "%";  density: Density.comfortable; numeric: true; show-divider: true; }
-                        KeyValueRow { label: "Volume";     value: "60"; value-unit: "%";  density: Density.comfortable; numeric: true; show-divider: true; }
+                        KeyValueRow { label: "Brightness"; value: "80"; value-unit: "%";  density: Density.comfortable; show-divider: true; }
+                        KeyValueRow { label: "Volume";     value: "60"; value-unit: "%";  density: Density.comfortable; show-divider: true; }
                         KeyValueRow { label: "Theme";      value: "Dark";                  density: Density.comfortable; }
                     }
                 }
@@ -141,41 +148,116 @@ export component KeyValueRowPreview inherits Window {
 
         // --- Label-icon + value-icon + value-unit combinations ---
         Section {
-            title: "Icons and units — label-icon (flips with Locale.rtl), value-icon (cluster-leading), value-unit (LTR-atomic with numeric)";
+            title: "Icons and units — label-icon (flips with Locale.rtl), value-icon (cluster-leading), value-unit (mirrors with locale by default)";
             Card {
                 max-content-width: 520px;
                 padding-density: Density.comfortable;
                 VerticalLayout {
                     KeyValueRow { label-icon: "check";        label: "Receipt printing"; value: "On";                                            show-divider: true; }
-                    KeyValueRow { label-icon: "arrow-up";     label: "Sales today";      value: "1,240"; value-unit: "SAR"; value-tone: Tone.success;     value-icon: "arrow-up";   numeric: true; show-divider: true; }
-                    KeyValueRow { label-icon: "arrow-down";   label: "Returns today";    value: "84";    value-unit: "SAR"; value-tone: Tone.destructive; value-icon: "arrow-down"; numeric: true; show-divider: true; }
-                    KeyValueRow { label-icon: "x";            label: "Sync errors";      value: "3";                       value-tone: Tone.warning;    numeric: true; }
+                    KeyValueRow { label-icon: "arrow-up";     label: "Sales today";      value: "1,240"; value-unit: "SAR"; value-tone: Tone.success;     value-icon: "arrow-up";   show-divider: true; }
+                    KeyValueRow { label-icon: "arrow-down";   label: "Returns today";    value: "84";    value-unit: "SAR"; value-tone: Tone.destructive; value-icon: "arrow-down"; show-divider: true; }
+                    KeyValueRow { label-icon: "x";            label: "Sync errors";      value: "3";                       value-tone: Tone.warning;    }
                 }
             }
         }
 
         // ============================================================
-        // --- THE LOAD-BEARING TEST: Numeric × RTL ---
-        // Validates the `numeric: bool` decision. In LTR, both rows
-        // look identical. In RTL, the `numeric: true` row keeps
-        // [icon, value, unit] order; the `numeric: false` row mirrors
-        // to [unit, value, icon].
+        // --- THE LOAD-BEARING TEST: Unit-position × Locale ---
+        // Validates the XOR flip semantic. The cluster's physical
+        // order is governed by (Locale.rtl XOR unit-position == leading):
+        //
+        //   LTR + trailing  → [icon, value, unit]   unit physical-RIGHT
+        //   LTR + leading   → [unit, value, icon]   unit physical-LEFT
+        //   RTL + trailing  → [unit, value, icon]   unit physical-LEFT
+        //   RTL + leading   → [icon, value, unit]   unit physical-RIGHT
+        //
+        // Toggle RTL with the button above to see both column pairs flip.
+        // The `trailing` rows preserve "reader reads value→unit" semantic
+        // in both locales; the `leading` rows flip to "reader reads
+        // unit→value" (currency-prefix style) in both locales.
         // ============================================================
         Section {
-            title: "★ Numeric × RTL — the segmentation principle in action (toggle RTL with the button above)";
+            title: "★ Unit-position × Locale — XOR flip semantic (toggle RTL with the button above)";
             Card {
                 max-content-width: 560px;
                 padding-density: Density.comfortable;
                 VerticalLayout {
-                    Text { text: "numeric: true  — LTR-atomic value cluster (use for numbers)"; font-size: Typography.text-xs; color: Theme.muted-foreground; }
-                    KeyValueRow { label: "Total";      value: "12.50"; value-unit: "SAR"; value-icon: "arrow-up"; value-tone: Tone.success; numeric: true; show-divider: true; }
-                    KeyValueRow { label: "Items sold"; value: "42";    value-unit: "pcs";                                                  numeric: true; show-divider: true; }
-                    KeyValueRow { label: "Tax rate";   value: "15";    value-unit: "%";                                                    numeric: true; }
+                    Text { text: "unit-position: trailing  — default. Reader reads value → unit in both locales."; font-size: Typography.text-xs; color: Theme.muted-foreground; }
+                    KeyValueRow { label: "Total";      value: "12.50"; value-unit: "SAR"; value-icon: "arrow-up"; value-tone: Tone.success; show-divider: true; }
+                    KeyValueRow { label: "Items sold"; value: "42";    value-unit: "pcs";                                                  show-divider: true; }
+                    KeyValueRow { label: "Tax rate";   value: "15";    value-unit: "%";                                                    }
                     Rectangle { height: Spacing.md; background: transparent; }
-                    Text { text: "numeric: false  — value cluster follows Locale.rtl (use for text)"; font-size: Typography.text-xs; color: Theme.muted-foreground; }
-                    KeyValueRow { label: "Theme";    value: "Dark";    value-icon: "check"; show-divider: true; }
-                    KeyValueRow { label: "Language"; value: "English"; value-icon: "check"; show-divider: true; }
-                    KeyValueRow { label: "Network";  value: "Wi-Fi";   value-icon: "check"; }
+                    Text { text: "unit-position: leading  — currency-prefix style. Reader reads unit → value in both locales."; font-size: Typography.text-xs; color: Theme.muted-foreground; }
+                    KeyValueRow { label: "Total";      value: "12.50"; value-unit: "SAR"; value-icon: "arrow-up"; value-tone: Tone.success; unit-position: UnitPosition.leading; show-divider: true; }
+                    KeyValueRow { label: "Items sold"; value: "42";    value-unit: "pcs";                                                  unit-position: UnitPosition.leading; show-divider: true; }
+                    KeyValueRow { label: "Tax rate";   value: "15";    value-unit: "%";                                                    unit-position: UnitPosition.leading; }
+                }
+            }
+        }
+
+        // --- value-icon × value-unit 2×2 — explicit cluster combinations ---
+        //
+        // Each combination of {value-icon present, value-unit present}
+        // rendered in a separate Card so the trailing cluster's response
+        // to optional slots is unambiguous. All four use default
+        // `unit-position: trailing`; in LTR the cluster reads
+        // [icon, value, unit].
+        Section {
+            title: "value-icon × value-unit — 4 combinations (cluster slot optionality)";
+            HorizontalLayout {
+                spacing: Spacing.md;
+                alignment: start;
+                Card {
+                    max-content-width: 260px;
+                    VerticalLayout {
+                        Text { text: "no icon, no unit"; font-size: Typography.text-xs; color: Theme.muted-foreground; }
+                        KeyValueRow { label: "Plain";  value: "42";    }
+                    }
+                }
+                Card {
+                    max-content-width: 260px;
+                    VerticalLayout {
+                        Text { text: "no icon, unit";    font-size: Typography.text-xs; color: Theme.muted-foreground; }
+                        KeyValueRow { label: "Unit";   value: "12.50"; value-unit: "SAR"; }
+                    }
+                }
+                Card {
+                    max-content-width: 260px;
+                    VerticalLayout {
+                        Text { text: "icon, no unit";    font-size: Typography.text-xs; color: Theme.muted-foreground; }
+                        KeyValueRow { label: "Trend";  value: "Up";    value-icon: "arrow-up"; value-tone: Tone.success; }
+                    }
+                }
+                Card {
+                    max-content-width: 260px;
+                    VerticalLayout {
+                        Text { text: "icon, unit";       font-size: Typography.text-xs; color: Theme.muted-foreground; }
+                        KeyValueRow { label: "Both";   value: "+12.5"; value-unit: "%"; value-icon: "arrow-up"; value-tone: Tone.success; }
+                    }
+                }
+            }
+        }
+
+        // --- Dark-mode validation ---
+        //
+        // Click "Switch to dark mode" above. Every Theme.foreground /
+        // Theme.muted-foreground / Theme.border / Theme.surface
+        // reference in KeyValueRow's resolution flips. Brand tones
+        // (primary blue, success green, destructive red, etc.) shift
+        // subtly per Apple HIG; neutrals (label color, divider color,
+        // unit color when default-toned) flip dramatically.
+        Section {
+            title: "Dark-mode validation — toggle Mode above; neutrals invert, brand tones shift subtly";
+            Card {
+                max-content-width: 520px;
+                padding-density: Density.comfortable;
+                VerticalLayout {
+                    KeyValueRow { label: "Total";       value: "50.80"; value-unit: "SAR"; emphasis: Emphasis.total; show-divider: true; }
+                    KeyValueRow { label: "Sales";       value: "+1,240"; value-unit: "SAR"; value-tone: Tone.success; value-icon: "arrow-up"; show-divider: true; }
+                    KeyValueRow { label: "Returns";     value: "-84";    value-unit: "SAR"; value-tone: Tone.destructive; value-icon: "arrow-down"; show-divider: true; }
+                    KeyValueRow { label: "Tax rate";    value: "15";     value-unit: "%";   value-tone: Tone.primary; show-divider: true; }
+                    KeyValueRow { label: "Last sync";   value: "Synced"; value-tone: Tone.info;  show-divider: true; }
+                    KeyValueRow { label: "Subtle row";  value: "—";      emphasis: Emphasis.subtle; }
                 }
             }
         }
@@ -188,9 +270,9 @@ export component KeyValueRowPreview inherits Window {
                 Card {
                     max-content-width: 280px;
                     VerticalLayout {
-                        KeyValueRow { label: "First";  value: "1"; numeric: true; show-divider: true; }
-                        KeyValueRow { label: "Middle"; value: "2"; numeric: true; show-divider: true; }
-                        KeyValueRow { label: "Last";   value: "3"; numeric: true; show-divider: false; }
+                        KeyValueRow { label: "First";  value: "1"; show-divider: true; }
+                        KeyValueRow { label: "Middle"; value: "2"; show-divider: true; }
+                        KeyValueRow { label: "Last";   value: "3"; show-divider: false; }
                     }
                 }
                 Card {
@@ -211,7 +293,7 @@ export component KeyValueRowPreview inherits Window {
                 max-content-width: 480px;
                 padding-density: Density.comfortable;
                 VerticalLayout {
-                    KeyValueRow { label: "Hover me"; value: "42.00"; value-unit: "SAR"; numeric: true; tooltip: "This is a tooltip. The row renders a TouchArea only when tooltip is set."; show-divider: true; }
+                    KeyValueRow { label: "Hover me"; value: "42.00"; value-unit: "SAR"; tooltip: "This is a tooltip. The row renders a TouchArea only when tooltip is set."; show-divider: true; }
                     KeyValueRow { label: "No tooltip"; value: "no TouchArea"; }
                 }
             }
@@ -225,7 +307,7 @@ export component KeyValueRowPreview inherits Window {
                 padding-density: Density.comfortable;
                 VerticalLayout {
                     KeyValueRow { label-icon: "check"; label: "Setting"; value: "Enabled"; value-icon: "arrow-up"; debug-bounds: true; show-divider: true; }
-                    KeyValueRow { label: "Total"; value: "12.50"; value-unit: "SAR"; numeric: true; debug-bounds: true; }
+                    KeyValueRow { label: "Total"; value: "12.50"; value-unit: "SAR"; debug-bounds: true; }
                 }
             }
         }

@@ -20,7 +20,7 @@
 //
 // Per architecture/key-value-row.md.
 
-import { Emphasis, Tone, Density } from "../enums.slint";
+import { Emphasis, Tone, Density, UnitPosition } from "../enums.slint";
 import { Theme } from "../globals/theme.slint";
 import { Typography } from "../globals/typography.slint";
 import { Sizes } from "../globals/sizes.slint";
@@ -49,20 +49,28 @@ component LeadingCluster inherits Rectangle {
     in property <color>  label-color;
     in property <length> icon-size;
     in property <string> row-font-family;
+    in property <bool>   wrap;
     in property <bool>   debug-bounds;
 
     background: transparent;
     border-width: root.debug-bounds ? 1px : 0px;
     border-color: #ff00ff;
 
-    preferred-width:  inner.preferred-width;
+    // Stretches to fill remaining row width (after TrailingCluster's
+    // intrinsic width is taken). The label Text inside elides or
+    // wraps within this allocated space — that's what makes long
+    // labels NOT explode the row's width.
+    horizontal-stretch: 1.0;
     preferred-height: inner.preferred-height;
-    min-width:        inner.min-width;
     min-height:       inner.min-height;
 
     inner := HorizontalLayout {
         spacing: Spacing.xs;
-        alignment: center;
+        // Anchor content to the reading-leading edge of the cluster:
+        // LTR → physical-LEFT (start); RTL → physical-RIGHT (end).
+        // Without this, a stretched cluster would center its content
+        // and the label would float in the middle of the row.
+        alignment: Locale.rtl ? LayoutAlignment.end : LayoutAlignment.start;
 
         // LTR order: [icon, label].
         if !Locale.rtl && root.label-icon != "": Text {
@@ -80,7 +88,9 @@ component LeadingCluster inherits Rectangle {
             font-weight: root.label-font-weight;
             color: root.label-color;
             vertical-alignment: center;
-            wrap: no-wrap;
+            horizontal-stretch: 1.0;
+            wrap: root.wrap ? TextWrap.word-wrap : TextWrap.no-wrap;
+            overflow: TextOverflow.elide;
         }
 
         // RTL order: label first, icon after — render icon as
@@ -99,16 +109,24 @@ component LeadingCluster inherits Rectangle {
 // ===== Sub-component: trailing cluster ===================================
 //
 // Contains value-icon (optional), value, value-unit (optional). The
-// cluster's internal order is governed by `ltr-order`:
+// cluster's internal physical order is governed by a XOR of locale
+// and the consumer-chosen unit position:
 //
-//   ltr-order = !Locale.rtl || numeric
+//   leading-flip = (unit-position == leading)
+//   mirror       = Locale.rtl XOR leading-flip
 //
-//   true  → [icon, value, unit]   (LTR locale OR LTR-atomic numeric)
-//   false → [unit, value, icon]   (RTL locale AND non-numeric textual)
+//   mirror = false → [icon, value, unit] (unit reads AFTER value)
+//   mirror = true  → [unit, value, icon] (unit reads BEFORE value)
 //
-// This is the CLAUDE.md segmentation rule operationalized: numeric
-// content stays LTR-internal regardless of locale (so "12.50 SAR"
-// renders consistently), while textual values respect locale flow.
+// With `unit-position: trailing` (default), locale alone drives the
+// arrangement: LTR keeps `[icon, value, unit]` (unit physical-RIGHT),
+// RTL mirrors to `[unit, value, icon]` (unit physical-LEFT). In both
+// cases the local reader's eye reaches the unit AFTER the value.
+//
+// With `unit-position: leading`, the cluster is inverted relative to
+// the locale default: unit moves to the reading-LEADING edge in both
+// LTR and RTL. Useful for accounting / currency-prefix conventions
+// where the currency symbol precedes the magnitude.
 
 component TrailingCluster inherits Rectangle {
     in property <string> value;
@@ -119,20 +137,29 @@ component TrailingCluster inherits Rectangle {
     in property <int>    value-font-weight;
     in property <color>  value-color;
     in property <length> icon-size;
-    in property <bool>   numeric;
+    in property <UnitPosition> unit-position;
     in property <string> row-font-family;
+    in property <bool>   wrap;
     in property <bool>   debug-bounds;
 
     background: transparent;
     border-width: root.debug-bounds ? 1px : 0px;
     border-color: #ff00ff;
 
+    // Sized to content — value cluster is typically short ("Dark",
+    // "12.50 SAR"). Don't stretch; let the LeadingCluster absorb
+    // remaining row width and elide its label there.
     preferred-width:  inner.preferred-width;
     preferred-height: inner.preferred-height;
     min-width:        inner.min-width;
     min-height:       inner.min-height;
 
-    property <bool> ltr-order: !Locale.rtl || root.numeric;
+    property <bool> leading-flip: root.unit-position == UnitPosition.leading;
+    // Cluster physical order. True = standard [icon, value, unit];
+    // false = mirrored [unit, value, icon]. (Variable name kept as
+    // `ltr-order` to minimize diff against the existing children
+    // declarations below; semantically it now reads "icon-leads".)
+    property <bool> ltr-order: Locale.rtl == root.leading-flip;
 
     inner := HorizontalLayout {
         spacing: Spacing.xs;
@@ -163,7 +190,8 @@ component TrailingCluster inherits Rectangle {
             font-weight: root.value-font-weight;
             color: root.value-color;
             vertical-alignment: center;
-            wrap: no-wrap;
+            wrap: root.wrap ? TextWrap.word-wrap : TextWrap.no-wrap;
+            overflow: TextOverflow.elide;
         }
 
         // Cluster-trailing slot (unit when ltr-order, icon when reversed).
@@ -233,12 +261,27 @@ export component KeyValueRow inherits Rectangle {
     /// horizontal inset.
     in property <Density> density: Density.default;
 
-    /// **Set true when the value is a number, percentage, currency,
-    /// quantity, date, or any other LTR-rendered content.** Keeps the
-    /// value, unit, and icon in left-to-right order regardless of
-    /// locale. Default `false` means the value cluster respects
-    /// `Locale.rtl` (textual values mirror in RTL).
-    in property <bool> numeric: false;
+    /// Position of `value-unit` relative to `value` within the
+    /// trailing cluster. **Default `trailing`** is the standard:
+    /// the unit reads AFTER the value in both locales (LTR places
+    /// unit on physical-RIGHT, RTL on physical-LEFT — mirrors with
+    /// locale).
+    ///
+    /// Set `leading` to render unit-BEFORE-value reading order
+    /// (currency-prefix style: `SAR 12.50` in LTR, `12.50 SAR` in
+    /// RTL — cluster physical order flips in BOTH locales relative
+    /// to the default). The flip is symmetric: locale picks the
+    /// standard side, `unit-position` chooses whether the unit sits
+    /// on that side or the opposite.
+    in property <UnitPosition> unit-position: UnitPosition.trailing;
+
+    /// When `true`, label and value wrap onto multiple lines if their
+    /// content exceeds the row's allocated width. The row's locked
+    /// height relaxes to grow vertically with the wrapped content.
+    /// When `false` (default), text stays on a single line and
+    /// truncates with an ellipsis (`…`) when too long; the row's
+    /// height stays locked at `2 × padding-y + value-font-size × 1.6`.
+    in property <bool> wrap: false;
 
     /// Renders a 1px Theme.border line at the bottom of the row.
     /// Typical use: enable on every row except the last in a list.
@@ -336,17 +379,34 @@ export component KeyValueRow inherits Rectangle {
 
     // ===== Root sizing ====================================================
     //
-    // Slint doesn't auto-propagate intrinsic content size through
-    // nested Rectangles (HANDOVER quirk #15). Bind the root's
-    // preferred-size to the inner HorizontalLayout's so the row
-    // hugs its content vertically and stretches horizontally.
+    // Width tracks content (HANDOVER quirk #15 — Slint doesn't
+    // auto-propagate intrinsic size through nested Rectangles, so
+    // bind explicitly to the inner layout's preferred-width).
+    //
+    // Height is LOCKED to a font-size-based computation rather than
+    // the inner layout's preferred-height. Without this, the row's
+    // height tracks Text natural line-height, which differs per font
+    // — Noto Sans Arabic is taller than Inter/Noto Sans Latin, so
+    // toggling Locale.current would resize the Card containing the
+    // row. Locking to `value-font-size * 1.6` produces locale-stable
+    // row heights at the cost of minor glyph clipping for fonts with
+    // extreme line-height metrics (acceptable for UI body fonts;
+    // descender-heavy display fonts are not the library's target).
+
+    property <length> row-content-height: root.value-font-size * 1.6;
+    property <length> row-total-height: 2 * root.padding-y + root.row-content-height;
 
     background: transparent;
     horizontal-stretch: 1.0;
     preferred-width:  layout.preferred-width;
-    preferred-height: layout.preferred-height;
     min-width:        layout.min-width;
-    min-height:       layout.min-height;
+    // When wrap is off, the row locks to a font-size-based height
+    // (locale-stable, ellipsizes long content). When on, the row
+    // grows vertically with wrapped content; the locked height
+    // becomes a floor (single-line content still hits min-height).
+    preferred-height: root.wrap ? layout.preferred-height : row-total-height;
+    min-height:       row-total-height;
+    max-height:       root.wrap ? 99999px : row-total-height;
 
     // Debug bounds — magenta 2px border on the root. Slint 1.14's
     // Rectangle has no border-style; thickness (2px root vs 1px
@@ -367,7 +427,10 @@ export component KeyValueRow inherits Rectangle {
         spacing: Spacing.md;
         alignment: stretch;
 
-        // LTR: [leading | spacer | trailing]
+        // LTR: [leading (stretch, label anchors LEFT) | trailing]
+        // No explicit spacer — LeadingCluster's horizontal-stretch:1.0
+        // absorbs the remaining row width and anchors its label to the
+        // physical-LEFT edge (Locale.rtl == false ⇒ LayoutAlignment.start).
         if !Locale.rtl: LeadingCluster {
             label: root.label;
             label-icon: root.label-icon;
@@ -376,9 +439,9 @@ export component KeyValueRow inherits Rectangle {
             label-color: root.label-color;
             icon-size: root.icon-size;
             row-font-family: root.row-font;
+            wrap: root.wrap;
             debug-bounds: root.debug-bounds;
         }
-        if !Locale.rtl: Rectangle { background: transparent; horizontal-stretch: 1.0; }
         if !Locale.rtl: TrailingCluster {
             value: root.value;
             value-unit: root.value-unit;
@@ -388,12 +451,14 @@ export component KeyValueRow inherits Rectangle {
             value-font-weight: root.value-font-weight;
             value-color: root.value-color;
             icon-size: root.icon-size;
-            numeric: root.numeric;
+            unit-position: root.unit-position;
             row-font-family: root.row-font;
+            wrap: root.wrap;
             debug-bounds: root.debug-bounds;
         }
 
-        // RTL: [trailing | spacer | leading]
+        // RTL: [trailing | leading (stretch, label anchors RIGHT)]
+        // Same single-spacer-via-stretching pattern, mirrored.
         if Locale.rtl: TrailingCluster {
             value: root.value;
             value-unit: root.value-unit;
@@ -403,11 +468,11 @@ export component KeyValueRow inherits Rectangle {
             value-font-weight: root.value-font-weight;
             value-color: root.value-color;
             icon-size: root.icon-size;
-            numeric: root.numeric;
+            unit-position: root.unit-position;
             row-font-family: root.row-font;
+            wrap: root.wrap;
             debug-bounds: root.debug-bounds;
         }
-        if Locale.rtl: Rectangle { background: transparent; horizontal-stretch: 1.0; }
         if Locale.rtl: LeadingCluster {
             label: root.label;
             label-icon: root.label-icon;
@@ -416,6 +481,7 @@ export component KeyValueRow inherits Rectangle {
             label-color: root.label-color;
             icon-size: root.icon-size;
             row-font-family: root.row-font;
+            wrap: root.wrap;
             debug-bounds: root.debug-bounds;
         }
     }

@@ -99,3 +99,18 @@ export enum ThemeMode {
     light,
     dark,
 }
+
+// KeyValueRow's unit-position knob. `trailing` (default) places the
+// unit on the reading-trailing edge of the value cluster — physical
+// RIGHT in LTR, physical LEFT in RTL — so the reader reads
+// value→unit in both locales (the "standard" iOS/Apple-derived
+// convention adapted for bi-directional layouts). `leading` flips
+// the cluster: unit on the reading-leading edge so the reader
+// reads unit→value (currency-prefix style — useful for accounting
+// formats where the currency symbol precedes the magnitude). The
+// flip is symmetric across locales: setting `leading` swaps physical
+// positions in both LTR and RTL, preserving consistent reading order.
+export enum UnitPosition {
+    trailing,    // unit reads AFTER value (default)
+    leading,     // unit reads BEFORE value (currency-prefix style)
+}
