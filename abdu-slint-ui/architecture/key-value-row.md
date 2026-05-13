@@ -15,12 +15,12 @@ A two-content display row: a `label` on the leading side, a `value` on the trail
 
 1. **It's the canonical incarnation of the single-script segmentation principle.** Every other place in the codebase that displays a labelled value today (`ui/screens/settings/display.slint`, the various total rows in checkout, Z-report breakdowns) concatenates the label and value into one string or one Text element. That works in pure-Latin and pure-Arabic builds and breaks the moment a mixed-script case appears. KeyValueRow makes the correct pattern — two anchored Text elements — the path of least resistance.
 2. **Typography decisions belong in one place.** Emphasis levels (`subtle / normal / strong / total`) map to specific font weights and sizes. Encoding those in the component means every settings row, every total, every summary line picks the right weight without the consumer deciding.
-3. **The RTL flip is non-trivial.** Label-icon position relative to label flips with `Locale.rtl`. Value cluster position in the row flips. Value cluster *internal* order may or may not flip depending on whether the content is numeric. Three rules, easy to get wrong; KeyValueRow encodes them once.
+3. **The RTL flip is non-trivial.** Label-icon position relative to label flips with `Locale.rtl`. Value cluster position in the row flips with `Locale.rtl`. Value cluster *internal* order flips with the XNOR of `Locale.rtl` and `unit-position`. Three rules, easy to get wrong; KeyValueRow encodes them once.
 4. **Density and divider are settings-screen primitives.** Without them, consumers reach for inline `padding: ...` and `if last-row { ... }` patterns that the library exists to eliminate.
 
 KeyValueRow shares with Card:
 
-- **Display-only by default.** No `interactive` flag in v1 — if a consumer needs clickable rows, they wrap KeyValueRow inside an interactive Card (this is exactly the dominant "settings item row" pattern in iOS).
+- **Display-only by default.** No `interactive` flag at present — if a consumer needs clickable rows, they wrap KeyValueRow inside an interactive Card (this is exactly the dominant "settings item row" pattern in iOS). Row-level `interactive` + `clicked()` is planned for Material-parity slice 3.
 - **`debug-bounds` instrumentation.** Magenta border + cluster outlines when set, matching the other primitives' debug story.
 - **No `variant` / no `tone` on the surface.** Only the *value* takes a tone (the label is always Theme.muted-foreground). Coloring the whole row implies semantics that aren't there.
 
@@ -35,11 +35,12 @@ KeyValueRow is **not** a composition of Card. A KeyValueRow inside a list does n
 - Two primary content slots (`label`, `value`) rendered as **separately-anchored Text elements** — the segmentation principle made concrete.
 - An optional `label-icon` rendered in the leading cluster, position-flipped per `Locale.rtl` (matches Button's `icon-leading` behaviour).
 - An optional `value-icon` rendered in the trailing cluster, position fixed within the value cluster regardless of `Locale.rtl`.
-- An optional `value-unit` rendered immediately adjacent to `value`, anchoring the LTR-atomic numeric pair (the segmentation principle's specific-case rule).
-- A `numeric: bool` switch that gates LTR-atomic behaviour for the entire value cluster. `false` = value cluster respects `Locale.rtl` like the label cluster. `true` = value cluster stays LTR-atomic regardless. See [Numeric mode](#numeric-mode-and-the-segmentation-principle).
+- An optional `value-unit` rendered immediately adjacent to `value` inside the trailing cluster.
+- A `unit-position: UnitPosition { trailing, leading }` knob that chooses the unit's reading position relative to the value. `trailing` (default) = unit reads AFTER value in both locales (the standard pattern). `leading` = unit reads BEFORE value (currency-prefix style). The flip is symmetric across locales — see [Unit position and the segmentation principle](#unit-position-and-the-segmentation-principle).
 - `emphasis: Emphasis` mapping to font weight + size + color (`subtle / normal / strong / total`).
 - `value-tone: Tone` colouring the value cluster (value text, value unit, value icon all share the tone).
 - `density: Density` mapping to vertical padding (`compact / default / comfortable` → `Spacing.sm / md / lg`).
+- `wrap: bool` deciding between elide-on-overflow (default) and word-wrap-with-growing-row.
 - `show-divider: bool` rendering a 1px bottom border in `Theme.border`.
 - `tooltip: string` for hover discoverability (useful when `value` is truncated).
 - `debug-bounds: bool` for layout debugging.
@@ -48,19 +49,19 @@ KeyValueRow is **not** a composition of Card. A KeyValueRow inside a list does n
 
 - `interactive` / `clicked()`. Use Card with `interactive: true` wrapping a KeyValueRow. Adding an interactive variant duplicates Card's machinery and re-opens accessibility decisions that Card already settled.
 - `loading`. Settings rows don't spin; settings *values* might be unknown ("—"), which is a string the consumer provides. If async-gated row content becomes a real need, the consumer renders a skeleton inside their list.
-- `label-tone`. The label is always `Theme.muted-foreground` — settings screens with toned labels read as gimmicky. If a real screen needs it, revisit in v1.1; for v1, hold the line.
+- `label-tone`. The label is always `Theme.muted-foreground` — settings screens with toned labels read as gimmicky. If a real screen needs it, revisit later; for now, hold the line.
 - `label-min-width` / column alignment between rows. Consumers wanting aligned columns across multiple rows wrap their rows in a parent layout (GridLayout if introduced, or a custom column constraint). KeyValueRow's job is to render one row correctly; alignment across rows is the parent's job.
-- A `value` slot accepting `@children`. Tempting (drop a `Money` or a `StatusPill` in as the value), but the `value-unit` + `value-icon` properties cover the dominant inline cases. Slot-based composition is a v1.1 candidate once Phase 2's `Money` / `StatusPill` exist and the slot use case can be evaluated against concrete consumers.
+- A `value` slot accepting `@children`. Tracked as Material-parity slice 2 (`architecture/key-value-row-material-parity.md`) — adds a trailing `@children` slot for Toggle / IconButton / badge composition. Coexists with `value` / `value-unit` / `value-icon`; not yet implemented.
 - A grand-total bar / horizontal-rule variant. The `emphasis: total` value already covers this typographically (heavier weight, larger size, deeper foreground). If a screen needs a stylistic-final-row treatment beyond `emphasis: total`, that's `SectionCard.footer` territory in Phase 2.
-- `aria-label` override combining label + value into one screen-reader string. Both Texts are natively accessible — a screen reader walks the row and reads "Total" then "12.50 SAR" in natural order. Combining them with a synthesised "Total is 12.50 SAR" is a v1.1 candidate if real screen-reader testing finds the natural walk disorienting.
+- `aria-label` override combining label + value into one screen-reader string. Both Texts are natively accessible — a screen reader walks the row and reads "Total" then "12.50 SAR" in natural order. Combining them with a synthesised "Total is 12.50 SAR" is tracked as Material-parity slice 3 (`architecture/key-value-row-material-parity.md`) — lands together with `interactive` + `clicked()`.
 
 ---
 
 ## Public API
 
-### Properties (12 total)
+### Properties (13 total)
 
-A display-only primitive. The CLAUDE.md guidance ("5–10 properties for display-only") sits at the lower bound here; 12 is justified by the segmentation handling (the `numeric` switch + `value-unit` + `value-icon` triad) and the density / divider machinery that turns this into a real settings-row primitive rather than a typography wrapper.
+A display-only primitive. The CLAUDE.md guidance ("5–10 properties for display-only") sits at the lower bound here; 13 is justified by the segmentation handling (the `unit-position` knob + `value-unit` + `value-icon` triad), the `wrap` / density / divider machinery that turns this into a real settings-row primitive, and the locale-stable height lock that the row-level properties drive.
 
 **Content**
 
@@ -69,8 +70,8 @@ A display-only primitive. The CLAUDE.md guidance ("5–10 properties for display
 | `label`       | `string` | `""`    | Leading-side text. **Single-script content.** The consumer is responsible for not concatenating bidi-mixed text into this property; bidi content inside a single Text element triggers Slint issue #7267. |
 | `label-icon`  | `string` | `""`    | Optional icon name (resolved through `IconFont.resolve`). Rendered adjacent to `label`. Position flips with `Locale.rtl` (LTR: icon-before-label; RTL: label-before-icon — mirroring Button's `icon-leading`). |
 | `value`       | `string` | `""`    | Trailing-side text. **Single-script content** (same constraint as `label`). |
-| `value-unit`  | `string` | `""`    | Optional unit/suffix rendered immediately after `value` in the value cluster (e.g. `"kg"`, `"%"`, `"SAR"`). Same `value-tone`, sized one step smaller via `Typography`. Position within cluster is fixed (always after value) — does not flip with locale. The LTR-atomic anchor that motivates `numeric: true`. |
-| `value-icon`  | `string` | `""`    | Optional icon rendered at the start of the value cluster (e.g. trend arrows). Resolved through `IconFont.resolve`. Position within the cluster is fixed regardless of `numeric` (always cluster-leading); position of the *whole cluster* in the row follows the row's direction rules. |
+| `value-unit`  | `string` | `""`    | Optional unit/suffix rendered immediately adjacent to `value` in the trailing cluster (e.g. `"kg"`, `"%"`, `"SAR"`). Same `value-tone`, sized one step smaller via `Typography`. Reading position relative to `value` is controlled by `unit-position`. |
+| `value-icon`  | `string` | `""`    | Optional icon rendered at the cluster-leading slot of the trailing cluster (e.g. trend arrows). Resolved through `IconFont.resolve`. Sits opposite the cluster-trailing `value-unit` slot — both flip physical sides together when `unit-position: leading` or under RTL with `unit-position: trailing`. |
 
 **Typography & tone**
 
@@ -83,10 +84,11 @@ A display-only primitive. The CLAUDE.md guidance ("5–10 properties for display
 
 | Property        | Type        | Default | Notes |
 |-----------------|-------------|---------|-------|
-| `density`       | `Density`   | `default` | `compact` → `padding-y: Spacing.sm (8px)`, `default` → `padding-y: Spacing.md (12px)`, `comfortable` → `padding-y: Spacing.lg (16px)`. Horizontal padding is always `0px` — KeyValueRow is meant to be placed inside a padded surface (Card / SectionCard) that owns the horizontal inset. |
-| `numeric`       | `bool`      | `false`   | When `true`, the value cluster is LTR-atomic: `[value-icon, value, value-unit]` renders in that order regardless of `Locale.rtl`. When `false`, the cluster respects `Locale.rtl` (icon flips to the cluster-trailing side in RTL). **Set `true` whenever the value is a number** — see [Numeric mode](#numeric-mode-and-the-segmentation-principle). |
-| `show-divider` | `bool`       | `false`   | Renders a 1px `Theme.border` bottom border. Consumers showing a column of rows typically set this on every row except the last; the `show-divider: false` default optimises for the "single row inside a Card" case. |
-| `tooltip`      | `string`     | `""`      | Hover text. Useful when `value` truncates due to constrained width. Empty string disables. Hovers anywhere in the row (label or value cluster). |
+| `density`       | `Density`        | `default`            | `compact` → `padding-y: Spacing.sm (8px)`, `default` → `padding-y: Spacing.md (12px)`, `comfortable` → `padding-y: Spacing.lg (16px)`. Horizontal padding is always `0px` — KeyValueRow is meant to be placed inside a padded surface (Card / SectionCard) that owns the horizontal inset. |
+| `unit-position` | `UnitPosition`   | `trailing`           | Chooses the reading position of `value-unit` relative to `value`. **`trailing` (default)** = unit reads AFTER value in both locales (LTR places unit on physical-RIGHT, RTL on physical-LEFT — the cluster mirrors with locale). **`leading`** = unit reads BEFORE value in both locales (currency-prefix style: `SAR 12.50` in LTR, `12.50 SAR` in RTL — cluster physical order flips relative to the default in BOTH locales). The flip is symmetric. See [Unit position and the segmentation principle](#unit-position-and-the-segmentation-principle). |
+| `wrap`          | `bool`           | `false`              | When `false`, label and value use `no-wrap` + `elide` — long content truncates with `…` and the row stays single-line at the locked height. When `true`, both use `word-wrap` and the row grows vertically with the wrapped content; the locked height becomes a floor (single-line content still occupies one row's height). |
+| `show-divider`  | `bool`           | `false`              | Renders a 1px `Theme.border` bottom border. Consumers showing a column of rows typically set this on every row except the last; the `show-divider: false` default optimises for the "single row inside a Card" case. |
+| `tooltip`       | `string`         | `""`                 | Hover text. Useful when `value` truncates due to constrained width. Empty string disables. Hovers anywhere in the row (label or value cluster). |
 
 **Debug**
 
@@ -100,13 +102,15 @@ None. KeyValueRow is display-only. Hover/press/click handling lives in the paren
 
 ### What is **not** here
 
-`interactive`, `clicked()`, `loading`, `disabled`, `aria-label`, `label-tone`, `value-direction` (an enum was considered; `numeric: bool` replaced it — see [Why a `numeric` bool and not a `value-direction` enum](#why-a-numeric-bool-and-not-a-value-direction-enum)), `variant`, `shape`, `bordered`, `elevated`, depth properties, `padding-override`, `max-width`, `min-height`, `label-min-width`, `value-slot @children`. See [Scope → out of scope](#scope) for rationale.
+`interactive`, `clicked()`, `loading`, `disabled`, `aria-label`, `label-tone`, `numeric: bool` (replaced by the `unit-position` enum — see [Why an enum and not a `numeric` bool](#why-an-enum-and-not-a-numeric-bool)), `variant`, `shape`, `bordered`, `elevated`, depth properties, `padding-override`, `max-width`, `label-min-width`, `value-slot @children`. The interactive stack (`interactive` + `clicked()` + `disabled` + `aria-label`), the `@children` trailing slot, and `description` are tracked in `architecture/key-value-row-material-parity.md` for the next slices. See [Scope → out of scope](#scope) for the rest.
 
 ---
 
 ## New enum
 
-None. KeyValueRow uses existing `Emphasis`, `Tone`, `Density`.
+`UnitPosition { trailing, leading }`. KeyValueRow also uses the existing `Emphasis`, `Tone`, `Density`.
+
+`UnitPosition` lives in `enums.slint` and is re-exported from `lib.slint`. Default value: `trailing`. The enum is KeyValueRow-specific in v0.0.1 but is positioned where future numeric primitives (a hypothetical `Money` row, or a price-label component) can adopt it without redefinition.
 
 ---
 
@@ -134,71 +138,80 @@ Both Text elements (label and value clusters) use the same font family, selected
 
 **Option C — Per-Text consumer choice, `label-locale` / `value-locale` properties.** Rejected. Two extra properties on a display-only primitive for an edge case that option A handles. Pushes a font-selection problem to the consumer when iOS, Android, and the web have all settled on locale-determined font selection at the surface level.
 
-**Option D — Per-cluster font driven by `numeric` mode.** Tempting (numeric values are Latin → use Latin font; everything else → use locale font), and someone will propose it. Rejected for three reasons:
+**Option D — Per-cluster font driven by a direction/unit-position signal.** Tempting (numeric values are Latin → use Latin font; everything else → use locale font), and someone will propose it. Rejected for three reasons:
 
-1. **Couples direction with script.** `numeric` is a direction property (LTR-atomic vs locale-aware). Using it as a script signal conflates two orthogonal concerns. A future "RTL numeric script" case (Eastern Arabic digits `٠١٢٣` with `numeric: true` for direction) would render in the wrong font under this rule.
-2. **Breaks textual-Arabic-value symmetrically.** `value: "داكن"` renders in Arabic font via option A. Under option D, a consumer who set `numeric: true` mistakenly (or who has a numeric value formatted with Arabic digits) would get the wrong font. The failure mode is silent — visually wrong but compiles cleanly.
+1. **Couples direction with script.** `unit-position` is a direction property (which side the unit reads on). Using it as a script signal conflates two orthogonal concerns. A future "Eastern Arabic digits" case (`٠١٢٣` with `unit-position: trailing` for currency-like layout) would render in the wrong font under this rule.
+2. **Breaks textual-Arabic-value symmetrically.** `value: "داكن"` renders in Arabic font via option A. Under option D, any rule based on a direction property would mis-select the font whenever the value's script doesn't match the property's implied script (e.g., a numeric value formatted with Arabic digits). The failure mode is silent — visually wrong but compiles cleanly.
 3. **iOS doesn't do this.** SF Arabic renders Latin digits inside Arabic-locale UI in the Arabic font family. The Arabic font's Latin glyphs are designed to coexist with the Arabic glyphs at matching x-height and weight. Forcing a Latin font into Arabic-locale rows breaks that visual coexistence.
 
 Option A is correct. The script-vs-font choice stays the consumer's responsibility via pre-localization at the boundary (the consumer passes `label` and `value` already in the appropriate script for the locale); the library picks the matching font.
 
 ---
 
-## Numeric mode and the segmentation principle
+## Unit position and the segmentation principle
 
 This is the load-bearing design decision in KeyValueRow. The rest of the API is straightforward; this is where the segmentation principle from CLAUDE.md becomes concrete.
 
-### The two cases
+### What `unit-position` chooses
 
-Consider two real settings-screen rows:
+`unit-position: UnitPosition { trailing, leading }` chooses the **reading position** of `value-unit` relative to `value` inside the trailing cluster. It is a semantic property — the consumer thinks in reading order ("does the unit come AFTER the value, or BEFORE it?"), not in physical sides. The library translates the reading-order choice into the right physical layout for the active locale.
 
+The two values:
+
+- **`trailing` (default)** — unit reads AFTER value. The standard convention for prices, quantities, percentages, and unit-suffixed numbers. In LTR the cluster renders `[icon, value, unit]` (unit on physical-RIGHT). In RTL the cluster mirrors to `[unit, value, icon]` (unit on physical-LEFT). In both cases the local reader's eye reaches the unit AFTER the value.
+- **`leading`** — unit reads BEFORE value. The currency-prefix / accounting convention (`$12.50`, `SAR 100`). In LTR the cluster renders `[unit, value, icon]` (unit on physical-LEFT). In RTL the cluster mirrors to `[icon, value, unit]` (unit on physical-RIGHT). In both cases the local reader's eye reaches the unit BEFORE the value.
+
+The flip is **symmetric across locales**. Locale picks the standard side of the cluster (which physical edge "reading-trailing" maps to); `unit-position` chooses whether the unit sits on that side or the opposite. The four observable layouts:
+
+|                            | LTR cluster order        | RTL cluster order        |
+|----------------------------|--------------------------|--------------------------|
+| `unit-position: trailing`  | `[icon, value, unit]`    | `[unit, value, icon]`    |
+| `unit-position: leading`   | `[unit, value, icon]`    | `[icon, value, unit]`    |
+
+### Implementation rule
+
+Inside `TrailingCluster`:
+
+```slint
+property <bool> leading-flip: unit-position == UnitPosition.leading;
+property <bool> ltr-order:    Locale.rtl == leading-flip;   // XNOR
 ```
-Row A:  Theme              Dark            ← textual value
-Row B:  Total              12.50 SAR       ← numeric value with unit
-```
 
-In RTL, with translated content:
+`ltr-order: true` → cluster renders `[icon, value, unit]`; `ltr-order: false` → cluster renders `[unit, value, icon]`. The XNOR truth table matches the matrix above. The variable is named `ltr-order` (preserves naming continuity with the prior `numeric`-era code); semantically it reads "icon-leads-the-cluster."
 
-```
-Row A:                 المظهر    داكن       ← textual value, Arabic
-Row B:                المجموع    12.50 ر.س  ← numeric value, Arabic label
-```
+The cluster's *position in the outer row* still follows `Locale.rtl` alone — trailing physical side in LTR, leading physical side in RTL. `unit-position` only governs the cluster's *internal* order.
 
-The label cluster behaves the same in both cases: `[label-icon, label]` mirrors to `[label, label-icon]` in RTL (the icon stays on the leading edge, which is the right in RTL). Standard.
+### Why an enum and not a `numeric` bool
 
-The value cluster is where the cases diverge:
+The earlier version of this component shipped a `numeric: bool` switch that meant "the value cluster is LTR-atomic — never mirror it." That captured the textual-vs-numeric case but had two problems:
 
-- **Row A (textual value):** the value is plain text in the user's reading direction. The cluster `[value-icon, value, value-unit]` should mirror in RTL — icon to the right-of-text becomes icon to the left-of-text, matching the user's natural reading order.
-- **Row B (numeric value):** the value is a number. Numbers are LTR-atomic per CLAUDE.md's segmentation rule (and per how Slint's bidi engine renders them anyway — Latin digits inside an Arabic paragraph render LTR-internally). The cluster `[value-icon, value, value-unit]` must NOT mirror — `"12.50 ر.س"` rendered as `"ر.س 12.50"` reverses the relationship between value and unit and reads as a different number entirely.
+1. **Asymmetric semantics.** `numeric: true` only changed behavior in RTL — in LTR it was a no-op. A consumer reading the property name had no way to predict that. The cluster's internal order was an emergent property of two flags (`Locale.rtl` AND `numeric`) instead of one consumer choice.
+2. **No currency-prefix path.** `numeric: true` locked the cluster to `[icon, value, unit]` regardless of locale, which is correct for `12.50 SAR` but wrong for `SAR 12.50` — there was no way to express the unit-before-value reading order at all.
 
-The library cannot detect "is this a number" by inspecting `value` (it's an opaque string). The consumer must tell the library.
+`unit-position` is a single consumer choice that produces a predictable result in both locales and covers both readings. It is also a semantic property (unit's *reading position*) rather than a behavioral one (LTR-atomic *yes or no*), which keeps the API legible to consumers who don't know about Slint's bidi handling.
 
-### Why a `numeric` bool and not a `value-direction` enum
+Options considered before settling on the enum:
 
-Options considered:
-
-1. **`value-direction: Direction { auto, ltr, rtl }`** (enum, `auto = follow Locale.rtl`). Rejected. Introduces a new enum (`Direction`) only used by this one component, exposes three values when only two are useful (`rtl` explicit is never needed — that's what `auto` resolves to in RTL locales), and the property name doesn't communicate *why* the consumer would set it.
-2. **`numeric: bool`** (chosen). Communicates intent directly. The consumer thinks "this row shows a number," they set `numeric: true`, and the library does the right thing. Discoverable via doc-comment ("set true when the value is a number — keeps the value, unit, and icon in left-to-right order regardless of locale").
+1. **`value-direction: Direction { auto, ltr, rtl }`**. Rejected. Introduces a new enum (`Direction`) shared with no one, exposes three values when only two are useful (`rtl` explicit is never needed), and the property name describes the *mechanism* (direction) rather than the *user intent* (which side the unit reads on).
+2. **`numeric: bool`** (the previous shipped API). Rejected on the two grounds above.
 3. **Sniff for digits at runtime** (`if value.starts-with-digit -> ltr-atomic`). Rejected. Slint has no string introspection, and even if it did, "starts with a digit" is a lossy proxy (negative numbers start with `-`, percentages can be `<1%`, etc.).
-4. **Default `numeric: true`** (most POS values are numeric). Considered. Rejected because the default behaviour silently breaks textual rows in RTL — a "Theme: Dark" row in Arabic would render with the value icon on the wrong side. The cost of typing `numeric: true` on numeric rows is low; the cost of silently broken textual rows is high. Default to the safer behaviour (locale-aware) and require an explicit opt-in for LTR-atomic.
+4. **`unit-position: UnitPosition`** (chosen). Two discrete values, semantic names, symmetric behavior across locales, covers both conventions.
 
-### The rule, restated
+### When to set `unit-position: leading`
 
-For consumers of KeyValueRow:
+Default (`trailing`) is correct for almost every POS row — totals, line items, quantities, percentages, taxes, balances. The reader sees the magnitude first and the unit as a suffix.
 
-- **Value is text** (any script, any language) → leave `numeric: false`.
-- **Value is a number, percentage, currency, quantity, date, code, or any other LTR-rendered content** → set `numeric: true`.
-
-For the library implementation:
-
-- The value cluster is a `HorizontalLayout` whose internal child order is `[value-icon, value, value-unit]`.
-- That cluster's position in the outer row layout follows `Locale.rtl` (trailing side: physical right in LTR, physical left in RTL).
-- When `numeric: true`, the cluster itself does not mirror — children stay in `[icon, value, unit]` order.
-- When `numeric: false`, the cluster mirrors in RTL — children render in `[unit, value, icon]` order.
+Set `leading` when the convention is currency-prefix: `SAR 12.50`, `$100`, `€50`. The reader sees the currency tag first and the magnitude as a continuation. This pattern is common in accounting reports, formal invoices, and a subset of POS conventions.
 
 ### Why this doesn't apply to the label cluster
 
-The label cluster (`[label-icon, label]`) always respects `Locale.rtl` — there's no LTR-atomic case for labels. Labels are always reading-direction text; there's no analog to "numeric label." If a consumer puts a number in the label (`label: "1."` for a list-numbered row), the number renders LTR-internally inside the Text element regardless of cluster direction — same way Slint renders Latin digits in an Arabic paragraph today. No special handling needed.
+The label cluster (`[label-icon, label]`) always respects `Locale.rtl`. There is no analog to "unit position" for labels because the label has no second textual element to position. Labels are always reading-direction text; the icon sits at the cluster's reading-leading edge in both locales (mirroring Button's `icon-leading`). If a consumer puts a number in the label (`label: "1."` for a list-numbered row), the number renders LTR-internally inside the Text element regardless of cluster direction — same way Slint renders Latin digits in an Arabic paragraph today. No special handling needed.
+
+### Relationship to CLAUDE.md's segmentation principle
+
+The library-wide rule is: **no library component renders mixed-script content inside a single `Text` element.** Label and value are separate properties handled by separate Text elements; the value-and-unit pair is a single LTR-atomic sub-flow inside the trailing cluster, split into two Text elements (value + unit) so neither one ever holds bidi-mixed content.
+
+LTR-atomic numeric rendering — the rule that a value+unit pair stays in the consumer's chosen reading order regardless of locale — is what `unit-position` implements. The choice of which reading order to use is now the consumer's call (`trailing` for value-then-unit, `leading` for unit-then-value), not the library's. The segmentation principle still holds without exception; LTR-atomic is now a per-row opt-in expressed via `unit-position` rather than a hardcoded behavior.
 
 ---
 
@@ -221,38 +234,73 @@ The label cluster (`[label-icon, label]`) always respects `Locale.rtl` — there
 
 ## Sizing rules
 
-KeyValueRow sizes to content vertically (label/value height + density padding) and stretches horizontally to fill its parent.
+KeyValueRow stretches horizontally to fill its parent and has a **locale-stable locked height** vertically. The lock is the load-bearing decision; the rest follows from it.
 
-- **`horizontal-stretch: 1.0`** — fills available width.
-- **`preferred-height`** = max(`label-cluster.preferred-height`, `value-cluster.preferred-height`) + `2 × density-padding-y`.
-- **Spacer between clusters** — a `Rectangle { horizontal-stretch: 1.0; }` between the leading and trailing clusters absorbs excess width, pushing label to the leading edge and value cluster to the trailing edge.
-- **No `max-width`** in v1. Consumers needing a constrained-width row wrap KeyValueRow in a sized parent. This matches Card's removal of width-management from interior primitives — width concerns live in the surface, not in the content.
+### Locked height
+
+```
+row-content-height = value-font-size × 1.6
+row-total-height   = 2 × padding-y + row-content-height
+```
+
+When `wrap: false` (default), `preferred-height = min-height = max-height = row-total-height`. The row's height does NOT track `inner.preferred-height` — that would let the row grow when the active locale's font has a taller natural line-height than the previous locale's, which is exactly what happens between Inter and Noto Sans Arabic. Locking to a font-size multiplier produces a row whose height stays identical across en↔ar toggles.
+
+The `1.6` multiplier is tight but works for the library's target fonts (Inter, Noto Sans Arabic, Cairo, Tajawal) at body sizes. Display fonts with extreme descenders may clip; if you discover clipping on a target font, bump the multiplier in `row-content-height` — the cost is a uniformly taller row at every density.
+
+When `wrap: true`, the lock relaxes: `max-height` is removed and `preferred-height = layout.preferred-height`, so the row grows vertically with the wrapped content. `min-height` stays at `row-total-height` so single-line wrapped content still occupies the locked floor.
+
+### Width and the no-spacer layout
+
+```
+[ LeadingCluster (stretch: 1.0, label anchored to reading-leading) | TrailingCluster ]
+```
+
+There is **no explicit spacer Rectangle** between the clusters. The leading cluster's `horizontal-stretch: 1.0` absorbs the remaining row width, and its inner `HorizontalLayout` sets `alignment: Locale.rtl ? LayoutAlignment.end : LayoutAlignment.start` so the label anchors to the reading-leading edge of the cluster (physical-LEFT in LTR, physical-RIGHT in RTL). The trailing cluster is intrinsic-width and pinned to the row's reading-trailing edge.
+
+This layout is what makes elision work. With a stretch-Rectangle spacer between two non-stretching clusters, a long label grows the leading cluster's intrinsic width and pushes the row wider instead of eliding. With the leading cluster itself stretching, its label Text receives a bounded width and elides (or wraps, when `wrap: true`) cleanly inside it.
+
+- **`horizontal-stretch: 1.0`** on the row root — fills available parent width.
+- **No `max-width`** for now. Consumers needing a constrained-width row wrap KeyValueRow in a sized parent. This matches Card's removal of width-management from interior primitives — width concerns live in the surface, not in the content.
 
 ### Content-width inheritance (Slint quirk)
 
-If KeyValueRow ends up needing to drive `preferred-width` on the root Rectangle (because the parent layout doesn't propagate intrinsic content size), apply Card's pattern: bind `root.preferred-width` to the inner `HorizontalLayout.preferred-width`. This is the workaround documented in HANDOVER quirk #15.
+The root Rectangle binds `preferred-width: layout.preferred-width` explicitly. Slint does NOT auto-propagate intrinsic content size through nested Rectangles — without the explicit binding, an unbounded parent layout would see KeyValueRow as zero-width. Documented in HANDOVER quirk #15.
 
 ---
 
 ## Internal visual structure
 
 ```
-KeyValueRow (root Rectangle — transparent, sizing to content)
-├── leading-cluster HorizontalLayout
-│   ├── if Locale.rtl: label Text         ← RTL: label first, icon second
-│   ├── if Locale.rtl && label-icon != "": label-icon Text (icon font)
-│   ├── if !Locale.rtl && label-icon != "": label-icon Text
-│   └── if !Locale.rtl: label Text        ← LTR: icon first, label second
-│
-├── Rectangle { horizontal-stretch: 1.0; }    ← spacer
-│
-├── trailing-cluster HorizontalLayout
-│   │   When numeric: true → never mirrors regardless of Locale.rtl
-│   │   When numeric: false → mirrors in RTL (children in reverse order)
+KeyValueRow (root Rectangle — transparent; height locked when wrap is off)
+├── layout HorizontalLayout
+│   │   Outer LTR / RTL branching duplicates only the PLACEMENT of the two
+│   │   clusters; the cluster bodies are defined once as inline sub-components.
 │   │
-│   ├── (cluster-leading) value-icon Text
-│   ├── (cluster-middle)  value Text
-│   └── (cluster-trailing) value-unit Text
+│   ├── if !Locale.rtl: LeadingCluster   ← stretches (horizontal-stretch: 1.0)
+│   ├── if !Locale.rtl: TrailingCluster  ← intrinsic width
+│   ├── if  Locale.rtl: TrailingCluster
+│   └── if  Locale.rtl: LeadingCluster
+│
+├── LeadingCluster (inline sub-component, Rectangle)
+│   └── inner HorizontalLayout
+│       │   alignment: Locale.rtl ? end : start
+│       │   ── anchors label to the reading-leading edge of the cluster
+│       ├── if !Locale.rtl && label-icon != "": Text (label-icon)
+│       ├── Text (label, horizontal-stretch: 1.0, wraps or elides per `wrap`)
+│       └── if  Locale.rtl && label-icon != "": Text (label-icon)
+│
+├── TrailingCluster (inline sub-component, Rectangle)
+│   │   ltr-order := Locale.rtl == leading-flip   (XNOR)
+│   │   true  → cluster renders [icon, value, unit]
+│   │   false → cluster renders [unit, value, icon]
+│   │
+│   └── inner HorizontalLayout
+│       │   alignment: center
+│       ├── if  ltr-order && value-icon != "": Text (value-icon)   ← cluster-leading
+│       ├── if !ltr-order && value-unit != "": Text (value-unit)   ← cluster-leading
+│       ├── Text (value, wraps or elides per `wrap`)               ← cluster-middle
+│       ├── if  ltr-order && value-unit != "": Text (value-unit)   ← cluster-trailing
+│       └── if !ltr-order && value-icon != "": Text (value-icon)   ← cluster-trailing
 │
 ├── divider Rectangle  (only when show-divider: true)
 │   ├── y: parent.height - 1px
@@ -262,53 +310,63 @@ KeyValueRow (root Rectangle — transparent, sizing to content)
 │
 ├── debug-bounds outlines  (only when debug-bounds: true)
 │   ├── magenta 2px border around root
-│   ├── magenta 1px outline around leading-cluster
-│   └── magenta 1px outline around trailing-cluster
+│   ├── magenta 1px outline around LeadingCluster Rectangle
+│   └── magenta 1px outline around TrailingCluster Rectangle
 │
-└── tooltip Rectangle (only when tooltip != "" && hovered)
+└── tooltip Rectangle (only when tooltip != "")
+    ├── full-width TouchArea (consumes pointer events — see tooltip note)
+    └── if hover: popup Rectangle with tooltip text
 ```
 
 ### Cluster mirroring strategy
 
-Slint has no `direction: rtl` on layouts. Mirroring is achieved by branching the children declarations on `Locale.rtl`. Two cluster patterns:
+Slint has no `direction: rtl` on layouts. Mirroring is achieved by branching the children declarations on a single flag per cluster. Two patterns:
 
-**Leading cluster** — always respects `Locale.rtl`:
+**Leading cluster** — direction follows `Locale.rtl`:
 
 ```slint
-leading-cluster := HorizontalLayout {
+inner := HorizontalLayout {
     spacing: Spacing.xs;
-    if !Locale.rtl && root.label-icon != "" : Text { /* label-icon */ }
-    if !Locale.rtl                          : label-text := Text { /* label */ }
-    if  Locale.rtl                          : label-text-rtl := Text { /* label */ }
-    if  Locale.rtl && root.label-icon != "" : Text { /* label-icon */ }
+    alignment: Locale.rtl ? LayoutAlignment.end : LayoutAlignment.start;
+
+    if !Locale.rtl && label-icon != "" : Text { /* label-icon */ }
+    Text { /* label, horizontal-stretch: 1.0 */ }
+    if  Locale.rtl && label-icon != "" : Text { /* label-icon */ }
 }
 ```
 
-**Trailing cluster** — branches on `numeric` AND `Locale.rtl`:
+The label Text appears once. In LTR the icon precedes it (declaration order = layout order); in RTL the icon follows it. The `alignment` flip anchors the label to the reading-leading edge regardless of which side has the icon.
+
+**Trailing cluster** — direction follows the `ltr-order` XNOR of locale and unit-position:
 
 ```slint
-trailing-cluster := HorizontalLayout {
+property <bool> leading-flip: unit-position == UnitPosition.leading;
+property <bool> ltr-order:    Locale.rtl == leading-flip;
+
+inner := HorizontalLayout {
     spacing: Spacing.xs;
-    // Effective direction: respect Locale.rtl ONLY when not numeric
-    property <bool> mirror: Locale.rtl && !root.numeric;
+    alignment: center;
 
-    if !mirror && root.value-icon != "" : Text { /* value-icon */ }
-    if !mirror                          : Text { /* value */ }
-    if !mirror && root.value-unit != "" : Text { /* value-unit */ }
+    // Cluster-leading slot (icon when ltr-order, unit when reversed).
+    if  ltr-order && value-icon != "" : Text { /* value-icon */ }
+    if !ltr-order && value-unit != "" : Text { /* value-unit */ }
 
-    if  mirror && root.value-unit != "" : Text { /* value-unit */ }
-    if  mirror                          : Text { /* value */ }
-    if  mirror && root.value-icon != "" : Text { /* value-icon */ }
+    // Value always sits in the cluster middle.
+    Text { /* value */ }
+
+    // Cluster-trailing slot (unit when ltr-order, icon when reversed).
+    if  ltr-order && value-unit != "" : Text { /* value-unit */ }
+    if !ltr-order && value-icon != "" : Text { /* value-icon */ }
 }
 ```
 
-The duplication is unfortunate but unavoidable without a `direction` property on Slint layouts. Pattern matches Button's `icon-leading` / `icon-trailing` branching. The named `mirror` property keeps the logic readable.
+The value Text is declared once; the icon and unit are declared twice each (once at the cluster-leading slot, once at the cluster-trailing slot, gated by `ltr-order`). Only one of each pair is ever active. Pattern matches Button's `icon-leading` / `icon-trailing` branching. The named `ltr-order` property keeps the logic readable.
 
 ### Accessibility
 
 KeyValueRow has **no parent `accessible-role`** — the root Rectangle stays transparent to the AT tree. Each Text element is natively accessible: a screen reader walking the page reads "Total" then "12.50 SAR" in document order, which (because the trailing cluster sits after the leading cluster in the children list, regardless of which side it visually renders on) matches the visual reading flow.
 
-**Why no parent role.** Slint's `AccessibleRole` enum has no `definition` / `term` / `description` value. The closest mappings — `text`, `none` — don't add information beyond what the Text elements already expose. Synthesising an aria-label like `"Total: 12.50 SAR"` is the v1.1 candidate flagged in [Scope → out of scope](#scope); for v1, the natural walk is correct.
+**Why no parent role.** Slint's `AccessibleRole` enum has no `definition` / `term` / `description` value. The closest mappings — `text`, `none` — don't add information beyond what the Text elements already expose. Synthesising an aria-label like `"Total: 12.50 SAR"` is the candidate flagged in [Scope → out of scope](#scope) and lands together with the interactive stack in Material-parity slice 3; for now, the natural walk is correct.
 
 ### Debug bounds
 
@@ -342,7 +400,7 @@ if root.tooltip != "" : tooltip-area := TouchArea {
 }
 ```
 
-Consumers wrapping KeyValueRow in an interactive Card and *also* wanting per-row tooltips have a real conflict: the row's TouchArea will block the Card's click. The v1 answer is "pick one — tooltip OR clickable row." If both are genuinely needed, the consumer can render the tooltip themselves via a parent TouchArea or wait for a v1.1 resolution (likely a `tooltip-mode: enum { hover-area, on-cluster }` letting the consumer scope the hover trigger more narrowly).
+Consumers wrapping KeyValueRow in an interactive Card and *also* wanting per-row tooltips have a real conflict: the row's TouchArea will block the Card's click. The current answer is "pick one — tooltip OR clickable row via the wrapping Card." Material-parity slice 3 introduces row-level `interactive` + `clicked()`, at which point the single row-level TouchArea handles BOTH hover (for the tooltip) AND click (for the row callback) — see `architecture/key-value-row-material-parity.md`. For consumers who need both Card-level interactivity AND a per-row tooltip, the open path is to render the tooltip from a parent TouchArea or wait for a later `tooltip-mode: enum { hover-area, on-cluster }` resolution that scopes the hover trigger more narrowly.
 
 This trade-off is documented in `tooltip`'s doc-comment.
 
@@ -366,56 +424,52 @@ KeyValueRow is done when **every** cell of the matrix below renders correctly in
 - **Show-divider (2):** `true / false` — divider renders at the bottom in `Theme.border` when true, absent when false. A 5-row column with divider-on-all-but-last reads as a clean list.
 - **Label-icon (2):** with and without `label-icon`. With icon: icon sits on the leading edge of the leading cluster, flipping side with `Locale.rtl`.
 - **Value-icon + value-unit (4):** `{icon, no-unit}`, `{no-icon, unit}`, `{icon, unit}`, `{no-icon, no-unit}` — each combination renders correctly within the trailing cluster.
-- **Numeric (2):** `numeric: true / false` — both render correctly in LTR (visually identical). In RTL, `numeric: true` keeps `[icon, value, unit]` order; `numeric: false` mirrors to `[unit, value, icon]`. **This is the rule that justifies the entire `numeric` property; the preview must include side-by-side RTL rows showing both.**
-- **RTL × numeric matrix:** the four combinations `{LTR, RTL} × {numeric: true, numeric: false}` rendered together. Numeric rows in RTL keep their cluster order; textual rows in RTL mirror their cluster order. Validates the segmentation principle as built.
+- **Unit-position (2):** `unit-position: trailing / leading`. In LTR, `trailing` renders `[icon, value, unit]` and `leading` renders `[unit, value, icon]`. In RTL, `trailing` renders `[unit, value, icon]` (mirrors with locale) and `leading` renders `[icon, value, unit]` (cluster flipped from locale default). **The preview must include side-by-side rows showing both positions in BOTH locales — this is the rule that justifies the entire `unit-position` enum.**
+- **Locale × unit-position matrix:** the four combinations `{LTR, RTL} × {trailing, leading}` rendered together. Validates the symmetric-flip semantic.
+- **Wrap (2):** `wrap: false` — long label and long value both elide with `…`; row stays at the locked height. `wrap: true` — both grow vertically; row height grows with the wrapped content; single-line rows still occupy the locked floor.
+- **Locale-stable height:** the same KeyValueRow rendered with `Locale.current = "en"` and `Locale.current = "ar"` has the same row-total-height pixel value at every density. Toggling Locale inside a Card containing rows must NOT resize the Card vertically.
 - **Tooltip:** hover over a row with `tooltip: "Sample tooltip"` — tooltip appears after the standard delay.
 - **Debug-bounds:** toggle on — three magenta outlines visible (root + two clusters). Toggle off — no outlines.
 - **Composition smoke check:** at least one preview row showing KeyValueRow inside a Card (the dominant real-world composition). Padding inside the Card + zero horizontal padding on the row should produce the iOS-style settings-row look.
 
 ---
 
-## Open questions deferred to Phase 1.5 / Phase 2
+## Open questions deferred to a later slice
 
-1. **`@children` value slot.** Allow consumers to pass `Money`, `StatusPill`, or any composite as the value. Currently held back because `value-unit` + `value-icon` cover the dominant cases and adding a slot complicates the segmentation handling (slot content's RTL behaviour is the consumer's problem, but the *position* of the slot in the row is still ours). Revisit after Phase 2 when `Money` and `StatusPill` exist and concrete use cases can be evaluated.
-2. **Synthesised aria-label.** Currently the screen reader walks `label` then `value` as separate accessible nodes. If real screen-reader testing finds the walk disorienting (e.g., "12.50 SAR" being read without the preceding "Total" context in long lists), add a `aria-label` property that, when set, combines the contents into a single accessible label on a wrapping Rectangle with `accessible-role: text`.
-3. **Multi-line value support.** Currently both label and value are single-line (`wrap: no-wrap`). Some settings descriptions need wrapping ("Backup runs automatically every 24 hours when the terminal is connected to Wi-Fi"). The Toggle component handles this via a `description` property; KeyValueRow could either grow a `value-description` property or rely on `wrap: word-wrap` on the value Text when content overflows. Defer to v1.1; for v1, long descriptions belong on Toggle / SectionCard rows, not KeyValueRow.
-4. **Label column alignment across rows.** Settings screens sometimes want all labels left-aligned at a consistent x-position regardless of label length. KeyValueRow's `horizontal-stretch: 1.0` spacer puts the value at the trailing edge of *each row independently*. For aligned-label columns, the v1 answer is "use a GridLayout in the consumer." If real consumers reach for this pattern repeatedly, a `label-min-width: length` property is the v1.1 candidate.
-5. **Divider tone / inset.** Currently `Theme.border`, full-width. iOS list dividers are typically inset (don't extend under the leading icon column) and slightly muted. v1 keeps the divider simple; revisit when the smoke-test rendering of `settings-display.slint` reveals whether this matters in practice.
-6. **`value-icon-trailing`.** The original IMPL spec had a single `value-icon` (cluster-leading). If trend-down indicators or "edit pencil" affordances at the cluster-trailing position become common, add as v1.1.
+1. **`@children` value slot, `interactive` + `clicked()`, `description`, `avatar-image`.** All tracked in `architecture/key-value-row-material-parity.md` as ordered slices. All architectural decisions resolved there; awaiting implementation.
+2. **Synthesised aria-label.** Currently the screen reader walks `label` then `value` as separate accessible nodes. If real screen-reader testing finds the walk disorienting (e.g., "12.50 SAR" being read without the preceding "Total" context in long lists), add an `aria-label` property that, when set, combines the contents into a single accessible label on a wrapping Rectangle with `accessible-role: text`. Lands together with the interactive stack in Material-parity slice 3.
+3. **Label column alignment across rows.** Settings screens sometimes want all labels left-aligned at a consistent x-position regardless of label length. KeyValueRow's `LeadingCluster` stretches per row, putting the value at the trailing edge of *each row independently*. For aligned-label columns, the current answer is "use a GridLayout in the consumer." If real consumers reach for this pattern repeatedly, a `label-min-width: length` property is the candidate.
+4. **Divider tone / inset.** Currently `Theme.border`, full-width. iOS list dividers are typically inset (don't extend under the leading icon column) and slightly muted. The current divider stays simple; revisit when the smoke-test rendering of `settings-display.slint` reveals whether this matters in practice.
+5. **`value-icon-trailing`.** The current API has a single `value-icon` that sits at the cluster-leading slot. If trend-down indicators or "edit pencil" affordances at the cluster-trailing position become common, add later — or absorb into the `@children` slot from Material-parity slice 2.
 
 ---
 
-## Build order
+## Build status (shipped)
 
-Two commits, matching the IconButton / Toggle / Card template:
+KeyValueRow shipped across three commits:
 
-### Commit 1 — `docs(abdu-slint-ui): KeyValueRow design contract`
+1. **`docs(abdu-slint-ui): KeyValueRow design contract`** — earlier revision of this file (described the now-superseded `numeric: bool` API). Updated in place by this doc-sync pass.
+2. **`feat(abdu-slint-ui): dark mode support + KeyValueRow scaffolding`** — initial component + preview + playground section, plus dark-mode rollout, landed in the same commit because the two slices were entangled at `lib.slint` and `playground.slint`.
+3. **`feat(abdu-slint-ui): KeyValueRow unit-position semantic + locale-stable row height + wrap`** — `numeric: bool` → `unit-position: UnitPosition` rewrite, locked row height, and `wrap` property.
 
-1. Add this file (`architecture/key-value-row.md`).
-2. No code changes. User reviews the doc — particular attention to:
-   - The `numeric: bool` decision (vs. an enum, vs. default-true).
-   - The "label is never toned" rule.
-   - The 12-property surface (display-only primitives typically run 5–10; we're justifying 12).
-3. User approves before Commit 2 lands.
+What's next, per `architecture/key-value-row-material-parity.md`:
 
-### Commit 2 — `feat(abdu-slint-ui): KeyValueRow component + preview + playground section`
+1. **Slice 1 — `description: string`** (smallest surgery, biggest UX win).
+2. **Slice 2 — `@children` trailing slot.**
+3. **Slice 3 — `interactive` + `clicked()` + `disabled` + `aria-label`** (biggest surgery; mirrors Card's accessibility cascade).
+4. **Slice 4 — `avatar-image` + companions** (lowest priority; defer if not POS-critical).
 
-1. Write `components/key-value-row.slint` (~180 lines expected — smaller than Card because no surface / shadow / interactivity / focus machinery).
-2. Re-export from `lib.slint`.
-3. Write `previews/key-value-row.slint` covering the emphasis × tone × density × numeric × RTL matrix.
-4. Write `abdu-slint-ui-playground/ui/sections/key-value-row.slint` exposing every public property as a control. Include a demo that renders 5 rows inside a Card to validate the dominant composition.
-5. Wire the section into the playground sidebar.
-6. `cargo check` (library) + `cargo build` (playground) clean.
-7. User runs the playground, exercises the matrix, confirms visual quality (especially the numeric-in-RTL case — this is the validation that the whole `numeric` property is worth its weight).
-
-After Commit 2: Phase 1 components are complete. The next step is the smoke test (`examples/settings-display.slint`), tracked separately under IMPL.md §1.7.
+After the four slices: Phase 1 components are functionally complete, and the next step is the smoke test (`examples/settings-display.slint`) tracked separately under IMPL.md §1.7.
 
 ---
 
 ## Risks
 
-- **The `numeric` property's discoverability.** Consumers building POS screens will see "KeyValueRow has 12 properties," skim the docs, and miss `numeric` until they hit an RTL rendering bug. Mitigation: the playground section MUST default the numeric demo rows to `numeric: true` (since most demo content will be numeric), and the doc-comment on the `numeric` property must lead with the use case ("set true when the value is a number") rather than the mechanism ("controls LTR-atomic behaviour"). The smoke test (`settings-display.slint`) will exercise both numeric and textual values; if `numeric` is consistently set wrong in the first pass, the property name or default needs revisiting before Phase 2.
-- **Cluster mirroring duplication.** The trailing cluster branches on `mirror = Locale.rtl && !numeric`, with three children declared twice (once for each direction). This doubles the children count in Slint's view tree but each branch's `if` gates them — only one set is ever active. If Slint's compiler doesn't dead-code-eliminate inactive `if` branches efficiently, this could matter at scale (a settings screen with 30 rows = 60 cluster `if` blocks). Mitigation: profile the smoke test if it feels sluggish; otherwise accept.
-- **Value-unit Typography step-down.** Currently spec'd as "one step smaller than value emphasis." If the Typography scale doesn't have a clean "one step smaller" mapping (e.g., `text-sm → text-xs` is the smallest step, but `text-lg → text-base` is a larger relative drop), the unit may look proportionally inconsistent across emphasis levels. Mitigation: pick the unit size per emphasis directly in the resolution rather than via a "one step down" rule; codify in the implementation as a 4-case match (`subtle/normal/strong/total → unit size`).
-- **No vertical alignment between label and value when their heights differ.** If `label-icon` is taller than the label text (or vice versa for the value cluster), Slint's HorizontalLayout will center-align by default. For mixed icon+text rows, this may look off. Mitigation: pin `alignment: center` explicitly on both clusters; if center-alignment looks wrong in preview, switch to `alignment: baseline` (if Slint supports it — verify in implementation).
-- **Divider rendering inside a Card's clipped surface.** Card has `clip: true` on its surface, which means a 1px divider at `y: row.height - 1px` will render correctly. But if Card's `padding-override` is `0.001px` (zero padding), the divider would touch the Card's rounded corners — visually awkward. Mitigation: when used inside a Card with non-zero padding, the divider sits inside the padded region, which looks correct. Document this in the doc-comment on `show-divider`: "The divider renders at the bottom edge of the row's bounding box. When placed inside a Card with rounded corners and zero padding, the divider may visually clip into the corner radius; in that case, set `show-divider: false` on the last row of the list."
+- **The `unit-position` property's discoverability.** Consumers building POS screens will see "KeyValueRow has 13 properties," skim the docs, and miss `unit-position` until they hit an RTL rendering bug or a currency-prefix layout request. Mitigation: the playground section's code-snippet panel must always emit `unit-position` when it differs from the default, and the doc-comment must lead with the consumer's mental model ("which side does the unit READ on?") rather than the mechanism (XNOR with locale). The smoke test (`settings-display.slint`) will exercise both positions in both locales; if consumers consistently set the wrong value in the first pass, the property name or the documentation needs revisiting.
+- **Cluster mirroring duplication.** The trailing cluster branches on `ltr-order = (Locale.rtl == leading-flip)`, with icon and unit declared twice each (cluster-leading and cluster-trailing slots, gated by `ltr-order`). Each pair has only one active member, but Slint's view tree sees both `if` blocks. If Slint's compiler doesn't dead-code-eliminate inactive `if` branches efficiently, this could matter at scale (a settings screen with 30 rows = 120 cluster `if` blocks). Mitigation: profile the smoke test if it feels sluggish; otherwise accept.
+- **Locked row height clips display fonts.** `row-content-height = value-font-size × 1.6` is tight. Inter / Noto Sans Arabic / Cairo / Tajawal fit at body sizes; descender-heavy display fonts (handwriting, ornamental) may clip. Mitigation: bump the multiplier in `row-content-height` if real consumer fonts clip — the cost is a uniformly taller row at every density.
+- **`wrap: true` defeats locale-stable height.** When a consumer enables wrap, the row's height becomes a function of how the active font wraps the content, which differs across locales. A 30-character label may wrap to two lines in Latin and three in Arabic, growing the row. This is the consumer's explicit opt-in to "let content drive height"; nothing the library can do about it without re-clamping wrapped content, which would defeat the purpose. Document in the doc-comment that locale-stable height only holds when `wrap: false`.
+- **Value-unit Typography step-down.** Spec'd as "one Typography step below value." The implementation hardcodes a 4-case match (`subtle → text-xs`, `normal/strong → text-sm`, `total → text-base`) rather than computing the step at runtime, because Typography's scale doesn't have uniform "step-below" gaps that produce consistent visual proportion. Any future emphasis levels need a matching entry in `value-unit-font-size`.
+- **No vertical alignment between label and value when their heights differ.** If `label-icon` is taller than the label text (or vice versa for the value cluster), Slint's HorizontalLayout center-aligns by default. For mixed icon+text rows this looks correct. If a future case (e.g., a label with `description` from Material-parity slice 1) needs baseline alignment between clusters, revisit at that point.
+- **Divider rendering inside a Card's clipped surface.** Card has `clip: true` on its surface, which means a 1px divider at `y: row.height - 1px` renders correctly. But if Card's `padding-override` is `0.001px` (zero padding), the divider would touch the Card's rounded corners — visually awkward. Mitigation: when used inside a Card with non-zero padding, the divider sits inside the padded region, which looks correct. Document this in the doc-comment on `show-divider`: "The divider renders at the bottom edge of the row's bounding box. When placed inside a Card with rounded corners and zero padding, the divider may visually clip into the corner radius; in that case, set `show-divider: false` on the last row of the list."
+- **Tooltip TouchArea blocks wrapping interactive Card.** The TouchArea rendered when `tooltip != ""` captures pointer events. A consumer wrapping a tooltip-bearing KeyValueRow inside a `Card { interactive: true; clicked => ... }` will find that the Card's `clicked` never fires. The current answer is "pick one — tooltip OR clickable row." Material-parity slice 3 introduces row-level `interactive` + `clicked()` and merges the tooltip's TouchArea with the interactive one, resolving this conflict at the row level for consumers who pick row-level interactivity over Card-level.

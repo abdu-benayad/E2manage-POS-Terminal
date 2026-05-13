@@ -345,7 +345,7 @@ This isn't a stylistic preference — it's a structural workaround for Slint 1.1
 - ✅ `Money { amount: string }` + currency rendered from `CurrencyFormat` global → two Text elements
 - ❌ `Money { value: "12.50 ر.س" }` as a single pre-formatted string handed to one Text
 
-This rule supersedes the "LTR-atomic numeric rendering" rule documented in earlier drafts; LTR-atomic is now a *specific case* of segmentation applied to numeric+unit pairs.
+LTR-atomic numeric rendering — the rule that a value+unit pair stays in a single reading order regardless of locale — is a *specific case* of segmentation applied to numeric+unit pairs, and it is **consumer-opt-in** per component (e.g., KeyValueRow's `unit-position: UnitPosition { trailing, leading }`). The library does not unilaterally lock value-and-unit pairs to LTR — it gives the consumer one knob to pick the reading order and produces a layout that's symmetric across locales. See [Value-and-unit reading order](#value-and-unit-reading-order-the-segmentation-rule-applied-to-numeric-pairs).
 
 ### RTL handling
 
@@ -354,13 +354,23 @@ This rule supersedes the "LTR-atomic numeric rendering" rule documented in earli
 - **Consumers never reason about left/right.** They reason about leading/trailing.
 - **Geometric metaphors do not flip in RTL.** A switch's on-position is always physical-right regardless of locale (matches iOS Arabic behavior). A slider's "more" direction is always physical-right. Document the rule on any component with a physical metaphor.
 
-### LTR-atomic numeric rendering (a specific case of segmentation)
+### Value-and-unit reading order (the segmentation rule applied to numeric pairs)
 
-Components displaying numbers + units (`Money`, `Quantity`, `MoneyInput`, any future `Code` / `Timestamp` / `Percent`) render the pair as an LTR sub-flow regardless of `Locale.rtl`. The pair's *position* in surrounding layout respects locale; the pair's *internal order* does not.
+Components that display a value and a unit (`KeyValueRow`, future `Money`, `Quantity`, `MoneyInput`, future `Code` / `Timestamp` / `Percent`) render the pair as two SEPARATE Text elements (per the segmentation principle), arranged in a `HorizontalLayout` whose internal direction is controlled by a per-component reading-order knob — typically `unit-position: UnitPosition { trailing, leading }`. The cluster's *position* in the surrounding layout respects `Locale.rtl`; the cluster's *internal order* is governed by the XNOR of `Locale.rtl` and the consumer's chosen unit position.
 
-Implementation: number and unit are SEPARATE Text elements (per the segmentation principle), arranged in a fixed `HorizontalLayout` whose direction is locked LTR. The whole pair as a unit is positioned by `Locale.rtl` in its parent.
+The two observable cluster orders:
 
-**This is non-negotiable.** Any new numeric-displaying primitive must follow this rule. If you add such a component, document the LTR-atom behavior in its description.
+- `unit-position: trailing` (default) → reader reads value→unit. LTR cluster: `[value, unit]`. RTL cluster: `[unit, value]` (mirrors with locale; reader still reads value first).
+- `unit-position: leading` → reader reads unit→value. LTR cluster: `[unit, value]`. RTL cluster: `[value, unit]` (mirrors with locale; reader still reads unit first).
+
+This is the symmetric form of what earlier drafts called "LTR-atomic numeric rendering." LTR-atomic was a one-way pin (cluster always renders as `[icon, value, unit]` in source order regardless of locale, which forces the reader to perceive `12.50 SAR` in both en and ar). The current rule generalizes it: the consumer chooses the *reading order* once (trailing or leading), and the library renders the correct physical layout for each locale.
+
+**This is non-negotiable.** Any new numeric-pair-displaying primitive must:
+
+1. Use two SEPARATE Text elements for value and unit. Never concatenate.
+2. Expose a `unit-position: UnitPosition` property (or composed equivalent — e.g., a `Money` primitive may compose KeyValueRow and pass its `unit-position` through).
+3. Default to `trailing` (the value-first reading order matches conventional POS / receipt / settings layouts).
+4. Implement the XNOR rule so that toggling `Locale.rtl` and toggling `unit-position` are commutative: each one independently flips the cluster's physical order, and flipping both leaves it unchanged.
 
 ### Free text input is the exception
 
