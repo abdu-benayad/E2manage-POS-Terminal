@@ -1,0 +1,356 @@
+// KeyValueRow — regression preview.
+//
+// One section per acceptance criterion from architecture/key-value-row.md
+// → Acceptance criteria. Each section demonstrates one design facet
+// (emphasis, tone, density, etc.) so a reviewer can audit by scrolling
+// top-to-bottom without remembering matrix coordinates.
+//
+// Run: `slint-viewer abdu-slint-ui/previews/key-value-row.slint`
+
+import { KeyValueRow } from "../components/key-value-row.slint";
+import { Card } from "../components/card.slint";
+import {
+    Emphasis, Tone, Density, UnitPosition, DisclosureIndicator, ThemeMode
+} from "../enums.slint";
+import { Theme } from "../globals/theme.slint";
+import { Typography } from "../globals/typography.slint";
+import { Spacing } from "../globals/spacing.slint";
+import { Locale } from "../globals/locale.slint";
+
+import "../assets/phosphor.ttf";
+import "../assets/lucide.ttf";
+
+// Section caption helper — title above content, kept narrow so the
+// preview reads top-to-bottom as a checklist.
+component Section inherits VerticalLayout {
+    in property <string> title;
+    in property <string> caption;
+    spacing: Spacing.xs;
+    Text {
+        text: root.title;
+        font-size: Typography.text-sm;
+        font-weight: Typography.weight-semibold;
+        color: Theme.foreground;
+        wrap: no-wrap;
+    }
+    if root.caption != "": Text {
+        text: root.caption;
+        font-size: Typography.text-xs;
+        color: Theme.muted-foreground;
+        wrap: no-wrap;
+    }
+}
+
+// A bordered surface holding one or more KeyValueRows. Mirrors how a
+// real consumer composes — list of rows inside a Card-shaped surface.
+component RowSurface inherits Rectangle {
+    background: Theme.surface;
+    border-color: Theme.border;
+    border-width: 1px;
+    border-radius: 8px;
+    VerticalLayout {
+        padding: Spacing.md;
+        spacing: 0;
+        @children
+    }
+}
+
+export component KeyValueRowPreview inherits Window {
+    title: "KeyValueRow — regression preview";
+    preferred-width: 1200px;
+    preferred-height: 2200px;
+    background: Theme.background;
+
+    // Toolbar toggles — kept above the sections so a reviewer can flip
+    // locale or theme mode and re-scan the entire preview.
+    in-out property <bool> rtl-toggle: false;
+    in-out property <bool> dark-toggle: false;
+    init => {
+        Locale.rtl = root.rtl-toggle;
+        Locale.current = root.rtl-toggle ? "ar" : "en";
+        Theme.mode = root.dark-toggle ? ThemeMode.dark : ThemeMode.light;
+    }
+    changed rtl-toggle => {
+        Locale.rtl = self.rtl-toggle;
+        Locale.current = self.rtl-toggle ? "ar" : "en";
+    }
+    changed dark-toggle => {
+        Theme.mode = self.dark-toggle ? ThemeMode.dark : ThemeMode.light;
+    }
+
+    VerticalLayout {
+        padding: Spacing.xl;
+        spacing: Spacing.xl;
+
+        // ===== Header =====
+        Text {
+            text: "KeyValueRow";
+            font-size: Typography.text-xxl;
+            font-weight: Typography.weight-bold;
+            color: Theme.foreground;
+        }
+        Text {
+            text: "Labelled-value display row composed on the segment-as-cell pattern. 13 sections, one per acceptance criterion. Click the RTL pill or the Dark pill to re-scan in the alternate mode.";
+            font-size: Typography.text-sm;
+            color: Theme.muted-foreground;
+            wrap: no-wrap;
+        }
+
+        // Toolbar with toggles
+        HorizontalLayout {
+            spacing: Spacing.md;
+            alignment: start;
+            Rectangle {
+                background: root.rtl-toggle ? Theme.primary : Theme.surface-muted;
+                border-color: Theme.border;
+                border-width: 1px;
+                border-radius: 6px;
+                width: 140px;
+                height: 36px;
+                Text {
+                    text: root.rtl-toggle ? "RTL · ar" : "LTR · en";
+                    font-size: Typography.text-sm;
+                    color: root.rtl-toggle ? Theme.primary-foreground : Theme.foreground;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                TouchArea {
+                    clicked => { root.rtl-toggle = !root.rtl-toggle; }
+                }
+            }
+            Rectangle {
+                background: root.dark-toggle ? Theme.foreground : Theme.surface-muted;
+                border-color: Theme.border;
+                border-width: 1px;
+                border-radius: 6px;
+                width: 140px;
+                height: 36px;
+                Text {
+                    text: root.dark-toggle ? "Dark mode" : "Light mode";
+                    font-size: Typography.text-sm;
+                    color: root.dark-toggle ? Theme.background : Theme.foreground;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                TouchArea {
+                    clicked => { root.dark-toggle = !root.dark-toggle; }
+                }
+            }
+        }
+
+        // ===== 1. Emphasis matrix =====
+        Section {
+            title: "1. Emphasis — 4 levels (subtle / normal / strong / total)";
+            caption: "Label font-size stays text-sm across all levels; value font-size and weight scale up. Total bumps label to medium so the bold value has a label that holds its own.";
+        }
+        RowSurface {
+            KeyValueRow { label: Locale.rtl ? "خفيف" : "Subtle"; value: "12.50"; value-unit: Locale.rtl ? "ر.س" : "SAR"; emphasis: Emphasis.subtle; show-divider: true; }
+            KeyValueRow { label: Locale.rtl ? "عادي" : "Normal"; value: "12.50"; value-unit: Locale.rtl ? "ر.س" : "SAR"; emphasis: Emphasis.normal; show-divider: true; }
+            KeyValueRow { label: Locale.rtl ? "قوي" : "Strong"; value: "12.50"; value-unit: Locale.rtl ? "ر.س" : "SAR"; emphasis: Emphasis.strong; show-divider: true; }
+            KeyValueRow { label: Locale.rtl ? "الإجمالي" : "Total"; value: "12.50"; value-unit: Locale.rtl ? "ر.س" : "SAR"; emphasis: Emphasis.total; }
+        }
+
+        // ===== 2. Value-tone matrix =====
+        Section {
+            title: "2. Value-tone — 7 tones color the value cluster";
+            caption: "Label always stays Theme.muted-foreground regardless of tone. The value, value-unit, and value-icon share the tone.";
+        }
+        RowSurface {
+            KeyValueRow { label: Locale.rtl ? "افتراضي" : "Default"; value: "0.00"; value-unit: Locale.rtl ? "ر.س" : "SAR"; value-tone: Tone.default; show-divider: true; }
+            KeyValueRow { label: Locale.rtl ? "أساسي" : "Primary"; value: "0.00"; value-unit: Locale.rtl ? "ر.س" : "SAR"; value-tone: Tone.primary; show-divider: true; }
+            KeyValueRow { label: Locale.rtl ? "نجاح" : "Success"; value: "+5.00"; value-unit: Locale.rtl ? "ر.س" : "SAR"; value-tone: Tone.success; show-divider: true; }
+            KeyValueRow { label: Locale.rtl ? "تحذير" : "Warning"; value: "5.00"; value-unit: Locale.rtl ? "ر.س" : "SAR"; value-tone: Tone.warning; show-divider: true; }
+            KeyValueRow { label: Locale.rtl ? "مدمر" : "Destructive"; value: Locale.rtl ? "—5.00" : "−5.00"; value-unit: Locale.rtl ? "ر.س" : "SAR"; value-tone: Tone.destructive; show-divider: true; }
+            KeyValueRow { label: Locale.rtl ? "معلومة" : "Info"; value: "0.00"; value-unit: Locale.rtl ? "ر.س" : "SAR"; value-tone: Tone.info; show-divider: true; }
+            KeyValueRow { label: Locale.rtl ? "مكتوم" : "Muted"; value: "0.00"; value-unit: Locale.rtl ? "ر.س" : "SAR"; value-tone: Tone.muted; }
+        }
+
+        // ===== 3. Density =====
+        Section {
+            title: "3. Density — three padding-y presets";
+            caption: "compact = 8px, default = 12px, comfortable = 16px. Tighter than Card's mapping at the same nominal level — KeyValueRow is content, not container.";
+        }
+        HorizontalLayout {
+            spacing: Spacing.md;
+            RowSurface {
+                KeyValueRow { label: "compact"; value: "12.50"; value-unit: "SAR"; density: Density.compact; }
+            }
+            RowSurface {
+                KeyValueRow { label: "default"; value: "12.50"; value-unit: "SAR"; density: Density.default; }
+            }
+            RowSurface {
+                KeyValueRow { label: "comfortable"; value: "12.50"; value-unit: "SAR"; density: Density.comfortable; }
+            }
+        }
+
+        // ===== 4. Unit-position × Locale (XNOR truth table) =====
+        Section {
+            title: "4. Unit-position × Locale — XNOR truth table";
+            caption: "trailing (default): unit reads AFTER value in both locales. leading: unit reads BEFORE value. Toggle RTL above to see both halves of the table.";
+        }
+        HorizontalLayout {
+            spacing: Spacing.md;
+            RowSurface {
+                KeyValueRow { label: Locale.rtl ? "خلفي" : "trailing"; value: "12.50"; value-unit: Locale.rtl ? "ر.س" : "SAR"; unit-position: UnitPosition.trailing; }
+            }
+            RowSurface {
+                KeyValueRow { label: Locale.rtl ? "أمامي" : "leading"; value: "100.00"; value-unit: "$"; unit-position: UnitPosition.leading; }
+            }
+        }
+
+        // ===== 5. Description =====
+        Section {
+            title: "5. Description — two-line content, indented under label";
+            caption: "Description renders in its own row below the primary row, with a leading-indent spacer aligning it under the label cell. When description == \"\" the row collapses to single-line.";
+        }
+        RowSurface {
+            KeyValueRow {
+                label: Locale.rtl ? "الإجمالي" : "Total";
+                label-icon: "receipt";
+                description: Locale.rtl ? "ضريبة 15٪ مشمولة" : "VAT 15% included";
+                value: "12.50";
+                value-unit: Locale.rtl ? "ر.س" : "SAR";
+                emphasis: Emphasis.total;
+                show-divider: true;
+            }
+            KeyValueRow {
+                label: Locale.rtl ? "بدون وصف" : "No description";
+                value: "0.00";
+                value-unit: Locale.rtl ? "ر.س" : "SAR";
+            }
+        }
+
+        // ===== 6. Disclosure =====
+        Section {
+            title: "6. Disclosure — none / chevron / external, locale-aware glyphs";
+            caption: "chevron is › in LTR / ‹ in RTL. external is ↗ in LTR / ↖ in RTL. Both sit at the row's trailing edge.";
+        }
+        RowSurface {
+            KeyValueRow { label: Locale.rtl ? "بدون مؤشر" : "none"; value: Locale.rtl ? "غير قابل للنقر" : "not clickable"; disclosure: DisclosureIndicator.none; show-divider: true; }
+            KeyValueRow { label: Locale.rtl ? "إعدادات الحساب" : "Account settings"; value: ""; disclosure: DisclosureIndicator.chevron; show-divider: true; }
+            KeyValueRow { label: Locale.rtl ? "افتح موقع المتجر" : "Open store website"; value: ""; disclosure: DisclosureIndicator.external; }
+        }
+
+        // ===== 7. Status dot =====
+        Section {
+            title: "7. Status dot — colored ● at the row's leading edge";
+            caption: "Sizes.icon-xs (12px). Dot, not pill. Status-tone resolves via the same mapping as value-tone, falling back to muted-foreground for default and muted.";
+        }
+        RowSurface {
+            KeyValueRow { label: Locale.rtl ? "متصل" : "Online"; value: Locale.rtl ? "نشط" : "active"; show-status: true; status-tone: Tone.success; show-divider: true; }
+            KeyValueRow { label: Locale.rtl ? "متزامن" : "Syncing"; value: Locale.rtl ? "قيد التقدم" : "in progress"; show-status: true; status-tone: Tone.info; show-divider: true; }
+            KeyValueRow { label: Locale.rtl ? "تحذير" : "Warning"; value: Locale.rtl ? "مساحة منخفضة" : "low disk"; show-status: true; status-tone: Tone.warning; show-divider: true; }
+            KeyValueRow { label: Locale.rtl ? "خطأ" : "Error"; value: Locale.rtl ? "فشل" : "failed"; show-status: true; status-tone: Tone.destructive; show-divider: true; }
+            KeyValueRow { label: Locale.rtl ? "غير محدد" : "Unset"; value: "—"; show-status: true; status-tone: Tone.muted; }
+        }
+
+        // ===== 8. value-monospace =====
+        Section {
+            title: "8. value-monospace — tabular alignment for stacked numerics";
+            caption: "Without value-monospace the digits use the row font and won't align by column. With value-monospace each digit is equal-width, so the decimal point lines up across rows.";
+        }
+        HorizontalLayout {
+            spacing: Spacing.md;
+            RowSurface {
+                KeyValueRow { label: Locale.rtl ? "مشروبات" : "Beverages"; value: "42.00"; value-unit: Locale.rtl ? "ر.س" : "SAR"; show-divider: true; }
+                KeyValueRow { label: Locale.rtl ? "أطعمة" : "Food"; value: "6.30"; value-unit: Locale.rtl ? "ر.س" : "SAR"; show-divider: true; }
+                KeyValueRow { label: Locale.rtl ? "حلويات" : "Desserts"; value: "2.50"; value-unit: Locale.rtl ? "ر.س" : "SAR"; show-divider: true; }
+                KeyValueRow { label: Locale.rtl ? "الإجمالي" : "Total"; value: "50.80"; value-unit: Locale.rtl ? "ر.س" : "SAR"; emphasis: Emphasis.total; }
+            }
+            RowSurface {
+                KeyValueRow { label: Locale.rtl ? "مشروبات" : "Beverages"; value: "42.00"; value-unit: Locale.rtl ? "ر.س" : "SAR"; value-monospace: true; show-divider: true; }
+                KeyValueRow { label: Locale.rtl ? "أطعمة" : "Food"; value: "6.30"; value-unit: Locale.rtl ? "ر.س" : "SAR"; value-monospace: true; show-divider: true; }
+                KeyValueRow { label: Locale.rtl ? "حلويات" : "Desserts"; value: "2.50"; value-unit: Locale.rtl ? "ر.س" : "SAR"; value-monospace: true; show-divider: true; }
+                KeyValueRow { label: Locale.rtl ? "الإجمالي" : "Total"; value: "50.80"; value-unit: Locale.rtl ? "ر.س" : "SAR"; value-monospace: true; emphasis: Emphasis.total; }
+            }
+        }
+
+        // ===== 9. wrap =====
+        Section {
+            title: "9. wrap: true — label wraps, row grows; value stays single-line";
+            caption: "When wrap is true, label and description wrap to multiple lines and the row grows vertically. Value, value-unit, and value-icon stay single-line regardless — numeric values must not character-wrap.";
+        }
+        RowSurface {
+            KeyValueRow {
+                label: Locale.rtl
+                    ? "عنوان طويل جداً يجب أن يلتف إلى عدة أسطر عندما تكون قيمة wrap صحيحة"
+                    : "A very long label that should wrap to multiple lines when wrap is true";
+                value: "42.00";
+                value-unit: Locale.rtl ? "ر.س" : "SAR";
+                wrap: true;
+            }
+        }
+
+        // ===== 10. show-divider =====
+        Section {
+            title: "10. show-divider — 1px Theme.border at row bottom";
+            caption: "Set show-divider on every row except the last when stacking rows inside a surface.";
+        }
+        RowSurface {
+            KeyValueRow { label: Locale.rtl ? "السطر الأول" : "First row"; value: "10.00"; value-unit: Locale.rtl ? "ر.س" : "SAR"; show-divider: true; }
+            KeyValueRow { label: Locale.rtl ? "السطر الثاني" : "Second row"; value: "20.00"; value-unit: Locale.rtl ? "ر.س" : "SAR"; show-divider: true; }
+            KeyValueRow { label: Locale.rtl ? "السطر الثالث (بدون فاصل)" : "Third row (no divider)"; value: "30.00"; value-unit: Locale.rtl ? "ر.س" : "SAR"; }
+        }
+
+        // ===== 11. Tooltip =====
+        Section {
+            title: "11. Tooltip — cursor-anchored, delay-then-show, click-to-dismiss";
+            caption: "Hover the row below; the tooltip emerges 500ms later, tracks the cursor, and dismisses on click.";
+        }
+        RowSurface {
+            KeyValueRow {
+                label: Locale.rtl ? "الإجمالي الفرعي" : "Subtotal";
+                value: "12.50";
+                value-unit: Locale.rtl ? "ر.س" : "SAR";
+                tooltip: Locale.rtl
+                    ? "المجموع قبل ضريبة القيمة المضافة وأي خصومات"
+                    : "Pre-tax total before any discounts or store credits";
+            }
+        }
+
+        // ===== 12. Debug bounds =====
+        Section {
+            title: "12. debug-bounds — 2px magenta border on row root (v1.0 row-only)";
+            caption: "Per-cell outlines are deferred — for cell-level layout debugging during composition work, use previews/_segment.slint's Bound helper.";
+        }
+        RowSurface {
+            KeyValueRow {
+                label: Locale.rtl ? "الإجمالي" : "Total";
+                label-icon: "receipt";
+                description: Locale.rtl ? "ضريبة 15٪ مشمولة" : "VAT 15% included";
+                value: "12.50";
+                value-unit: Locale.rtl ? "ر.س" : "SAR";
+                value-icon: "credit-card";
+                show-status: true;
+                status-tone: Tone.success;
+                disclosure: DisclosureIndicator.chevron;
+                emphasis: Emphasis.total;
+                debug-bounds: true;
+            }
+        }
+
+        // ===== 13. Dark mode =====
+        Section {
+            title: "13. Dark mode — Theme.mode flip re-renders every color token";
+            caption: "Click the Dark pill in the toolbar to toggle. The label, value, divider, status dot, and tooltip background all read from Theme tokens and flip in lockstep.";
+        }
+        RowSurface {
+            KeyValueRow {
+                label: Locale.rtl ? "الإجمالي" : "Total";
+                description: Locale.rtl ? "ضريبة 15٪ مشمولة" : "VAT 15% included";
+                value: "12.50";
+                value-unit: Locale.rtl ? "ر.س" : "SAR";
+                emphasis: Emphasis.total;
+                show-divider: true;
+            }
+            KeyValueRow {
+                label: Locale.rtl ? "النجاح" : "Success";
+                value: "+5.00";
+                value-unit: Locale.rtl ? "ر.س" : "SAR";
+                value-tone: Tone.success;
+                show-status: true;
+                status-tone: Tone.success;
+            }
+        }
+    }
+}
