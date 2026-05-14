@@ -114,3 +114,16 @@ export enum UnitPosition {
     trailing,    // unit reads AFTER value (default)
     leading,     // unit reads BEFORE value (currency-prefix style)
 }
+
+// KeyValueRow's trailing-edge disclosure indicator. `none` (default)
+// renders nothing. `chevron` and `external` render a single locale-aware
+// glyph as the row's last cell — `chevron` is the standard
+// settings-row affordance (`›` LTR / `‹` RTL); `external` signals an
+// off-screen / off-app target (`↗` LTR / `↖` RTL). Glyph selection is
+// derived at the row level from the enum value and Locale.rtl, then
+// bound to a Segment's `text`.
+export enum DisclosureIndicator {
+    none,        // no indicator
+    chevron,     // `›` LTR, `‹` RTL
+    external,    // `↗` LTR, `↖` RTL
+}
