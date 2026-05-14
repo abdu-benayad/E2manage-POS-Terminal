@@ -2,7 +2,7 @@
 
 Modern, environment-aware Slint UI primitives for Rust applications. Touch-first, tablet-class hardware in mind; iOS / SwiftUI–inspired design language.
 
-> **Status — Phase 1 in progress.** Foundation shipped (10 globals, dual icon font, design-token system). Four of five Phase 1 primitives built: `Button`, `IconButton`, `Toggle`, and `Card`, each with a preview and an interactive playground section. `KeyValueRow` and a smoke-test screen still to land before Phase 1 closes. See [HANDOVER.md](./HANDOVER.md) for current state and [IMPL.md](./IMPL.md) for the implementation playbook.
+> **Status — Phase 1 complete.** Foundation shipped (10 globals, dual icon font, design-token system). All five Phase 1 primitives built: `Button`, `IconButton`, `Toggle`, `Card`, and `KeyValueRow`, each with a preview and an interactive playground section. A smoke-test screen (`examples/settings-display.slint`) is the remaining Phase-1 deliverable. See [HANDOVER.md](./HANDOVER.md) for current state and [IMPL.md](./IMPL.md) for the implementation playbook.
 
 ---
 
@@ -121,7 +121,7 @@ This is not a stylistic choice. Slint's bidirectional text support is incomplete
 | **IconButton** | `icon` (codepoint). No mixed text by construction. |
 | **Toggle** | `label` (one script) + `description` (one script, separate `Text`). Knob position is geometric, locale-independent. |
 | **Card** | No text of its own. Children inside are the consumer's responsibility — they have segmented primitives to compose with. |
-| **KeyValueRow** (next, Phase 1) | `label: string` + `value: string`. Canonical use case: Arabic label + Latin numeric value. Layout flips per `Locale.rtl`; each `Text` stays one direction. |
+| **KeyValueRow** | Every textual property is its own cell — `label`, `description`, `value`, `value-unit` (and icon glyphs for `label-icon`, `value-icon`, `status`, `disclosure`). The dominant POS case (Arabic label + Latin numeric value) renders as two `Text` elements, never one bidi-mixed string. Layout flips per `Locale.rtl`; the cluster's internal order is governed by `unit-position` XNOR `Locale.rtl`. |
 | **Money** (Phase 2) | `amount: string` (LTR-atomic numeric) + currency symbol/code (its own native direction). The pair renders as **two `Text` elements**, not one. `"12.50 ر.س"` is `Text { "12.50" }` next to `Text { "ر.س" }`. |
 | **Quantity** (Phase 2) | Same pattern as Money — `value` Text + `unit` Text, separately. `100 سم` is two segments, never `"100سم"` in one Text. |
 | **SectionCard** (Phase 2) | `title: string` (one script) + `icon` (codepoint) + content slot (consumer-composed). |
@@ -367,18 +367,56 @@ Card with a built-in header (icon + title) and content slot. The dominant patter
 
 ---
 
-### KeyValueRow — pending (Phase 1, next)
+### KeyValueRow — shipped (Phase 1)
 
-Label on the start side, value on the end side. RTL-aware. The building block for breakdowns, totals, summaries. **The canonical incarnation of the [single-script segmentation principle](#internationalization-single-script-segmentation):** `label` and `value` are each a separate `Text` element, each in one script. The dominant POS use case — Arabic label + Latin numeric value — works correctly because the two scripts never mix in a single `Text`.
+Label on the start side, value on the end side. RTL-aware. The building block for breakdowns, totals, summary rows, settings lists. **The canonical incarnation of the [single-script segmentation principle](#internationalization-single-script-segmentation):** every textual property is its own cell (`label`, `description`, `value`, `value-unit`), so the dominant POS case — Arabic label + Latin numeric value — renders as separate `Text` elements that never mix scripts in one bidi run.
 
-| Property        | Type     | Default     | Description                                                       |
-| --------------- | -------- | ----------- | ----------------------------------------------------------------- |
-| `label`         | `string` | `""`        | Left side in LTR, right side in RTL.                              |
-| `value`         | `string` | `""`        | The opposite side.                                                |
-| `emphasis`      | `string` | `"normal"`  | `normal \| strong \| total` — weight and color treatment of value |
-| `value-tone`    | `string` | `"default"` | `default \| positive \| negative \| muted`                        |
+Composed on the segment-as-cell pattern's foundation primitives (`Segment` plus the bare slack `Rectangle`). The row's body is a primary `HorizontalLayout` holding every single-line cell plus a conditional description row below, indented to align under the label. Design rationale in [`architecture/key-value-row.md`](architecture/key-value-row.md); pattern reference in [`architecture/segment-pattern.md`](architecture/segment-pattern.md).
 
-**Reads from environment:** `Theme`, `Typography`, `Locale`
+#### Content (6)
+
+| Property      | Type     | Default | Description |
+| ------------- | -------- | ------- | ----------- |
+| `label`       | `string` | `""`    | Leading-side primary text. Single-script content. |
+| `label-icon`  | `string` | `""`    | Optional `IconFont` name (e.g. `"receipt"`). Position flips with `Locale.rtl`. |
+| `description` | `string` | `""`    | Optional secondary text rendered below `label`, indented to align under it. When empty, the row collapses to single-line. |
+| `value`       | `string` | `""`    | Trailing-side primary text. Single-script content. |
+| `value-unit`  | `string` | `""`    | Optional unit/suffix adjacent to `value` (`"SAR"`, `"%"`, `"kg"`). Reading position controlled by `unit-position`. |
+| `value-icon`  | `string` | `""`    | Optional `IconFont` name rendered in the value cluster (trend arrows, status glyphs). |
+
+#### Typography & tone (3)
+
+| Property          | Type       | Default     | Description |
+| ----------------- | ---------- | ----------- | ----------- |
+| `emphasis`        | `Emphasis` | `normal`    | `subtle \| normal \| strong \| total` — drives label/value/unit font-size and weight. |
+| `value-tone`      | `Tone`     | `default`   | Colors the value cluster (value text + unit + icon). Label is never toned. |
+| `value-monospace` | `bool`     | `false`     | When `true`, the value cell uses `Typography.font-family-monospace` for tabular-figures alignment across stacked numeric rows. |
+
+#### Affordances (3)
+
+| Property      | Type                  | Default      | Description |
+| ------------- | --------------------- | ------------ | ----------- |
+| `show-status` | `bool`                | `false`      | Renders a colored `●` dot at the row's leading edge (`Sizes.icon-xs`, 12px). Dot, not pill. |
+| `status-tone` | `Tone`                | `Tone.muted` | Color of the status dot. Resolves via the same `Tone` mapping as `value-tone`. |
+| `disclosure`  | `DisclosureIndicator` | `none`       | `none \| chevron \| external`. Glyph auto-flips with locale (`›/‹`, `↗/↖`). |
+
+#### Layout & behaviour (5)
+
+| Property        | Type           | Default    | Description |
+| --------------- | -------------- | ---------- | ----------- |
+| `density`       | `Density`      | `default`  | `compact` → `padding-y: 8px`, `default` → `12px`, `comfortable` → `16px`. Horizontal padding is always `0` — KeyValueRow expects to live inside a padded surface (Card / SectionCard). |
+| `unit-position` | `UnitPosition` | `trailing` | Reading position of `value-unit` relative to `value`. `trailing` (default) = value→unit; `leading` = unit→value (currency-prefix style). Symmetric across locales. |
+| `wrap`          | `bool`         | `false`    | Applies to `label` and `description` only. When `true`, they wrap and the row grows vertically. `value`, `value-unit`, `value-icon` always stay single-line (numeric values must not character-wrap). |
+| `show-divider` | `bool`         | `false`    | Renders 1px `Theme.border` at the row's bottom edge. |
+| `tooltip`       | `string`       | `""`       | Hover popup. Cursor-anchored with 500ms emerge delay and click-to-dismiss. A non-empty value installs a row-spanning `TouchArea` that blocks click propagation to a wrapping interactive Card — choose tooltip OR clickable-row-via-Card, not both. |
+
+#### Debug (1)
+
+| Property       | Type   | Default | Description |
+| -------------- | ------ | ------- | ----------- |
+| `debug-bounds` | `bool` | `false` | 2px magenta border on the row root. Row-only in v1.0; per-cell outlines deferred (escape hatch: extend `Segment` with `debug-outline: bool` if a real need surfaces). |
+
+**Reads from environment:** `Theme`, `Typography`, `Sizes`, `Spacing`, `Locale`, `IconFont`. Animation is implicit (the tooltip delay reads `Animation.slower`).
 
 ---
 
@@ -611,16 +649,17 @@ Read source for *how a component is built*. Run the playground for *how to use i
 | Construction discipline (`CLAUDE.md`)              | done                                               |
 | Roadmap (`ROADMAP.md`)                             | done                                               |
 | Implementation playbook (`IMPL.md`)                | done for Phase 1; later phases sketched            |
-| Per-component design docs (`architecture/`)        | `button.md` + `icon-button.md` + `toggle.md` + `card.md`. Policy: non-trivial components get one |
+| Per-component design docs (`architecture/`)        | `button.md` + `icon-button.md` + `toggle.md` + `card.md` + `key-value-row.md` + `segment-pattern.md`. Policy: non-trivial components get one |
 | Tokens + globals                                   | done (10 globals: `Theme`, `Typography`, `Spacing`, `Radius`, `Sizes`, `Animation`, `Depth`, `Locale`, `CurrencyFormat`, `IconFont`) |
 | Design language                                    | iOS / SwiftUI-derived; documented in HANDOVER      |
-| Single-script segmentation principle               | codified in README + CLAUDE.md; first explicit incarnation lands with KeyValueRow |
+| Single-script segmentation principle               | codified in README + CLAUDE.md; first explicit incarnation shipped in KeyValueRow |
+| Segment-as-cell pattern                            | shipped — foundation primitives `Segment`, `SegmentColumn`, `Badge` (private, `components/_*.slint`); documented in `architecture/segment-pattern.md` |
 | `Button`                                           | shipped (25 properties, full depth + accessibility) |
 | `IconButton`                                       | shipped (19 properties)                            |
 | `Toggle`                                           | shipped (19 properties, knob-only depth, `accessible-role: switch`) |
 | `Card`                                             | shipped (16 properties, opt-in interactivity, conditional accessibility shim) |
-| `KeyValueRow`                                      | pending — next Phase 1 component                   |
+| `KeyValueRow`                                      | shipped (18 properties, segment-as-cell composition, cursor-anchored tooltip, locale-stable height) |
 | Phase 1 smoke test (`examples/settings-display.slint`) | pending                                        |
-| Playground app (`abdu-slint-ui-playground`)        | shipped (sidebar + scrollable toolbar + Button & IconButton & Toggle & Card sections + spinner-period live tuning) |
+| Playground app (`abdu-slint-ui-playground`)        | shipped (sidebar + scrollable toolbar + Button & IconButton & Toggle & Card & KeyValueRow sections + spinner-period live tuning) |
 | Phase 2 primitives (10 more)                       | pending                                            |
 | Workspace integration into `e2manage-pos-terminal`  | pending (Phase 4)                                 |
