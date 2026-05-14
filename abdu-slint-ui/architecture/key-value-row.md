@@ -142,26 +142,44 @@ Default chosen for Linux availability. Consumers override at startup if they bun
 
 ## Composition over the segment-pattern foundation
 
-KeyValueRow is composed entirely of primitives from [`segment-pattern.md`](./segment-pattern.md): `Segment`, `SegmentColumn`, `Badge`, plus the bare slack `Rectangle`. No new private helpers needed.
+KeyValueRow is composed of `Segment` (from [`segment-pattern.md`](./segment-pattern.md)) plus the bare slack `Rectangle`. SegmentColumn and Badge are NOT used by KeyValueRow's body — see [Split-row structure](#split-row-structure) below for the rationale. No new private helpers needed.
 
 Each consumer-facing property routes through one or more cells. The mapping:
 
 | Consumer property | Cell(s) in the row | Notes |
 |---|---|---|
-| `label` | `Segment` inside a `SegmentColumn` (label cell) | Primary line of the label cell. |
-| `description` | `Segment` inside the same `SegmentColumn` | Secondary line. Self-zeros when empty; column collapses to single-line. |
-| `label-icon` | `Segment` (icon font) | Position flips with locale per branch. |
-| `value` | `Segment` | Center of the value-side group. |
+| `label` | `Segment` (primary row, leading side) | Single-line. Wraps when `wrap: true`. |
+| `description` | `Segment` (description row, below primary) | Renders only when non-empty. Indented to align under the label. Smaller font, muted color. |
+| `label-icon` | `Segment` (icon font, primary row) | Position flips with locale per branch. |
+| `value` | `Segment` (primary row, center of value cluster) | |
 | `value-unit` | `Segment` (one of two value-side slot positions) | Slot resolved by `unit-position` XNOR `Locale.rtl`. |
 | `value-icon` | `Segment` (icon font, the other value-side slot) | Slot resolved as the opposite of `value-unit`'s slot. |
-| `show-status` + `status-tone` | `Segment` (icon font glyph `●`) at the row's leading edge | The Segment's `text` is `"●"` when `show-status: true`, `""` otherwise. Empty `text` self-zeros the cell (no Badge `show: bool` coordination needed). `text-color` resolves from `status-tone`. Renders as a colored dot, not a pill — no background, no surrounding chrome. See [Status indicator: dot, not pill](#status-indicator-dot-not-pill). |
-| `disclosure` | `Segment` (icon font, glyph from row-derived) | `text` is empty when `disclosure: none`, so the cell self-zeros (no separate `show` gate needed). |
+| `show-status` + `status-tone` | `Segment` (`●` glyph at the row's leading edge, primary row) | The Segment's `text` is `"●"` when `show-status: true`, `""` otherwise. Empty `text` self-zeros the cell. `text-color` resolves from `status-tone`. Renders as a colored dot, not a pill — no background, no surrounding chrome. See [Status indicator: dot, not pill](#status-indicator-dot-not-pill). |
+| `disclosure` | `Segment` (icon-glyph from row-derived, primary row trailing edge) | `text` is empty when `disclosure: none`, so the cell self-zeros (no separate `show` gate needed). |
 
-The row's outer `HorizontalLayout` is a single sequence of cells with one `if Locale.rtl` branch (Invariant 4). Each cell is declared twice — once per branch — with the per-branch differences encoded at the call site (mainly `align-h`). Row-level derived properties provide the shared values (font, color, size, glyph) that both branches reference.
+The row's outer structure is a `VerticalLayout` (the row stack) containing a `primary-row` `HorizontalLayout` plus a conditional description `HorizontalLayout`. The primary row has one `if Locale.rtl` branch (Invariant 4); the description row also branches Locale.rtl independently — its align-h flips and the indent moves from leading (a leading spacer Rectangle) to trailing (a trailing spacer Rectangle).
 
-Per [Invariant 7](./segment-pattern.md#the-seven-invariants), the only stretching child of the row's outer HorizontalLayout is a bare `Rectangle { horizontal-stretch: 1; }` placed between the label-side and value-side cells.
+Per [Invariant 7](./segment-pattern.md#the-seven-invariants), the only stretching child of the primary HorizontalLayout is a bare `Rectangle { horizontal-stretch: 1; }` placed between the label-side and value-side cells. The description row uses its own slack Rectangle and a fixed-width spacer of `leading-indent` for the indent.
 
-For the structural details of how Segment, SegmentColumn, and Badge work — their property surfaces, empty-state behavior, the `show: bool` convention, the seven invariants — see [`segment-pattern.md`](./segment-pattern.md). This doc does not re-derive any of it.
+For the structural details of how Segment works — its property surface, empty-state behavior, the seven invariants — see [`segment-pattern.md`](./segment-pattern.md). This doc does not re-derive any of it.
+
+### Split-row structure
+
+The primary HorizontalLayout holds *every* cell as a single-line Segment — including the label. The `description` does NOT live inside a `SegmentColumn` with the label; instead it renders in its own HorizontalLayout below the primary row.
+
+This deviates from the segment-pattern's canonical "label as SegmentColumn" approach. The deviation is forced by an optical-alignment problem with mixed-height cells in `HorizontalLayout`:
+
+- A SegmentColumn label cell (two-line: label + description) has a preferred-height of two text lines (~32px for default emphasis).
+- Other cells in the same row (status dot, label-icon, value, value-unit, value-icon, disclosure) are single-line and have preferred-heights ranging from ~14px (status dot at icon-xs) to ~22px (value at text-lg).
+- HorizontalLayout sizes all cells to the layout's effective height (= max child preferred-height = the column's ~32px).
+- With `align-v: center` (default), the single-line cells render at vertical-center of the 32px height — sitting in the gap between the label and description.
+- With `align-v: top`, single-line cells align their *bounding-box tops* to the layout top — but each font/icon has different leading-above-cap, so the visible glyph-tops sit at visibly different Y coordinates. The result reads as a zigzag of trailing content.
+
+Slint 1.14 has no first-class baseline-alignment for Text. The structural fix is to keep every cell in the primary row at the same effective height (one line). Description renders in a second row below, indented to align under the label via a `leading-indent` spacer Rectangle whose width equals the sum of preceding cells' widths.
+
+When `description == ""`, the description row's `if` predicate is false and nothing renders — the row collapses to one HorizontalLayout's height. The split-row structure has the same external shape as the prior SegmentColumn approach (one logical "row" that grows when description is non-empty), but the internal layout cleanly separates the alignment concerns.
+
+The structural choice is KeyValueRow-specific, not a refutation of SegmentColumn. SegmentColumn remains correct for cell-shapes where ALL siblings in the parent layout are also multi-line (e.g., a list where every row has primary + supporting text and the column structure is symmetric across rows). For KeyValueRow, the leading content is multi-line (label + description) but the trailing content is single-line — that asymmetry needs the split.
 
 ---
 

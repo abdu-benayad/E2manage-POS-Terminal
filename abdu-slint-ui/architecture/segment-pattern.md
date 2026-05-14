@@ -462,9 +462,23 @@ A version bump to Slint 1.x should run the empirical Badge test (5-line file: em
 
 **Note on code blocks.** All code blocks in this document have been compiled against Slint 1.14. Specific syntactic constraints surfaced during verification are noted at the relevant property (e.g., `text-color`'s rename rationale, `TextOverflow.elide` / `TextOverflow.clip` enum qualification). Future doc updates that change code blocks should re-compile before shipping; a doc reader's first compile error against the canonical reference shifts the conversation from "is the pattern sound?" to "does this code even work?" — the wrong axis to lose credibility on.
 
+### Mixed-height cells in a HorizontalLayout — optical alignment problem
+
+When a row primitive's HorizontalLayout contains both single-line cells (e.g. value, value-unit, disclosure) AND a multi-line cell (e.g. a SegmentColumn holding primary + supporting text), the layout sizes every cell to the multi-line preferred-height. Single-line cells then render *inside* a taller allocated area, and the choice of `align-v` produces a visible defect either way:
+
+- `align-v: center` (Segment's default): single-line cells render vertically centered in the tall allocated area — sitting in the gap between the multi-line cell's two lines, not next to either of them.
+- `align-v: top`: each single-line cell aligns its *bounding-box top* to the layout top. But each font/icon has different leading above the cap-height, so the visible glyph-tops sit at visibly different Y coordinates depending on font-size and font family. Trailing content reads as a zigzag.
+- `align-v: bottom`: same issue with descender-line variance.
+
+Slint 1.14 has no first-class baseline alignment, so no `align-v` value fully solves this for mixed-height cells.
+
+**Workaround**: split the row primitive into a primary HorizontalLayout (containing only single-line cells, all the same effective height) plus a second HorizontalLayout for the multi-line content rendered below the primary row. KeyValueRow uses this split — see [`key-value-row.md`](./key-value-row.md) → "Split-row structure". The leading content's "secondary line" is rendered as an indented row below the primary row rather than as the second line of a SegmentColumn cell inside the primary row.
+
+This is a row-author decision, not a pattern requirement. SegmentColumn remains the correct primitive when every cell in the parent layout is multi-line (symmetric case). The split is needed only when the row has *asymmetric* cell heights — multi-line on one side, single-line on the other.
+
 ### What the pattern does not solve
 
-- **Vertical stacking is solved by `SegmentColumn`** (see [SegmentColumn](#segmentcolumn)) — not a limitation. The pattern's atomic cell (`Segment`) is single-Text, but a two-line cell is composed via SegmentColumn wrapping two Segments. Cell isolation is preserved at the column boundary; the row's HorizontalLayout sees one cell regardless of internal line count.
+- **Vertical stacking is solved by `SegmentColumn`** (see [SegmentColumn](#segmentcolumn)) — not a limitation. The pattern's atomic cell (`Segment`) is single-Text, but a two-line cell is composed via SegmentColumn wrapping two Segments. Cell isolation is preserved at the column boundary; the row's HorizontalLayout sees one cell regardless of internal line count. The optical-alignment caveat for *asymmetric* mixed-height rows is documented in [Mixed-height cells in a HorizontalLayout](#mixed-height-cells-in-a-horizontallayout--optical-alignment-problem) above.
 - **Grid-like alignment across rows.** Settings sections where the value column is aligned across all rows require a parent grid context, which is row-external. The pattern is row-local; column alignment across multiple rows is not its job.
 - **Mixed-script content inside one cell.** Per the library's segmentation principle (CLAUDE.md), each Text holds one script direction. A cell with `"إجمالي 12.50"` would render incorrectly in Slint 1.14 (issue #7267); the pattern enforces single-script-per-cell by structure but does not detect violations at compile time. The consumer is responsible for not concatenating bidi-mixed text into a single cell's `text` property.
 

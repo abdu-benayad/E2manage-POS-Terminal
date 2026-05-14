@@ -32,8 +32,6 @@ import { Locale } from "../globals/locale.slint";
 import { IconFont } from "../globals/icon-font.slint";
 
 import { Segment } from "./_segment.slint";
-import { SegmentColumn } from "./_segment-column.slint";
-import { Badge } from "./_badge.slint";
 
 export component KeyValueRow inherits Rectangle {
     // ===== Public API — 18 properties ====================================
@@ -319,6 +317,31 @@ export component KeyValueRow inherits Rectangle {
     property <length> row-content-height: root.value-font-size * 1.6;
     property <length> row-total-height:   2 * root.padding-y + root.row-content-height;
 
+    // ----- Description indent (alignment under label) -------------------
+    //
+    // When `description != ""` it renders in a second row below the
+    // primary HorizontalLayout, NOT inside a label-column (the original
+    // SegmentColumn-as-label approach forced mixed-height cells in the
+    // primary HorizontalLayout, which broke optical alignment between
+    // single-line trailing cells of different font-sizes — text-lg value
+    // and text-sm value-unit ended up at visibly different vertical
+    // positions because their box-tops aligned but their cap-heights did
+    // not). The split-row structure keeps every cell in the primary row
+    // single-line; the description sits below, indented to start at the
+    // same physical X as the label cell.
+    //
+    // leading-indent sums the physical widths of the cells that precede
+    // the label cell in the primary row (status dot and label-icon, both
+    // optional). Each Segment's intrinsic width is `glyph-width +
+    // 2*padding-h`; for status (icon-xs) and label-icon (icon-size),
+    // glyph-width is approximately the font-size, so the indent
+    // approximation is within ~1px of the true cell width — close enough
+    // for visual alignment under the label.
+
+    property <length> leading-indent:
+        (root.status-glyph != ""    ? (root.status-size + 2 * Spacing.xs) : 0px)
+        + (root.label-icon-glyph != "" ? (root.icon-size  + 2 * Spacing.xs) : 0px);
+
     // ===== Root sizing & background ======================================
     //
     // Phase 5 binds the locked-height sizing rules and the show-divider
@@ -326,57 +349,65 @@ export component KeyValueRow inherits Rectangle {
 
     background: transparent;
 
-    // ===== Outer layout — two per-locale cell sequences ==================
+    // ===== Outer layout — split into primary row + description row ======
     //
-    // One outer `if Locale.rtl` branch per the segment-pattern's Invariant
-    // 4. Each cell is declared TWICE — once in the LTR branch, once in
-    // the RTL branch — with content bound from row-level derived
-    // properties at the call site (Invariant 6). The only stretching
-    // child of this HorizontalLayout is the bare slack Rectangle between
-    // the label-side and value-side cells (Invariant 7).
+    // The row is a VerticalLayout containing:
+    //   1. primary-row: a HorizontalLayout with all the single-line cells
+    //      (status, label-icon, label, slack, value cluster, disclosure).
+    //      Every cell is single-line, so the row sizes to one effective
+    //      line height and the cells optically center-align with each
+    //      other regardless of individual font-size or icon-size.
+    //   2. description-row: rendered ONLY when `description != ""`. Sits
+    //      directly below primary-row, indented to start at the same
+    //      physical X as the label cell so the description visually
+    //      hangs under the label.
     //
-    // Cell sequence in source order (= physical left-to-right, since
-    // Slint 1.14's HorizontalLayout is not locale-aware):
+    // Why split? When the label cell was a SegmentColumn containing both
+    // label and description, the column's two-line preferred-height
+    // forced every other cell in the primary HorizontalLayout to be
+    // allocated two-line height too. With outer cells using `align-v:
+    // top`, single-line cells with different font-sizes (text-lg value
+    // vs text-sm value-unit, icon-md icons) ended up with their *box
+    // tops* aligned but their *cap-heights* at visibly different Y —
+    // because each font/icon has different leading-above-cap. The result
+    // was a zigzag of trailing content. Splitting fixes it by structure:
+    // all primary cells live in a same-height layout, optically center
+    // by default, and description renders separately below.
     //
-    //   LTR: [status, label-icon, label-column, slack,
-    //         value-side-A, value, value-side-B, disclosure]
-    //   RTL: [disclosure, value-side-A, value, value-side-B, slack,
-    //         label-column, label-icon, status]
-    //
-    // Per-branch differences are concentrated in `align-h`:
-    //   - locale-dependent text (label, description, value) matches the
-    //     branch (left in LTR, right in RTL — elide trailing reading edge);
-    //   - locale-independent content (label-icon, value-side-A/B) stays
-    //     left in both branches;
-    //   - geometric-anchor cells (status, disclosure) push their glyph
-    //     against the row's outer edge per branch.
+    // One outer `if Locale.rtl` branch in primary-row per segment-pattern
+    // Invariant 4. The description row also branches Locale.rtl, but
+    // independently — its align-h flips and the indent moves from the
+    // leading side (padding-left) to the trailing side (a fixed-width
+    // trailing spacer Rectangle) so the description hangs under the
+    // label in both locales.
 
-    layout := HorizontalLayout {
+    layout := VerticalLayout {
+        alignment: start;
         spacing: 0;
         padding-top:    root.padding-y;
         padding-bottom: root.padding-y;
 
-        // ----- LTR branch — label leads, value-cluster trails ----------
-        if !Locale.rtl: Segment {
-            text:        root.status-glyph;
-            font-family: root.row-font;
-            font-size:   root.status-size;
-            text-color:  root.status-color;
-            align-h:     center;
-            align-v:     top;
-            padding-h:   Spacing.xs;
-        }
-        if !Locale.rtl: Segment {
-            text:        root.label-icon-glyph;
-            font-family: IconFont.font-family-name();
-            font-size:   root.icon-size;
-            text-color:  root.label-color;
-            align-h:     left;
-            align-v:     top;
-            padding-h:   Spacing.xs;
-        }
-        if !Locale.rtl: SegmentColumn {
-            Segment {
+        primary-row := HorizontalLayout {
+            spacing: 0;
+
+            // ----- LTR — label leads, value-cluster trails ------------
+            if !Locale.rtl: Segment {
+                text:        root.status-glyph;
+                font-family: root.row-font;
+                font-size:   root.status-size;
+                text-color:  root.status-color;
+                align-h:     center;
+                padding-h:   Spacing.xs;
+            }
+            if !Locale.rtl: Segment {
+                text:        root.label-icon-glyph;
+                font-family: IconFont.font-family-name();
+                font-size:   root.icon-size;
+                text-color:  root.label-color;
+                align-h:     left;
+                padding-h:   Spacing.xs;
+            }
+            if !Locale.rtl: Segment {
                 text:        root.label;
                 font-family: root.row-font;
                 font-size:   root.label-font-size;
@@ -386,109 +417,133 @@ export component KeyValueRow inherits Rectangle {
                 padding-h:   Spacing.xs;
                 wrap:        root.wrap;
             }
-            Segment {
-                text:        root.description;
-                font-family: root.row-font;
-                font-size:   root.description-font-size;
-                font-weight: Typography.weight-regular;
-                text-color:  Theme.muted-foreground;
+            if !Locale.rtl: Rectangle { horizontal-stretch: 1; }
+            if !Locale.rtl: Segment {
+                text:        root.value-side-a-text;
+                font-family: root.value-side-a-font;
+                font-size:   root.value-side-a-size;
+                text-color:  root.value-color;
+                align-h:     left;
+                padding-h:   Spacing.xs;
+            }
+            if !Locale.rtl: Segment {
+                text:        root.value;
+                font-family: root.value-monospace ? Typography.font-family-monospace : root.row-font;
+                font-size:   root.value-font-size;
+                font-weight: root.value-font-weight;
+                text-color:  root.value-color;
                 align-h:     left;
                 padding-h:   Spacing.xs;
                 wrap:        root.wrap;
             }
-        }
-        if !Locale.rtl: Rectangle { horizontal-stretch: 1; }
-        if !Locale.rtl: Segment {
-            text:        root.value-side-a-text;
-            font-family: root.value-side-a-font;
-            font-size:   root.value-side-a-size;
-            text-color:  root.value-color;
-            align-h:     left;
-            align-v:     top;
-            padding-h:   Spacing.xs;
-        }
-        if !Locale.rtl: Segment {
-            text:        root.value;
-            font-family: root.value-monospace ? Typography.font-family-monospace : root.row-font;
-            font-size:   root.value-font-size;
-            font-weight: root.value-font-weight;
-            text-color:  root.value-color;
-            align-h:     left;
-            align-v:     top;
-            padding-h:   Spacing.xs;
-            wrap:        root.wrap;
-        }
-        if !Locale.rtl: Segment {
-            text:        root.value-side-b-text;
-            font-family: root.value-side-b-font;
-            font-size:   root.value-side-b-size;
-            text-color:  root.value-color;
-            align-h:     left;
-            align-v:     top;
-            padding-h:   Spacing.xs;
-        }
-        if !Locale.rtl: Segment {
-            text:        root.disclosure-glyph;
-            font-family: root.row-font;
-            font-size:   root.icon-size;
-            text-color:  Theme.muted-foreground;
-            align-h:     right;
-            align-v:     top;
-            padding-h:   Spacing.xs;
+            if !Locale.rtl: Segment {
+                text:        root.value-side-b-text;
+                font-family: root.value-side-b-font;
+                font-size:   root.value-side-b-size;
+                text-color:  root.value-color;
+                align-h:     left;
+                padding-h:   Spacing.xs;
+            }
+            if !Locale.rtl: Segment {
+                text:        root.disclosure-glyph;
+                font-family: root.row-font;
+                font-size:   root.icon-size;
+                text-color:  Theme.muted-foreground;
+                align-h:     right;
+                padding-h:   Spacing.xs;
+            }
+
+            // ----- RTL — mirror sequence ------------------------------
+            if Locale.rtl: Segment {
+                text:        root.disclosure-glyph;
+                font-family: root.row-font;
+                font-size:   root.icon-size;
+                text-color:  Theme.muted-foreground;
+                align-h:     left;
+                padding-h:   Spacing.xs;
+            }
+            if Locale.rtl: Segment {
+                text:        root.value-side-a-text;
+                font-family: root.value-side-a-font;
+                font-size:   root.value-side-a-size;
+                text-color:  root.value-color;
+                align-h:     left;
+                padding-h:   Spacing.xs;
+            }
+            if Locale.rtl: Segment {
+                text:        root.value;
+                font-family: root.value-monospace ? Typography.font-family-monospace : root.row-font;
+                font-size:   root.value-font-size;
+                font-weight: root.value-font-weight;
+                text-color:  root.value-color;
+                align-h:     right;
+                padding-h:   Spacing.xs;
+                wrap:        root.wrap;
+            }
+            if Locale.rtl: Segment {
+                text:        root.value-side-b-text;
+                font-family: root.value-side-b-font;
+                font-size:   root.value-side-b-size;
+                text-color:  root.value-color;
+                align-h:     left;
+                padding-h:   Spacing.xs;
+            }
+            if Locale.rtl: Rectangle { horizontal-stretch: 1; }
+            if Locale.rtl: Segment {
+                text:        root.label;
+                font-family: root.row-font;
+                font-size:   root.label-font-size;
+                font-weight: root.label-font-weight;
+                text-color:  root.label-color;
+                align-h:     right;
+                padding-h:   Spacing.xs;
+                wrap:        root.wrap;
+            }
+            if Locale.rtl: Segment {
+                text:        root.label-icon-glyph;
+                font-family: IconFont.font-family-name();
+                font-size:   root.icon-size;
+                text-color:  root.label-color;
+                align-h:     left;
+                padding-h:   Spacing.xs;
+            }
+            if Locale.rtl: Segment {
+                text:        root.status-glyph;
+                font-family: root.row-font;
+                font-size:   root.status-size;
+                text-color:  root.status-color;
+                align-h:     center;
+                padding-h:   Spacing.xs;
+            }
         }
 
-        // ----- RTL branch — mirror sequence ----------------------------
-        if Locale.rtl: Segment {
-            text:        root.disclosure-glyph;
-            font-family: root.row-font;
-            font-size:   root.icon-size;
-            text-color:  Theme.muted-foreground;
-            align-h:     left;
-            align-v:     top;
-            padding-h:   Spacing.xs;
-        }
-        if Locale.rtl: Segment {
-            text:        root.value-side-a-text;
-            font-family: root.value-side-a-font;
-            font-size:   root.value-side-a-size;
-            text-color:  root.value-color;
-            align-h:     left;
-            align-v:     top;
-            padding-h:   Spacing.xs;
-        }
-        if Locale.rtl: Segment {
-            text:        root.value;
-            font-family: root.value-monospace ? Typography.font-family-monospace : root.row-font;
-            font-size:   root.value-font-size;
-            font-weight: root.value-font-weight;
-            text-color:  root.value-color;
-            align-h:     right;
-            align-v:     top;
-            padding-h:   Spacing.xs;
-            wrap:        root.wrap;
-        }
-        if Locale.rtl: Segment {
-            text:        root.value-side-b-text;
-            font-family: root.value-side-b-font;
-            font-size:   root.value-side-b-size;
-            text-color:  root.value-color;
-            align-h:     left;
-            align-v:     top;
-            padding-h:   Spacing.xs;
-        }
-        if Locale.rtl: Rectangle { horizontal-stretch: 1; }
-        if Locale.rtl: SegmentColumn {
-            Segment {
-                text:        root.label;
+        // ----- Description row -----------------------------------------
+        //
+        // Hangs under the primary label cell. The leading-indent spacer
+        // Rectangle pushes the description Segment to the same physical
+        // X as the label cell's leading edge. Empty `description` is
+        // already gated by the outer `if`; we don't also need to gate
+        // each branch's spacer because the whole HorizontalLayout
+        // vanishes when description is empty.
+
+        if root.description != "": HorizontalLayout {
+            spacing: 0;
+
+            if !Locale.rtl: Rectangle { width: root.leading-indent; }
+            if !Locale.rtl: Segment {
+                text:        root.description;
                 font-family: root.row-font;
-                font-size:   root.label-font-size;
-                font-weight: root.label-font-weight;
-                text-color:  root.label-color;
-                align-h:     right;
+                font-size:   root.description-font-size;
+                font-weight: Typography.weight-regular;
+                text-color:  Theme.muted-foreground;
+                align-h:     left;
                 padding-h:   Spacing.xs;
                 wrap:        root.wrap;
             }
-            Segment {
+            if !Locale.rtl: Rectangle { horizontal-stretch: 1; }
+
+            if Locale.rtl: Rectangle { horizontal-stretch: 1; }
+            if Locale.rtl: Segment {
                 text:        root.description;
                 font-family: root.row-font;
                 font-size:   root.description-font-size;
@@ -498,24 +553,7 @@ export component KeyValueRow inherits Rectangle {
                 padding-h:   Spacing.xs;
                 wrap:        root.wrap;
             }
-        }
-        if Locale.rtl: Segment {
-            text:        root.label-icon-glyph;
-            font-family: IconFont.font-family-name();
-            font-size:   root.icon-size;
-            text-color:  root.label-color;
-            align-h:     left;
-            align-v:     top;
-            padding-h:   Spacing.xs;
-        }
-        if Locale.rtl: Segment {
-            text:        root.status-glyph;
-            font-family: root.row-font;
-            font-size:   root.status-size;
-            text-color:  root.status-color;
-            align-h:     center;
-            align-v:     top;
-            padding-h:   Spacing.xs;
+            if Locale.rtl: Rectangle { width: root.leading-indent; }
         }
     }
 }
