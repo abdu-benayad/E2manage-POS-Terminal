@@ -141,12 +141,189 @@ export component KeyValueRow inherits Rectangle {
     /// previews/_segment.slint's Bound helper.
     in property <bool> debug-bounds: false;
 
+    // ===== Row-level derived state =======================================
+    //
+    // Every property below is computed once at the row level and referenced
+    // by both LTR and RTL cell call sites. Lifting everything liftable
+    // keeps each per-branch cell declaration short and trivial — see the
+    // pattern doc's row-composition contract.
+
+    // ----- Font & icon-font selection -----------------------------------
+    //
+    // Both clusters use the same font family, chosen by locale. Arabic
+    // uses Noto Sans Arabic by default; Latin uses Inter. Icons use the
+    // IconFont's registered family name (Phosphor or Lucide).
+
+    property <string> row-font:
+        Locale.current == "ar" ? Typography.font-family-ar : Typography.font-family;
+
+    // ----- Density → vertical padding -----------------------------------
+    //
+    // Tighter than Card's mapping (Card: md/lg/xl) — KeyValueRow is
+    // content, not container. Per CLAUDE.md's "Density is
+    // per-component-tuned" convention.
+
+    property <length> padding-y:
+          root.density == Density.compact     ? Spacing.sm
+        : root.density == Density.comfortable ? Spacing.lg
+        :                                       Spacing.md;
+
+    // ----- Emphasis → typography sizes & weights ------------------------
+    //
+    // The label font-size stays text-sm across all emphasis levels — the
+    // value carries the typographic weight; the label provides context.
+    // At `total`, the label weight bumps to medium so the bolded
+    // grand-total value has a label that holds its own.
+
+    property <length> label-font-size: Typography.text-sm;
+
+    property <int> label-font-weight:
+          root.emphasis == Emphasis.total ? Typography.weight-medium
+        :                                   Typography.weight-regular;
+
+    property <length> description-font-size: Typography.text-xs;
+
+    property <length> value-font-size:
+          root.emphasis == Emphasis.subtle ? Typography.text-sm
+        : root.emphasis == Emphasis.total  ? Typography.text-lg
+        :                                    Typography.text-base;
+
+    property <length> value-unit-font-size:
+          root.emphasis == Emphasis.subtle ? Typography.text-xs
+        : root.emphasis == Emphasis.total  ? Typography.text-base
+        :                                    Typography.text-sm;
+
+    property <int> value-font-weight:
+          root.emphasis == Emphasis.strong ? Typography.weight-semibold
+        : root.emphasis == Emphasis.total  ? Typography.weight-bold
+        :                                    Typography.weight-regular;
+
+    property <length> icon-size:
+          root.emphasis == Emphasis.total ? Sizes.icon-md
+        :                                   Sizes.icon-sm;
+
+    // ----- Color resolution ---------------------------------------------
+    //
+    // The label is never toned — stays muted-foreground in every emphasis
+    // and value-tone combination. The value default color depends on
+    // emphasis (subtle uses muted-foreground; everything else uses
+    // foreground); the value-tone override fires when value-tone is
+    // anything other than default.
+
+    property <color> label-color: Theme.muted-foreground;
+
+    property <color> value-default-color:
+          root.emphasis == Emphasis.subtle ? Theme.muted-foreground
+        :                                    Theme.foreground;
+
+    property <color> value-color:
+          root.value-tone == Tone.primary     ? Theme.primary
+        : root.value-tone == Tone.success     ? Theme.success
+        : root.value-tone == Tone.warning     ? Theme.warning
+        : root.value-tone == Tone.destructive ? Theme.destructive
+        : root.value-tone == Tone.info        ? Theme.info
+        : root.value-tone == Tone.muted       ? Theme.muted-foreground
+        :                                       root.value-default-color;
+
+    // ----- Status indicator state ---------------------------------------
+    //
+    // A Segment with the glyph `●`, not a Badge. The Segment self-zeros
+    // when its text is "" (which happens when show-status is false), so
+    // the show:bool decorator-coordination convention is not needed for
+    // this cell. The dot's color resolves via the same tone mapping as
+    // value-tone, applied to the Segment's text-color. No background,
+    // no padding around the dot — a colored glyph, not a pill.
+
+    property <string> status-glyph: root.show-status ? "●" : "";
+
+    property <color> status-color:
+          root.status-tone == Tone.primary     ? Theme.primary
+        : root.status-tone == Tone.success     ? Theme.success
+        : root.status-tone == Tone.warning     ? Theme.warning
+        : root.status-tone == Tone.destructive ? Theme.destructive
+        : root.status-tone == Tone.info        ? Theme.info
+        :                                        Theme.muted-foreground;
+
+    property <length> status-size: Sizes.icon-xs;
+
+    // ----- Disclosure glyph (locale-aware) ------------------------------
+    //
+    // The enum value picks the indicator family (chevron / external);
+    // Locale.rtl picks the physical-direction glyph. Empty string when
+    // disclosure is `none` — the Segment self-zeros.
+
+    property <string> disclosure-glyph:
+          root.disclosure == DisclosureIndicator.chevron  && !Locale.rtl ? "›"
+        : root.disclosure == DisclosureIndicator.chevron  &&  Locale.rtl ? "‹"
+        : root.disclosure == DisclosureIndicator.external && !Locale.rtl ? "↗"
+        : root.disclosure == DisclosureIndicator.external &&  Locale.rtl ? "↖"
+        :                                                                  "";
+
+    // ----- Label-icon glyph ---------------------------------------------
+    //
+    // Resolves the icon-name string through the active IconFont. Empty
+    // when label-icon is "" — the Segment self-zeros.
+
+    property <string> label-icon-glyph:
+        root.label-icon != "" ? IconFont.resolve(root.label-icon) : "";
+
+    // ----- Value-cluster slot resolution --------------------------------
+    //
+    // The XNOR rule from segment-pattern.md → Appendix B. The cluster
+    // always renders three Segments in source order — value-side-A,
+    // value, value-side-B — and this block decides which slot holds the
+    // value-icon vs the value-unit.
+    //
+    //   icon-leads-value-cluster := Locale.rtl == leading-flip
+    //
+    // i.e. either (LTR + unit-position=trailing — default case →
+    // [icon, value, unit]) or (RTL + unit-position=leading —
+    // [icon, value, unit] again, because both locale and intent flip).
+    //
+    // Each slot has three derived properties (text, font, size) because
+    // a slot can hold either an icon (icon-font, icon-size) or a unit
+    // (row-font, value-unit-font-size). The cell at the call site picks
+    // its content via these three properties; the cell template stays
+    // identical across slots.
+
+    property <bool> leading-flip: root.unit-position == UnitPosition.leading;
+    property <bool> icon-leads-value-cluster: Locale.rtl == leading-flip;
+
+    property <string> value-side-a-text:
+        icon-leads-value-cluster
+            ? (root.value-icon != "" ? IconFont.resolve(root.value-icon) : "")
+            : root.value-unit;
+    property <string> value-side-a-font:
+        icon-leads-value-cluster ? IconFont.font-family-name() : row-font;
+    property <length> value-side-a-size:
+        icon-leads-value-cluster ? icon-size : value-unit-font-size;
+
+    property <string> value-side-b-text:
+        icon-leads-value-cluster
+            ? root.value-unit
+            : (root.value-icon != "" ? IconFont.resolve(root.value-icon) : "");
+    property <string> value-side-b-font:
+        icon-leads-value-cluster ? row-font : IconFont.font-family-name();
+    property <length> value-side-b-size:
+        icon-leads-value-cluster ? value-unit-font-size : icon-size;
+
+    // ----- Row sizing ---------------------------------------------------
+    //
+    // Locked height for locale stability — the row's height does not track
+    // Text natural line-height (which differs per font: Noto Sans Arabic
+    // has a taller line-height than Inter). Lock to value-font-size × 1.6
+    // so toggling Locale.current between "en" and "ar" does not resize
+    // the row. The lock relaxes when `wrap: true` OR `description != ""`
+    // (see Phase 5 sizing bindings).
+
+    property <length> row-content-height: root.value-font-size * 1.6;
+    property <length> row-total-height:   2 * root.padding-y + root.row-content-height;
+
     // ===== Root sizing & background ======================================
     //
-    // Phase 2 ships an inert skeleton — no derived state, no layout, no
-    // cells. Phase 3 adds the derived state; Phase 4 adds the outer
-    // HorizontalLayout with both LTR and RTL cell sequences; Phase 5 binds
-    // the locked-height sizing rules and the show-divider Rectangle.
+    // Phase 4 adds the outer HorizontalLayout with both LTR and RTL cell
+    // sequences. Phase 5 binds the locked-height sizing rules and the
+    // show-divider Rectangle. Phase 6 adds tooltip + debug-bounds.
 
     background: transparent;
 }
