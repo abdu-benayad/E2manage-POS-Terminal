@@ -1,0 +1,343 @@
+// Badge preview — regression suite for the visual-chrome decorator.
+//
+// The load-bearing scenario is the wart-vs-fix side-by-side: Badge wrapping
+// an empty Segment WITHOUT show:bool gating renders a chrome strip (the
+// wart); Badge with show:false renders zero-width. The two are placed next
+// to each other in Scenario 1 so a future maintainer tempted to remove
+// `show: bool` from Badge sees what it protects against.
+//
+// Run: `slint-viewer abdu-slint-ui/previews/_badge.slint`
+
+import { Segment } from "../components/_segment.slint";
+import { Badge } from "../components/_badge.slint";
+import { Theme } from "../globals/theme.slint";
+import { Typography } from "../globals/typography.slint";
+import { Spacing } from "../globals/spacing.slint";
+import { Radius } from "../globals/radius.slint";
+
+import "../assets/phosphor.ttf";
+import "../assets/lucide.ttf";
+
+component Section inherits VerticalLayout {
+    in property <string> title;
+    in property <string> caption;
+    spacing: Spacing.xs;
+    Text {
+        text: root.title;
+        font-size: Typography.text-sm;
+        font-weight: Typography.weight-semibold;
+        color: Theme.foreground;
+        wrap: no-wrap;
+    }
+    Text {
+        text: root.caption;
+        font-size: Typography.text-xs;
+        color: Theme.muted-foreground;
+        wrap: no-wrap;
+    }
+}
+
+// Visual frame to mark where decoration boundaries lie. Required because
+// Badge's chrome is visible content; Bound's magenta edge clearly delimits
+// the cell's contribution to the row layout.
+component Bound inherits Rectangle {
+    border-width: 1px;
+    border-color: #ff00ff;
+    background: transparent;
+    preferred-width:  inner-bound.preferred-width;
+    preferred-height: inner-bound.preferred-height;
+    min-width:        inner-bound.min-width;
+    min-height:       inner-bound.min-height;
+    inner-bound := HorizontalLayout {
+        @children
+    }
+}
+
+export component BadgePreview inherits Window {
+    title: "Badge — regression preview";
+    preferred-width: 980px;
+    preferred-height: 750px;
+    background: Theme.background;
+
+    VerticalLayout {
+        padding: Spacing.xl;
+        spacing: Spacing.lg;
+
+        Text {
+            text: "Badge";
+            font-size: Typography.text-xl;
+            font-weight: Typography.weight-bold;
+            color: Theme.foreground;
+            wrap: no-wrap;
+        }
+        Text {
+            text: "Wrapping decorator. Adds background, border-radius, padding around @children.";
+            font-size: Typography.text-sm;
+            color: Theme.muted-foreground;
+            wrap: no-wrap;
+        }
+
+        // ===== Scenario 1: the wart-vs-fix side-by-side ==================
+        //
+        // The single most important scenario in this preview. Without
+        // show:bool gating, an empty-content Badge renders as a chrome
+        // strip. With show:false, it disappears completely. The two render
+        // adjacent in source order so the visual proof is unambiguous.
+        Section {
+            title: "1. The wart vs the fix — show:bool is load-bearing";
+            caption: "Three side-by-side: (left) Badge with show=true wrapping non-empty content — normal chip. (middle) Badge with show=true wrapping EMPTY Segment — visible chrome strip with no text (the wart). (right) Badge with show=false wrapping empty Segment — zero contribution.";
+        }
+        HorizontalLayout {
+            spacing: Spacing.md;
+            alignment: start;
+            VerticalLayout {
+                spacing: Spacing.xs;
+                Text { text: "show=true, content"; font-size: Typography.text-xs; color: Theme.muted-foreground; wrap: no-wrap; }
+                Text { text: "(expected: normal chip)"; font-size: Typography.text-xs; color: Theme.muted-foreground; wrap: no-wrap; }
+                Bound {
+                    Badge {
+                        show: true;
+                        background-color: #fde68a;     // amber-200
+                        corner-radius: Radius.sm;
+                        padding-h: Spacing.sm;
+                        padding-v: Spacing.xs;
+                        Segment {
+                            text: "Warning";
+                            font-family: Typography.font-family;
+                            font-size: Typography.text-xs;
+                            font-weight: Typography.weight-medium;
+                            text-color: #92400e;        // amber-800
+                            align-h: center;
+                            padding-h: 0px;
+                        }
+                    }
+                }
+            }
+
+            VerticalLayout {
+                spacing: Spacing.xs;
+                Text { text: "show=true, empty"; font-size: Typography.text-xs; color: Theme.muted-foreground; wrap: no-wrap; }
+                Text { text: "(THE WART — visible chrome strip)"; font-size: Typography.text-xs; color: Theme.destructive; wrap: no-wrap; }
+                Bound {
+                    Badge {
+                        show: true;
+                        background-color: #fde68a;
+                        corner-radius: Radius.sm;
+                        padding-h: Spacing.sm;
+                        padding-v: Spacing.xs;
+                        Segment {
+                            text: "";                   // empty!
+                            font-family: Typography.font-family;
+                            font-size: Typography.text-xs;
+                            text-color: #92400e;
+                            padding-h: 0px;
+                        }
+                    }
+                }
+            }
+
+            VerticalLayout {
+                spacing: Spacing.xs;
+                Text { text: "show=false, empty"; font-size: Typography.text-xs; color: Theme.muted-foreground; wrap: no-wrap; }
+                Text { text: "(THE FIX — zero contribution)"; font-size: Typography.text-xs; color: Theme.success; wrap: no-wrap; }
+                Bound {
+                    Badge {
+                        show: false;
+                        background-color: #fde68a;
+                        corner-radius: Radius.sm;
+                        padding-h: Spacing.sm;
+                        padding-v: Spacing.xs;
+                        Segment {
+                            text: "";
+                            font-family: Typography.font-family;
+                            font-size: Typography.text-xs;
+                            text-color: #92400e;
+                            padding-h: 0px;
+                        }
+                    }
+                }
+            }
+        }
+
+        // ===== Scenario 2: chrome variations =============================
+        Section {
+            title: "2. Chrome variations";
+            caption: "Different background-color, border-radius, padding combinations. Each Badge renders one short Segment inside.";
+        }
+        HorizontalLayout {
+            spacing: Spacing.md;
+            alignment: start;
+            Badge {
+                background-color: #dcfce7;            // green-100
+                corner-radius: Radius.sm;
+                padding-h: Spacing.sm;
+                padding-v: Spacing.xs;
+                Segment {
+                    text: "Active";
+                    font-family: Typography.font-family;
+                    font-size: Typography.text-xs;
+                    font-weight: Typography.weight-medium;
+                    text-color: #166534;              // green-800
+                    align-h: center;
+                    padding-h: 0px;
+                }
+            }
+            Badge {
+                background-color: #fee2e2;            // red-100
+                corner-radius: Radius.lg;             // pill shape via large radius
+                padding-h: Spacing.md;
+                padding-v: Spacing.xs;
+                Segment {
+                    text: "Error 503";
+                    font-family: Typography.font-family;
+                    font-size: Typography.text-xs;
+                    font-weight: Typography.weight-medium;
+                    text-color: #991b1b;              // red-800
+                    align-h: center;
+                    padding-h: 0px;
+                }
+            }
+            Badge {
+                background-color: #dbeafe;            // blue-100
+                corner-radius: 0px;                   // sharp corners
+                padding-h: Spacing.sm;
+                padding-v: 2px;
+                Segment {
+                    text: "v2.1.0";
+                    font-family: Typography.font-family;
+                    font-size: Typography.text-xs;
+                    font-weight: Typography.weight-regular;
+                    text-color: #1e40af;              // blue-800
+                    align-h: center;
+                    padding-h: 0px;
+                }
+            }
+            Badge {
+                background-color: Theme.foreground;
+                corner-radius: Radius.sm;
+                padding-h: Spacing.sm;
+                padding-v: Spacing.xs;
+                Segment {
+                    text: "New";
+                    font-family: Typography.font-family;
+                    font-size: Typography.text-xs;
+                    font-weight: Typography.weight-semibold;
+                    text-color: Theme.background;
+                    align-h: center;
+                    padding-h: 0px;
+                }
+            }
+        }
+
+        // ===== Scenario 3: Badge as one cell in a horizontal row ==========
+        Section {
+            title: "3. Badge as one cell in a horizontal row (inelastic via horizontal-stretch: 0)";
+            caption: "Three cells in a HorizontalLayout: plain Segment, Badge-wrapped Segment, plain Segment. The Badge contributes its intrinsic width — same shape as a regular cell. The slack Rectangle (with horizontal-stretch: 1) absorbs remaining space, NOT the Badge.";
+        }
+        HorizontalLayout {
+            spacing: Spacing.md;
+            alignment: start;
+            Bound {
+                Segment {
+                    text: "Item name";
+                    font-family: Typography.font-family;
+                    font-size: Typography.text-base;
+                    text-color: Theme.foreground;
+                    padding-h: Spacing.xs;
+                }
+            }
+            Bound {
+                Badge {
+                    background-color: #fde68a;
+                    corner-radius: Radius.sm;
+                    padding-h: Spacing.sm;
+                    padding-v: Spacing.xs;
+                    Segment {
+                        text: "Reserved";
+                        font-family: Typography.font-family;
+                        font-size: Typography.text-xs;
+                        font-weight: Typography.weight-medium;
+                        text-color: #92400e;
+                        align-h: center;
+                        padding-h: 0px;
+                    }
+                }
+            }
+            // Slack Rectangle — the ONLY stretching child (Invariant 7)
+            Rectangle { horizontal-stretch: 1; min-width: 80px; }
+            Bound {
+                Segment {
+                    text: "Trailing cell";
+                    font-family: Typography.font-family;
+                    font-size: Typography.text-base;
+                    text-color: Theme.muted-foreground;
+                    padding-h: Spacing.xs;
+                }
+            }
+        }
+
+        // ===== Scenario 4: Badge composes with SegmentColumn =============
+        Section {
+            title: "4. Badge wraps a SegmentColumn — two-line chip";
+            caption: "Badge accepts any @children, not just single Segments. Wrapping a SegmentColumn produces a two-line chip — useful for status pills with primary + count.";
+        }
+        HorizontalLayout {
+            spacing: Spacing.md;
+            alignment: start;
+            Badge {
+                background-color: #fee2e2;
+                corner-radius: Radius.md;
+                padding-h: Spacing.md;
+                padding-v: Spacing.sm;
+                VerticalLayout {
+                    spacing: 0;
+                    Segment {
+                        text: "Critical";
+                        font-family: Typography.font-family;
+                        font-size: Typography.text-xs;
+                        font-weight: Typography.weight-semibold;
+                        text-color: #991b1b;
+                        align-h: left;
+                        padding-h: 0px;
+                    }
+                    Segment {
+                        text: "5 errors";
+                        font-family: Typography.font-family;
+                        font-size: Typography.text-xs;
+                        font-weight: Typography.weight-regular;
+                        text-color: #991b1b;
+                        align-h: left;
+                        padding-h: 0px;
+                    }
+                }
+            }
+            Badge {
+                background-color: #dcfce7;
+                corner-radius: Radius.md;
+                padding-h: Spacing.md;
+                padding-v: Spacing.sm;
+                VerticalLayout {
+                    spacing: 0;
+                    Segment {
+                        text: "Synced";
+                        font-family: Typography.font-family;
+                        font-size: Typography.text-xs;
+                        font-weight: Typography.weight-semibold;
+                        text-color: #166534;
+                        align-h: left;
+                        padding-h: 0px;
+                    }
+                    Segment {
+                        text: "2 min ago";
+                        font-family: Typography.font-family;
+                        font-size: Typography.text-xs;
+                        font-weight: Typography.weight-regular;
+                        text-color: #166534;
+                        align-h: left;
+                        padding-h: 0px;
+                    }
+                }
+            }
+        }
+    }
+}

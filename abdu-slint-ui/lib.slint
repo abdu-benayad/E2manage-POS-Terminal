@@ -28,4 +28,9 @@ export { Button } from "components/button.slint";
 export { IconButton } from "components/icon-button.slint";
 export { Toggle } from "components/toggle.slint";
 export { Card } from "components/card.slint";
-export { KeyValueRow } from "components/key-value-row.slint";
+
+// KeyValueRow — temporarily unexported. The previous cluster-pattern
+// implementation is deleted; the rewrite using Segment / SegmentColumn /
+// Badge (see architecture/segment-pattern.md) is tracked in tasks 6-7.
+// Restore this export when the rewrite ships.
+// export { KeyValueRow } from "components/key-value-row.slint";

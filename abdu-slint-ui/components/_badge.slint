@@ -1,0 +1,84 @@
+// Badge — internal wrapping decorator adding visual chrome around @children.
+//
+// Adds background-color, border-radius, padding-h, and padding-v around
+// whatever cell(s) the consumer composes inside. The wrapped cell stays a
+// normal Segment (or SegmentColumn); Badge owns the chrome.
+//
+// PRIVATE LIBRARY HELPER. Not re-exported from lib.slint. Underscore prefix
+// marks this as library-internal. Consumers compose with public row primitives
+// which compose Badge internally.
+//
+// The `show: bool` convention is the load-bearing visibility-coordination
+// mechanism. Without it, a Badge wrapping an empty Segment renders as a
+// `2 * padding-h` chrome strip even though the Segment self-zeroed its own
+// width — Slint doesn't expose @children intrinsic-size predicates to the
+// parent at binding time, so Badge cannot auto-detect empty content. The
+// row author sets `show` to the same row-derived predicate that drives the
+// wrapped Segment's content.
+//
+// Per architecture/segment-pattern.md → Badge.
+
+export component Badge inherits Rectangle {
+    // ===== Public-within-library API ======================================
+
+    /// Visibility gate. When `false`, the Badge contributes zero width AND
+    /// zero height and is invisible. Default `true` matches the dominant
+    /// "always visible" case; gate explicitly when the content can be empty.
+    /// See architecture/segment-pattern.md → "The show: bool convention" and
+    /// "row-derived-predicate idiom".
+    in property <bool> show: true;
+
+    /// Fill color of the Badge's surface.
+    in property <color> background-color: transparent;
+
+    /// Corner radius. Named `corner-radius` (not `border-radius`) because
+    /// Slint reserves `border-radius` on Rectangle; re-declaring it as an
+    /// `in property <length>` is a compile error — same pattern as
+    /// Segment's `text-color` rename.
+    in property <length> corner-radius: 0px;
+
+    /// Horizontal padding between the Badge's edges and its content. Wraps
+    /// `@children` on both left and right symmetrically.
+    in property <length> padding-h: 0px;
+
+    /// Vertical padding between the Badge's edges and its content. Wraps
+    /// `@children` on top and bottom symmetrically.
+    in property <length> padding-v: 0px;
+
+    // ===== Derived state ==================================================
+
+    background:        root.background-color;
+    border-radius:     root.corner-radius;
+
+    // Invariant 7: explicit horizontal-stretch: 0. Slint Rectangle defaults
+    // to 1.0, which would make the Badge absorb slack and compete with the
+    // row's dedicated slack Rectangle.
+    horizontal-stretch: 0;
+
+    // All sizing gated on `show`. The empty-content wart (Badge wrapping
+    // empty Segment rendering as a chrome strip) is closed by this gating
+    // — see preview Scenario 1 for the visual proof.
+    visible:           root.show;
+    preferred-width:   root.show ? layout.preferred-width  : 0px;
+    preferred-height:  root.show ? layout.preferred-height : 0px;
+    min-width:         root.show ? layout.min-width        : 0px;
+    min-height:        root.show ? layout.min-height       : 0px;
+
+    // ===== Inner layout — @children slot composition ====================
+    //
+    // HorizontalLayout wraps @children with the resolved padding. Consumers
+    // typically place one Segment inside (the canonical chip pattern), but
+    // multiple children compose naturally — a Badge wrapping a SegmentColumn
+    // is a two-line chip, useful for "Critical" + "5 errors" status pills.
+    //
+    // preferred-width and preferred-height propagate from this layout to
+    // the Badge root via the gated bindings above.
+
+    layout := HorizontalLayout {
+        padding-left:   root.padding-h;
+        padding-right:  root.padding-h;
+        padding-top:    root.padding-v;
+        padding-bottom: root.padding-v;
+        @children
+    }
+}

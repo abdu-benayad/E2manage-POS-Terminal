@@ -1,0 +1,127 @@
+// Segment — internal cell primitive for direction-aware row layouts.
+//
+// One Text inside one Rectangle, with controllable typography and intra-cell
+// alignment. The atomic cell of the segment-as-cell pattern. Empty cells
+// self-zero in both dimensions (preferred-width and preferred-height) so they
+// contribute nothing to the row's layout when their text is "".
+//
+// PRIVATE LIBRARY HELPER. Not re-exported from lib.slint. The underscore
+// prefix on the filename marks this as library-internal — other library
+// files may import the `Segment` component (the canonical pattern's first
+// cell primitive); consumers compose with public row primitives such as
+// KeyValueRow, never with Segment directly.
+//
+// File-naming convention:
+//   - `components/<name>.slint`  → public, re-exported via lib.slint
+//   - `components/_<name>.slint` → library-internal, NOT re-exported
+//
+// The inner Text is absolutely positioned inside the Rectangle (not a child
+// of any layout). It has no Text siblings within the cell. Slint's
+// horizontal-layout sibling-compression bug class — where elide-Texts
+// collapse under sibling pressure — cannot apply here because there are no
+// siblings to compete with. This is the structural escape from the cluster
+// pattern's bug.
+//
+// Per architecture/segment-pattern.md → Segment.
+
+export component Segment inherits Rectangle {
+    // ===== Public-within-library API ======================================
+    //
+    // Default-value philosophy:
+    //   - Content properties (text, font-family, font-size, text-color) have
+    //     sentinel defaults that produce visibly-broken output when left
+    //     unset (invisible 0px text in transparent color, system fallback
+    //     font). Leaving them unset is a loud-failure signal that the call
+    //     site forgot to specify the cell's role.
+    //   - Behavior properties (font-weight, align-h, align-v, padding-h,
+    //     wrap, elide) have sensible defaults that match the dominant case.
+
+    /// Content text. Empty string makes the cell zero-width AND zero-height,
+    /// and invisible. This self-zeroing is invariant 5 of the segment pattern.
+    in property <string> text: "";
+
+    /// Font family. Use `Typography.font-family` for Latin,
+    /// `Typography.font-family-ar` for Arabic, `IconFont.font-family-name()`
+    /// for icon glyphs. Empty falls back to Slint's system default font
+    /// (visibly wrong, soft failure).
+    in property <string> font-family: "";
+
+    /// Font size token. `0px` renders invisibly — loud failure signal.
+    in property <length> font-size: 0px;
+
+    /// Font weight. Default 400 (regular) is the dominant case.
+    in property <int> font-weight: 400;
+
+    /// Text color. Named `text-color` because Slint reserves `color` on
+    /// Rectangle (deprecated alias for `background`); re-declaring as an
+    /// `in property <color> color` is a compile error. Default `transparent`
+    /// renders invisibly — loud failure signal.
+    in property <color> text-color: transparent;
+
+    /// Horizontal alignment of the Text inside the cell. Default `center`
+    /// is locale-neutral. See architecture/segment-pattern.md → Align-h rule
+    /// for which value to set per cell. The rule bites visibly only when the
+    /// cell is wider than its content (under overflow or hand-set widths);
+    /// under normal-fit conditions, cell width equals content width and
+    /// alignment has no visible effect.
+    in property <TextHorizontalAlignment> align-h: center;
+
+    /// Vertical alignment. Almost always `center`.
+    in property <TextVerticalAlignment> align-v: center;
+
+    /// Per-cell horizontal padding. The cell owns its gap to its neighbors;
+    /// the row's HorizontalLayout uses `spacing: 0`.
+    in property <length> padding-h: 0px;
+
+    /// When true, text wraps onto multiple lines and the cell's
+    /// preferred-height grows with content. When false, text stays single-line
+    /// and clips (or elides — see `elide`).
+    in property <bool> wrap: false;
+
+    /// When true, text elides with `…` on overflow. Off by default —
+    /// elide-on-by-default was the trigger for the bug class that motivated
+    /// this pattern (see architecture/segment-pattern.md → Appendix A).
+    in property <bool> elide: false;
+
+    // ===== Derived state ==================================================
+
+    background:        transparent;
+
+    // Invariant 7: cells set `horizontal-stretch: 0` explicitly. Slint's
+    // Rectangle default is 1.0, which would make cells absorb slack and
+    // compete with the dedicated slack Rectangle in the row's outer layout.
+    horizontal-stretch: 0;
+
+    // Empty-cell self-zeroing (invariant 5). Both dimensions go to 0px when
+    // the text is empty, so the cell contributes nothing to either the row's
+    // horizontal sequence or a SegmentColumn's vertical stack.
+    visible:           root.text != "";
+    preferred-width:   root.text != "" ? inner.preferred-width + 2 * root.padding-h : 0px;
+    preferred-height:  root.text != "" ? inner.preferred-height                     : 0px;
+    min-width:         root.text != "" ? inner.min-width      + 2 * root.padding-h : 0px;
+    min-height:        root.text != "" ? inner.min-height                          : 0px;
+
+    // ===== Inner Text — absolutely positioned, no siblings ===============
+    //
+    // The Text positions at (padding-h, 0) and sizes to fit the Rectangle's
+    // assigned width minus padding on both sides. `preferred-width` (read
+    // by Segment to publish its intrinsic width upward) and `width` (assigned
+    // by Slint's layout pass downward) are different properties on Text,
+    // not a feedback loop — see architecture/segment-pattern.md →
+    // "Inner.preferred-width vs inner.width — not a cycle".
+
+    inner := Text {
+        x: root.padding-h;
+        width:  parent.width - 2 * root.padding-h;
+        height: parent.height;
+        text:        root.text;
+        font-family: root.font-family;
+        font-size:   root.font-size;
+        font-weight: root.font-weight;
+        color:       root.text-color;
+        horizontal-alignment: root.align-h;
+        vertical-alignment:   root.align-v;
+        wrap:     root.wrap  ? TextWrap.word-wrap : TextWrap.no-wrap;
+        overflow: root.elide ? TextOverflow.elide : TextOverflow.clip;
+    }
+}

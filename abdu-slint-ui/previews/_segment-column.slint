@@ -1,0 +1,237 @@
+// SegmentColumn preview — regression suite for the vertical-stacking primitive.
+//
+// Each section demonstrates a verification scenario from
+// architecture/segment-pattern.md → SegmentColumn.
+//
+// The 4-case elide matrix (consultation Q4 verification) is preserved as
+// `architecture/screenshots/_segment-column-vstack-verification.png`, captured
+// from the original `/tmp/vstack-elide-test.slint` run. The vertical-elide
+// claim is bug-class-structurally-impossible (vertical siblings receive full
+// parent width independently); the screenshot is the durable artifact and
+// re-running the test under width pressure is not needed at every change.
+//
+// Run: `slint-viewer abdu-slint-ui/previews/_segment-column.slint`
+
+import { Segment } from "../components/_segment.slint";
+import { SegmentColumn } from "../components/_segment-column.slint";
+import { Theme } from "../globals/theme.slint";
+import { Typography } from "../globals/typography.slint";
+import { Spacing } from "../globals/spacing.slint";
+
+import "../assets/phosphor.ttf";
+import "../assets/lucide.ttf";
+
+component Section inherits VerticalLayout {
+    in property <string> title;
+    in property <string> caption;
+    spacing: Spacing.xs;
+    Text {
+        text: root.title;
+        font-size: Typography.text-sm;
+        font-weight: Typography.weight-semibold;
+        color: Theme.foreground;
+    }
+    Text {
+        text: root.caption;
+        font-size: Typography.text-xs;
+        color: Theme.muted-foreground;
+        wrap: no-wrap;
+    }
+}
+
+// Visual frame around a SegmentColumn. Binds intrinsic size explicitly
+// (HANDOVER quirk #15 — Slint 1.14 doesn't auto-propagate through Rectangle).
+component Bound inherits Rectangle {
+    border-width: 1px;
+    border-color: #ff00ff;
+    background: transparent;
+    preferred-width:  inner-bound.preferred-width;
+    preferred-height: inner-bound.preferred-height;
+    min-width:        inner-bound.min-width;
+    min-height:       inner-bound.min-height;
+    inner-bound := HorizontalLayout {
+        @children
+    }
+}
+
+export component SegmentColumnPreview inherits Window {
+    title: "SegmentColumn — regression preview";
+    preferred-width: 980px;
+    preferred-height: 700px;
+    background: Theme.background;
+
+    VerticalLayout {
+        padding: Spacing.xl;
+        spacing: Spacing.lg;
+
+        Text {
+            text: "SegmentColumn";
+            font-size: Typography.text-xl;
+            font-weight: Typography.weight-bold;
+            color: Theme.foreground;
+        }
+        Text {
+            text: "Vertical stack of N Segments via @children. One cell from the row's perspective. The 4-case elide matrix verification is preserved as architecture/screenshots/_segment-column-vstack-verification.png — see preview-file comment for rationale.";
+            font-size: Typography.text-sm;
+            color: Theme.muted-foreground;
+            wrap: no-wrap;
+        }
+
+        // ===== Scenario 1: two-line composition (canonical use case) =====
+        Section {
+            title: "1. Two-line composition (canonical use case)";
+            caption: "Primary line (label) plus secondary line (description). Different typography per Segment, vertically stacked inside one SegmentColumn cell.";
+        }
+        Bound {
+            SegmentColumn {
+                Segment {
+                    text: "Receipt printing";
+                    font-family: Typography.font-family;
+                    font-size: Typography.text-base;
+                    font-weight: Typography.weight-medium;
+                    text-color: Theme.foreground;
+                    padding-h: Spacing.xs;
+                }
+                Segment {
+                    text: "Print receipts automatically after each transaction.";
+                    font-family: Typography.font-family;
+                    font-size: Typography.text-xs;
+                    font-weight: Typography.weight-regular;
+                    text-color: Theme.muted-foreground;
+                    padding-h: Spacing.xs;
+                }
+            }
+        }
+
+        // ===== Scenario 2: empty secondary collapses =====================
+        Section {
+            title: "2. Empty secondary collapses to single-line";
+            caption: "Same SegmentColumn shape as Scenario 1, but secondary text is \"\". Should render visually identical to a single-line cell — the empty Segment self-zeros both dimensions.";
+        }
+        Bound {
+            SegmentColumn {
+                Segment {
+                    text: "Receipt printing";
+                    font-family: Typography.font-family;
+                    font-size: Typography.text-base;
+                    font-weight: Typography.weight-medium;
+                    text-color: Theme.foreground;
+                    padding-h: Spacing.xs;
+                }
+                Segment {
+                    text: "";  // empty — should collapse
+                    font-family: Typography.font-family;
+                    font-size: Typography.text-xs;
+                    text-color: Theme.muted-foreground;
+                    padding-h: Spacing.xs;
+                }
+            }
+        }
+
+        // ===== Scenario 3: vstack-spacing variations =====================
+        Section {
+            title: "3. vstack-spacing variations";
+            caption: "Same two-line content with vstack-spacing: 0, 4px, 12px. Visible gap between primary and secondary grows with spacing.";
+        }
+        HorizontalLayout {
+            alignment: start;
+            spacing: Spacing.lg;
+            Bound {
+                SegmentColumn {
+                    vstack-spacing: 0px;
+                    Segment { text: "vstack 0"; font-family: Typography.font-family; font-size: Typography.text-base; text-color: Theme.foreground; padding-h: Spacing.xs; }
+                    Segment { text: "Secondary"; font-family: Typography.font-family; font-size: Typography.text-xs; text-color: Theme.muted-foreground; padding-h: Spacing.xs; }
+                }
+            }
+            Bound {
+                SegmentColumn {
+                    vstack-spacing: Spacing.xs;
+                    Segment { text: "vstack 4"; font-family: Typography.font-family; font-size: Typography.text-base; text-color: Theme.foreground; padding-h: Spacing.xs; }
+                    Segment { text: "Secondary"; font-family: Typography.font-family; font-size: Typography.text-xs; text-color: Theme.muted-foreground; padding-h: Spacing.xs; }
+                }
+            }
+            Bound {
+                SegmentColumn {
+                    vstack-spacing: Spacing.md;
+                    Segment { text: "vstack 12"; font-family: Typography.font-family; font-size: Typography.text-base; text-color: Theme.foreground; padding-h: Spacing.xs; }
+                    Segment { text: "Secondary"; font-family: Typography.font-family; font-size: Typography.text-xs; text-color: Theme.muted-foreground; padding-h: Spacing.xs; }
+                }
+            }
+        }
+
+        // ===== Scenario 4: column-inside-HorizontalLayout-with-siblings ==
+        Section {
+            title: "4. SegmentColumn as one cell in a horizontal row";
+            caption: "SegmentColumn placed between two plain Segments in a HorizontalLayout. From the row's perspective, the column is exactly one cell — same as a single Segment. The column's intrinsic width propagates correctly.";
+        }
+        HorizontalLayout {
+            alignment: start;
+            spacing: Spacing.md;
+            Bound {
+                Segment {
+                    text: "Left cell";
+                    font-family: Typography.font-family;
+                    font-size: Typography.text-base;
+                    text-color: Theme.foreground;
+                    padding-h: Spacing.xs;
+                }
+            }
+            Bound {
+                SegmentColumn {
+                    Segment {
+                        text: "Middle cell";
+                        font-family: Typography.font-family;
+                        font-size: Typography.text-base;
+                        font-weight: Typography.weight-medium;
+                        text-color: Theme.foreground;
+                        padding-h: Spacing.xs;
+                    }
+                    Segment {
+                        text: "is a 2-line column";
+                        font-family: Typography.font-family;
+                        font-size: Typography.text-xs;
+                        text-color: Theme.muted-foreground;
+                        padding-h: Spacing.xs;
+                    }
+                }
+            }
+            Bound {
+                Segment {
+                    text: "Right cell";
+                    font-family: Typography.font-family;
+                    font-size: Typography.text-base;
+                    text-color: Theme.foreground;
+                    padding-h: Spacing.xs;
+                }
+            }
+        }
+
+        // ===== Scenario 5: show: bool gates entire column =================
+        Section {
+            title: "5. show: bool collapses the column to zero";
+            caption: "Three rows showing different show values. The hand-rendered `[…]` brackets sit beside each column so the contribution to the row is visible. show=true row shows full content between brackets; show=false row shows brackets touching (zero contribution between them).";
+        }
+        HorizontalLayout {
+            spacing: Spacing.xs;
+            alignment: start;
+            Text { text: "show=true:  ["; font-family: Typography.font-family; font-size: Typography.text-base; color: Theme.foreground; vertical-alignment: center; }
+            SegmentColumn {
+                show: true;
+                Segment { text: "Primary"; font-family: Typography.font-family; font-size: Typography.text-base; text-color: Theme.foreground; padding-h: Spacing.xs; }
+                Segment { text: "Secondary"; font-family: Typography.font-family; font-size: Typography.text-xs; text-color: Theme.muted-foreground; padding-h: Spacing.xs; }
+            }
+            Text { text: "]"; font-family: Typography.font-family; font-size: Typography.text-base; color: Theme.foreground; vertical-alignment: center; }
+        }
+        HorizontalLayout {
+            spacing: Spacing.xs;
+            alignment: start;
+            Text { text: "show=false: ["; font-family: Typography.font-family; font-size: Typography.text-base; color: Theme.foreground; vertical-alignment: center; }
+            SegmentColumn {
+                show: false;
+                Segment { text: "Primary"; font-family: Typography.font-family; font-size: Typography.text-base; text-color: Theme.foreground; padding-h: Spacing.xs; }
+                Segment { text: "Secondary"; font-family: Typography.font-family; font-size: Typography.text-xs; text-color: Theme.muted-foreground; padding-h: Spacing.xs; }
+            }
+            Text { text: "]"; font-family: Typography.font-family; font-size: Typography.text-base; color: Theme.foreground; vertical-alignment: center; }
+        }
+    }
+}

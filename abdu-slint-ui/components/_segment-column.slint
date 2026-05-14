@@ -1,0 +1,74 @@
+// SegmentColumn — internal cell primitive that vertically stacks N Segments.
+//
+// From the row's HorizontalLayout perspective, a SegmentColumn is one cell —
+// a single slot in the horizontal sequence. From its own perspective, it's a
+// vertical stack of N children (typically Segments, but @children accepts
+// any compatible primitive — Segment, Badge, future decorators).
+//
+// Used wherever a cell needs two-or-more lines of content: KeyValueRow's
+// description, RadioGroup/CheckboxGroup item labels with sub-text, DataTable
+// cells with primary value + supporting detail, ListTile's primary +
+// supporting text.
+//
+// PRIVATE LIBRARY HELPER. Not re-exported from lib.slint. Underscore prefix
+// signals library-internal; other library files import the `SegmentColumn`
+// component, consumers compose with public row primitives.
+//
+// The pattern's bug class is structural to horizontal width pressure
+// (sibling Texts competing for slack in a HorizontalLayout). Vertical
+// stacking does NOT exhibit the same pathology: each row in a VerticalLayout
+// receives the full parent width independently — there is no shared width
+// to compete for. Verified empirically; see architecture/segment-pattern.md
+// → SegmentColumn → "Why this exists" and the consultation companion's Q4.
+//
+// Per architecture/segment-pattern.md → SegmentColumn.
+
+export component SegmentColumn inherits Rectangle {
+    // ===== Public-within-library API ======================================
+
+    /// Visibility gate, same convention as Badge. When `false`, the column
+    /// contributes zero width and is invisible. See architecture/
+    /// segment-pattern.md → "The show: bool convention" for when to gate
+    /// (call-site coordination via the row-derived-predicate idiom).
+    in property <bool> show: true;
+
+    /// Vertical gap between stacked children. Default `0px` because adjacent
+    /// text lines typically share a line-height-derived natural gap;
+    /// consumers set this only when they want extra breathing room between
+    /// the primary line and its supporting text.
+    in property <length> vstack-spacing: 0px;
+
+    // ===== Derived state ==================================================
+
+    background:        transparent;
+
+    // Invariant 7: cells set `horizontal-stretch: 0` explicitly. Slint
+    // Rectangle defaults to 1.0, which would make this column absorb slack
+    // and compete with the row's dedicated slack Rectangle.
+    horizontal-stretch: 0;
+
+    // Visibility + size all gated on `show`. The column collapses entirely
+    // when show=false. Symmetric with Badge's gating.
+    visible:           root.show;
+    preferred-width:   root.show ? stack.preferred-width  : 0px;
+    preferred-height:  root.show ? stack.preferred-height : 0px;
+    min-width:         root.show ? stack.min-width        : 0px;
+    min-height:        root.show ? stack.min-height       : 0px;
+
+    // ===== Inner stack — @children slot composition ======================
+    //
+    // The inner VerticalLayout holds whatever the consumer composes inside.
+    // Typically two Segments (primary + secondary), but accepts N children
+    // for cases like DataTable cells with value + delta + timestamp.
+    //
+    // preferred-width = max(children) and preferred-height = sum(children)
+    // + spacings — standard VerticalLayout semantics. Each Segment child
+    // self-zeros in BOTH dimensions when its text is empty (per Segment's
+    // empty-state behavior), so an all-empty column produces zero width
+    // and zero height even without `show: false`.
+
+    stack := VerticalLayout {
+        spacing: root.vstack-spacing;
+        @children
+    }
+}

@@ -1,0 +1,329 @@
+// Segment preview — regression suite for the cell primitive.
+//
+// Each section demonstrates a verification scenario from
+// architecture/segment-pattern.md. The preview is the live test for the
+// pattern's load-bearing claims about Segment — if a future Slint upgrade
+// or refactor breaks a claim, the corresponding section visually regresses.
+//
+// Run: `slint-viewer abdu-slint-ui/previews/_segment.slint`
+
+import { Segment } from "../components/_segment.slint";
+import { Theme } from "../globals/theme.slint";
+import { Typography } from "../globals/typography.slint";
+import { Spacing } from "../globals/spacing.slint";
+import { Sizes } from "../globals/sizes.slint";
+import { IconFont } from "../globals/icon-font.slint";
+
+import "../assets/phosphor.ttf";
+import "../assets/lucide.ttf";
+
+// Section header + caption pair, matching the local Card-preview pattern
+// (inherits VerticalLayout, holds Text children — directly inheriting from
+// Text behaves inconsistently and produces blank renders in Slint 1.14).
+component Section inherits VerticalLayout {
+    in property <string> title;
+    in property <string> caption;
+    spacing: Spacing.xs;
+    Text {
+        text: root.title;
+        font-size: Typography.text-sm;
+        font-weight: Typography.weight-semibold;
+        color: Theme.foreground;
+    }
+    Text {
+        text: root.caption;
+        font-size: Typography.text-xs;
+        color: Theme.muted-foreground;
+        wrap: word-wrap;
+    }
+}
+
+// Lightly-outlined frame to visually mark Segment boundaries. Wrapping a
+// Segment in this frame lets the viewer see where the cell starts and ends.
+// Binds preferred/min size explicitly because Slint 1.14 doesn't auto-propagate
+// intrinsic content size through a bare Rectangle (HANDOVER quirk #15 — same
+// pattern Card uses for `content-layout`).
+component Bound inherits Rectangle {
+    border-width: 1px;
+    border-color: #ff00ff;
+    background: transparent;
+    preferred-width:  inner-bound.preferred-width;
+    preferred-height: inner-bound.preferred-height;
+    min-width:        inner-bound.min-width;
+    min-height:       inner-bound.min-height;
+    inner-bound := HorizontalLayout {
+        @children
+    }
+}
+
+export component SegmentPreview inherits Window {
+    title: "Segment — regression preview";
+    preferred-width: 980px;
+    preferred-height: 950px;
+    background: Theme.background;
+
+    VerticalLayout {
+        padding: Spacing.xl;
+        spacing: Spacing.lg;
+        alignment: start;
+
+        Text {
+            text: "Segment";
+            font-size: Typography.text-xl;
+            font-weight: Typography.weight-bold;
+            color: Theme.foreground;
+        }
+        Text {
+            text: "Atomic cell primitive. One Text inside one Rectangle. Each section below demonstrates a verification scenario from the pattern doc.";
+            font-size: Typography.text-sm;
+            color: Theme.muted-foreground;
+            wrap: word-wrap;
+        }
+
+        // ===== Scenario 1 ================================================
+        Section {
+            title: "1. Empty cell contributes zero width (invariant 5)";
+            caption: "Three Bound-framed cells in source order: [BEFORE] [empty, padding-h=12] [AFTER]. The middle cell has padding-h:12 but text:\"\" — preferred-width should be 0, not 24. Visually, BEFORE and AFTER touch with no gap.";
+        }
+        HorizontalLayout {
+            alignment: start;
+            spacing: 0;
+            Bound {
+                Segment {
+                    text: "BEFORE";
+                    font-family: Typography.font-family;
+                    font-size: Typography.text-base;
+                    text-color: Theme.foreground;
+                }
+            }
+            Bound {
+                Segment {
+                    text: "";
+                    padding-h: Spacing.md;
+                    font-family: Typography.font-family;
+                    font-size: Typography.text-base;
+                    text-color: Theme.foreground;
+                }
+            }
+            Bound {
+                Segment {
+                    text: "AFTER";
+                    font-family: Typography.font-family;
+                    font-size: Typography.text-base;
+                    text-color: Theme.foreground;
+                }
+            }
+        }
+
+        // ===== Scenario 2 ================================================
+        Section {
+            title: "2. padding-h variations";
+            caption: "Same content, three padding-h values: 0, Spacing.xs (4px), Spacing.md (12px). Magenta frames show the cell boundary; visible gap inside the frame equals padding-h.";
+        }
+        HorizontalLayout {
+            alignment: start;
+            spacing: Spacing.sm;
+            Bound {
+                Segment {
+                    text: "padding-h: 0";
+                    padding-h: 0px;
+                    font-family: Typography.font-family;
+                    font-size: Typography.text-base;
+                    text-color: Theme.foreground;
+                }
+            }
+            Bound {
+                Segment {
+                    text: "padding-h: 4";
+                    padding-h: Spacing.xs;
+                    font-family: Typography.font-family;
+                    font-size: Typography.text-base;
+                    text-color: Theme.foreground;
+                }
+            }
+            Bound {
+                Segment {
+                    text: "padding-h: 12";
+                    padding-h: Spacing.md;
+                    font-family: Typography.font-family;
+                    font-size: Typography.text-base;
+                    text-color: Theme.foreground;
+                }
+            }
+        }
+
+        // ===== Scenario 3 ================================================
+        Section {
+            title: "3. align-h with cell wider than content";
+            caption: "Each frame is hand-sized to 240px; the Segment fills it. Content \"Hi\" with align-h: left / center / right shows where the text anchors inside the over-sized cell.";
+        }
+        HorizontalLayout {
+            alignment: start;
+            spacing: Spacing.md;
+            Rectangle {
+                width: 240px;
+                height: 32px;
+                border-width: 1px;
+                border-color: #ff00ff;
+                background: transparent;
+                Segment {
+                    width: parent.width;
+                    height: parent.height;
+                    text: "Hi (left)";
+                    align-h: left;
+                    font-family: Typography.font-family;
+                    font-size: Typography.text-base;
+                    text-color: Theme.foreground;
+                }
+            }
+            Rectangle {
+                width: 240px;
+                height: 32px;
+                border-width: 1px;
+                border-color: #ff00ff;
+                background: transparent;
+                Segment {
+                    width: parent.width;
+                    height: parent.height;
+                    text: "Hi (center)";
+                    align-h: center;
+                    font-family: Typography.font-family;
+                    font-size: Typography.text-base;
+                    text-color: Theme.foreground;
+                }
+            }
+            Rectangle {
+                width: 240px;
+                height: 32px;
+                border-width: 1px;
+                border-color: #ff00ff;
+                background: transparent;
+                Segment {
+                    width: parent.width;
+                    height: parent.height;
+                    text: "Hi (right)";
+                    align-h: right;
+                    font-family: Typography.font-family;
+                    font-size: Typography.text-base;
+                    text-color: Theme.foreground;
+                }
+            }
+        }
+
+        // ===== Scenario 4 ================================================
+        Section {
+            title: "4. elide on constrained width";
+            caption: "Cell hand-sized to 180px, long content, elide: true. Renders as truncated text with `…` at the trailing edge.";
+        }
+        Rectangle {
+            width: 180px;
+            height: 32px;
+            border-width: 1px;
+            border-color: #ff00ff;
+            background: transparent;
+            Segment {
+                width: parent.width;
+                height: parent.height;
+                text: "This text is longer than the cell can fit";
+                elide: true;
+                align-h: left;
+                font-family: Typography.font-family;
+                font-size: Typography.text-base;
+                text-color: Theme.foreground;
+            }
+        }
+
+        // ===== Scenario 5 ================================================
+        Section {
+            title: "5. wrap on constrained width";
+            caption: "240px width, long content, wrap: true. Text wraps to multiple lines; the cell's height grows.";
+        }
+        Rectangle {
+            width: 240px;
+            border-width: 1px;
+            border-color: #ff00ff;
+            background: transparent;
+            preferred-height: seg5.preferred-height;
+            seg5 := Segment {
+                width: parent.width;
+                text: "This text wraps onto multiple lines when wrap is enabled and the cell width is constrained.";
+                wrap: true;
+                align-h: left;
+                font-family: Typography.font-family;
+                font-size: Typography.text-base;
+                text-color: Theme.foreground;
+            }
+        }
+
+        // ===== Scenario 6 ================================================
+        Section {
+            title: "6. Font-family variations";
+            caption: "Three cells, same font-size, different font-family: Latin (Inter), Arabic (Noto Sans Arabic), icon (Phosphor).";
+        }
+        HorizontalLayout {
+            alignment: start;
+            spacing: Spacing.lg;
+            Bound {
+                Segment {
+                    text: "Total";
+                    font-family: Typography.font-family;
+                    font-size: Typography.text-base;
+                    text-color: Theme.foreground;
+                    padding-h: Spacing.xs;
+                }
+            }
+            Bound {
+                Segment {
+                    text: "المجموع";
+                    font-family: Typography.font-family-ar;
+                    font-size: Typography.text-base;
+                    text-color: Theme.foreground;
+                    padding-h: Spacing.xs;
+                }
+            }
+            Bound {
+                Segment {
+                    text: IconFont.resolve("check");
+                    font-family: IconFont.font-family-name();
+                    font-size: Sizes.icon-md;
+                    text-color: Theme.foreground;
+                    padding-h: Spacing.xs;
+                }
+            }
+        }
+
+        // ===== Scenario 7 ================================================
+        Section {
+            title: "7. Typography variations";
+            caption: "Different size, weight, and color combinations on the same cell shape. Typography is per-cell and decoupled.";
+        }
+        HorizontalLayout {
+            alignment: start;
+            spacing: Spacing.lg;
+            Segment {
+                text: "text-sm regular muted";
+                font-family: Typography.font-family;
+                font-size: Typography.text-sm;
+                font-weight: Typography.weight-regular;
+                text-color: Theme.muted-foreground;
+                padding-h: Spacing.xs;
+            }
+            Segment {
+                text: "text-base medium primary";
+                font-family: Typography.font-family;
+                font-size: Typography.text-base;
+                font-weight: Typography.weight-medium;
+                text-color: Theme.primary;
+                padding-h: Spacing.xs;
+            }
+            Segment {
+                text: "text-lg bold destructive";
+                font-family: Typography.font-family;
+                font-size: Typography.text-lg;
+                font-weight: Typography.weight-bold;
+                text-color: Theme.destructive;
+                padding-h: Spacing.xs;
+            }
+        }
+    }
+}

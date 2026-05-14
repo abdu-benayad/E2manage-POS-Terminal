@@ -25,6 +25,20 @@ export global Typography {
     in-out property <string> font-family: "Inter";
     in-out property <string> font-family-ar: "Noto Sans Arabic";
 
+    // Monospaced family for tabular-figures numeric content. Used by
+    // KeyValueRow's `value-monospace: true` mode so columns of numeric
+    // values align by decimal point (`42.00` / `6.30` / `2.50` / `50.80`).
+    // Slint 1.14 has no `font-variant-numeric: tabular-nums`, so the
+    // workaround is to render numerics in a font whose glyphs are
+    // naturally equal-width.
+    //
+    // Default chosen for Linux availability. Consumers shipping their
+    // own monospaced font override at startup (e.g.,
+    // `Typography.font-family-monospace = "SF Mono";` on macOS,
+    // `"Cascadia Mono"` on Windows, `"JetBrains Mono"` for branded
+    // numeric displays).
+    in-out property <string> font-family-monospace: "DejaVu Sans Mono";
+
     // --- Size scale ---
     out property <length> text-xs: 12px;
     out property <length> text-sm: 14px;
