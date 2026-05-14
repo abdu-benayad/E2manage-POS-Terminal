@@ -623,18 +623,42 @@ export component KeyValueRow inherits Rectangle {
 
     // ===== Tooltip ======================================================
     //
-    // A row-spanning TouchArea tracks hover when tooltip != "". The popup
-    // Rectangle renders 6px above the row, centered horizontally, with a
-    // drop shadow — matches Card's tooltip shape so consumers see a
-    // consistent tooltip presentation across library components.
+    // Cursor-anchored hover popup with a delay-before-show and a
+    // click-to-dismiss state machine. Rendered only when `tooltip != ""`
+    // AND the delay timer has elapsed AND the user has not dismissed it
+    // with a click since the cursor last entered the row.
+    //
+    // State machine (three properties, transitions driven by TouchArea
+    // events + a one-shot Timer):
+    //
+    //   tooltip-shown      — true once the delay has elapsed; gates the popup
+    //   tooltip-dismissed  — true once the user clicked the row; suppresses
+    //                        the popup until the cursor leaves and re-enters
+    //
+    //   Transitions:
+    //   - hover begins → timer starts (running condition: hover && !shown && !dismissed)
+    //   - timer fires (after 500ms) → shown = true; popup renders
+    //   - click on row → dismissed = true, shown = false; popup unrenders
+    //   - hover ends → shown = false, dismissed = false; ready for next entry
+    //
+    // Anchoring: the popup's horizontal center tracks the cursor's X and
+    // it sits 12px above the cursor's Y. Cursor-anchored, not host-anchored
+    // — KeyValueRow is wide-and-short, so a tooltip centered above the
+    // row would land far from where the user is looking. Compact components
+    // (IconButton, Card) keep the host-anchored convention. Library
+    // convention: wide row primitives → cursor-anchored; compact targets
+    // → host-anchored.
     //
     // The TouchArea is always declared but only `enabled` when tooltip
-    // is non-empty. When disabled, it doesn't capture clicks or hover
-    // events, so a tooltip-less row stays transparent to a wrapping
-    // interactive Card. When enabled, it spans the row's full bounds
-    // and consumes hover; per the design doc, this blocks click
-    // propagation to a wrapping Card — consumers choose tooltip OR
-    // clickable-row-via-Card, not both.
+    // is non-empty. When disabled it doesn't capture clicks or hover, so
+    // a tooltip-less row stays transparent to a wrapping interactive Card.
+    // When enabled it spans the row's bounds and consumes both hover and
+    // clicks — per the design doc, this blocks click propagation to a
+    // wrapping Card. Consumers choose tooltip OR clickable-row-via-Card,
+    // not both.
+
+    property <bool> tooltip-shown:     false;
+    property <bool> tooltip-dismissed: false;
 
     tooltip-touch := TouchArea {
         x: 0;
@@ -642,11 +666,40 @@ export component KeyValueRow inherits Rectangle {
         width: parent.width;
         height: parent.height;
         enabled: root.tooltip != "";
+
+        clicked => {
+            // Click-to-dismiss: hide the popup. Stays hidden until the
+            // cursor leaves the row (which resets dismissed via the
+            // changed has-hover handler below).
+            root.tooltip-dismissed = true;
+            root.tooltip-shown = false;
+        }
+
+        changed has-hover => {
+            if (!self.has-hover) {
+                // Cursor left the row — fully reset so the next entry
+                // starts a fresh delay countdown.
+                root.tooltip-shown = false;
+                root.tooltip-dismissed = false;
+            }
+        }
     }
 
-    if root.tooltip != "" && tooltip-touch.has-hover: Rectangle {
-        x: (parent.width - self.width) / 2;
-        y: -self.height - 6px;
+    // One-shot delay timer. `running` is true only while we're waiting
+    // to emerge: hovering AND not yet shown AND not dismissed. When
+    // triggered() sets tooltip-shown to true, the running condition
+    // flips to false and the timer stops on its own.
+    tooltip-delay := Timer {
+        interval: Animation.slower;   // 500ms — standard tooltip-emerge delay
+        running: tooltip-touch.has-hover && !root.tooltip-shown && !root.tooltip-dismissed;
+        triggered() => {
+            root.tooltip-shown = true;
+        }
+    }
+
+    if root.tooltip != "" && root.tooltip-shown: Rectangle {
+        x: tooltip-touch.mouse-x - self.width / 2;
+        y: tooltip-touch.mouse-y - self.height - 12px;
         width:  tooltip-text.preferred-width + 16px;
         height: tooltip-text.preferred-height + 8px;
         background: Theme.tooltip-background;

@@ -443,9 +443,34 @@ A combined `aria-label` synthesising "Total is 12.50 SAR" is deferred to `key-va
 
 ---
 
-## Tooltip TouchArea — gated on `tooltip != ""`
+## Tooltip — cursor-anchored, delay-then-show, click-to-dismiss
 
-The tooltip overlay (and its TouchArea) renders **only when `tooltip != ""`**. This matters for composition with an interactive Card:
+The tooltip overlay (TouchArea + popup) is installed only when `tooltip != ""`. The popup is **cursor-anchored** — its horizontal center tracks `tooltip-touch.mouse-x` and it sits 12px above `tooltip-touch.mouse-y`. As the user moves the cursor along a wide row, the tooltip follows.
+
+**Show timing** — the popup does NOT appear immediately on hover. A one-shot `Timer` with `interval: Animation.slower` (500ms) starts when the cursor enters the row; the popup emerges only if the cursor remains over the row for the full delay. This filters out the "casual sweep" — a user dragging the cursor across the row to read it doesn't get spammed with popups.
+
+**Dismiss conditions** — the popup goes away in either of two ways:
+
+1. **Click anywhere on the row.** Suppresses the popup until the cursor leaves and re-enters. Useful when the user has read the tooltip and wants it out of the way without moving the cursor.
+2. **Cursor leaves the row.** Full reset — the next hover entry starts a fresh delay countdown.
+
+**State machine** (component-local properties, set by TouchArea events and a Timer):
+
+| State property | Set true when | Set false when |
+|---|---|---|
+| `tooltip-shown` | delay Timer fires (hovering, not dismissed) | click; cursor leaves |
+| `tooltip-dismissed` | click | cursor leaves |
+
+The Timer's `running` condition is `tooltip-touch.has-hover && !tooltip-shown && !tooltip-dismissed`. It stops on its own once any of those flips.
+
+**Why cursor-anchored, not host-anchored.** KeyValueRow is wide-and-short — a row in a settings list or summary view is typically 400–800px wide and ~50px tall. A host-anchored tooltip (centered horizontally above the row) can end up 300+px from the user's actual point of attention. Cursor anchoring keeps the popup in the user's field of view regardless of which part of the row they're hovering. Compact components (`IconButton`, an icon-only `Button`, a single-glyph affordance) keep the host-anchored convention because the host IS the field of attention — Card retains this for consistency with its existing API.
+
+**Library convention** (record this here, propagate to future row primitives):
+
+- **Wide row primitives** (KeyValueRow, future `ListTile`, `MoneyRow`, `SectionRow`) → **cursor-anchored**.
+- **Compact targets** (IconButton, Card's tooltip, single-glyph affordances) → **host-anchored**.
+
+This composes with an interactive Card the same way regardless of anchor:
 
 ```slint
 Card {
