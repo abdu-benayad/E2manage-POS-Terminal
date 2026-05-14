@@ -17,8 +17,7 @@ import { ButtonSection } from "sections/button.slint";
 import { IconButtonSection } from "sections/icon-button.slint";
 import { ToggleSection } from "sections/toggle.slint";
 import { CardSection } from "sections/card.slint";
-// KeyValueRowSection removed during rewrite — restore when the new
-// KeyValueRow ships (tracked in architecture/key-value-row.md → Build status).
+import { KeyValueRowSection } from "sections/key-value-row.slint";
 
 export component PlaygroundWindow inherits Window {
     title: "abdu-slint-ui Playground";
@@ -163,10 +162,22 @@ export component PlaygroundWindow inherits Window {
                     }
                 }
 
-                // KeyValueRow sidebar tile removed during rewrite. The
-                // primitive is being re-implemented on top of the
-                // segment-as-cell pattern (architecture/segment-pattern.md).
-                // Restore this tile when the new KeyValueRow ships.
+                key-value-row-tile := Rectangle {
+                    height: 36px;
+                    background: root.selected-section == "key-value-row" ? #e2e8f0 : transparent;
+                    border-radius: 6px;
+                    Text {
+                        x: 12px;
+                        text: "KeyValueRow";
+                        font-size: 13px;
+                        vertical-alignment: center;
+                        color: #0f172a;
+                    }
+                    TouchArea {
+                        clicked => { root.selected-section = "key-value-row"; }
+                        mouse-cursor: pointer;
+                    }
+                }
             }
         }
 
@@ -315,15 +326,13 @@ export component PlaygroundWindow inherits Window {
             if root.selected-section == "icon-button": IconButtonSection { }
             if root.selected-section == "toggle":      ToggleSection { }
             if root.selected-section == "card":        CardSection { }
-            // KeyValueRow section removed during rewrite (architecture/segment-pattern.md).
-            // Restore the `if root.selected-section == "key-value-row": KeyValueRowSection { }`
-            // mount and the matching sidebar tile when the new KeyValueRow ships.
-            if root.selected-section != "button" && root.selected-section != "icon-button" && root.selected-section != "toggle" && root.selected-section != "card": Rectangle {
+            if root.selected-section == "key-value-row": KeyValueRowSection { }
+            if root.selected-section != "button" && root.selected-section != "icon-button" && root.selected-section != "toggle" && root.selected-section != "card" && root.selected-section != "key-value-row": Rectangle {
                 background: Theme.surface-muted;
                 Text {
                     x: 32px;
                     y: 32px;
-                    text: "Section '" + root.selected-section + "' not yet implemented. Select Button, IconButton, Toggle, or Card from the sidebar.";
+                    text: "Section '" + root.selected-section + "' not yet implemented. Select Button, IconButton, Toggle, Card, or KeyValueRow from the sidebar.";
                     color: Theme.muted-foreground;
                 }
             }

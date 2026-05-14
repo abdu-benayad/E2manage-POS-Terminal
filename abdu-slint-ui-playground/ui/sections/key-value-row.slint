@@ -1,0 +1,318 @@
+// KeyValueRow playground section.
+//
+// Same shape as sections/card.slint: in-out properties hold live state,
+// derived properties translate slug-strings into library enums, a
+// preview pane mounts the demoed KeyValueRow inside a surface-tinted
+// card, a code-snippet panel shows the current configuration, and a
+// property panel exposes every public property (18 in total).
+
+import {
+    KeyValueRow,
+    Emphasis, Tone, Density, UnitPosition, DisclosureIndicator,
+    Theme, Typography, Spacing
+} from "@abdu-slint-ui";
+import { ComboBox, CheckBox, LineEdit, HorizontalBox, VerticalBox, ScrollView } from "std-widgets.slint";
+
+export component KeyValueRowSection inherits Rectangle {
+    // ===== Live property state — one in-out per public KeyValueRow property =
+
+    // Content (6)
+    in-out property <string> v-label: "Total";
+    in-out property <string> v-label-icon: "";
+    in-out property <string> v-description: "";
+    in-out property <string> v-value: "12.50";
+    in-out property <string> v-value-unit: "SAR";
+    in-out property <string> v-value-icon: "";
+
+    // Typography & tone (3)
+    in-out property <string> v-emphasis: "normal";
+    in-out property <string> v-value-tone: "default";
+    in-out property <bool>   v-value-monospace: false;
+
+    // Affordances (3)
+    in-out property <bool>   v-show-status: false;
+    in-out property <string> v-status-tone: "muted";
+    in-out property <string> v-disclosure: "none";
+
+    // Layout & behaviour (5)
+    in-out property <string> v-density: "default";
+    in-out property <string> v-unit-position: "trailing";
+    in-out property <bool>   v-wrap: false;
+    in-out property <bool>   v-show-divider: false;
+    in-out property <string> v-tooltip: "";
+
+    // Debug (1)
+    in-out property <bool>   v-debug-bounds: false;
+
+    // ===== Derived enum values ============================================
+    property <Emphasis> emphasis-enum:
+          v-emphasis == "subtle" ? Emphasis.subtle
+        : v-emphasis == "strong" ? Emphasis.strong
+        : v-emphasis == "total"  ? Emphasis.total
+        : Emphasis.normal;
+
+    property <Tone> value-tone-enum:
+          v-value-tone == "primary"     ? Tone.primary
+        : v-value-tone == "success"     ? Tone.success
+        : v-value-tone == "warning"     ? Tone.warning
+        : v-value-tone == "destructive" ? Tone.destructive
+        : v-value-tone == "info"        ? Tone.info
+        : v-value-tone == "muted"       ? Tone.muted
+        : Tone.default;
+
+    property <Tone> status-tone-enum:
+          v-status-tone == "primary"     ? Tone.primary
+        : v-status-tone == "success"     ? Tone.success
+        : v-status-tone == "warning"     ? Tone.warning
+        : v-status-tone == "destructive" ? Tone.destructive
+        : v-status-tone == "info"        ? Tone.info
+        : v-status-tone == "default"     ? Tone.default
+        : Tone.muted;
+
+    property <DisclosureIndicator> disclosure-enum:
+          v-disclosure == "chevron"  ? DisclosureIndicator.chevron
+        : v-disclosure == "external" ? DisclosureIndicator.external
+        : DisclosureIndicator.none;
+
+    property <Density> density-enum:
+          v-density == "compact"     ? Density.compact
+        : v-density == "comfortable" ? Density.comfortable
+        : Density.default;
+
+    property <UnitPosition> unit-position-enum:
+        v-unit-position == "leading" ? UnitPosition.leading : UnitPosition.trailing;
+
+    background: transparent;
+
+    HorizontalLayout {
+        // --- Preview pane ------------------------------------------------
+        Rectangle {
+            background: Theme.surface-muted;
+            VerticalBox {
+                padding: 32px;
+                spacing: Spacing.lg;
+                alignment: center;
+
+                Text {
+                    text: "Live preview — KeyValueRow inside a surface-tinted card";
+                    font-size: Typography.text-sm;
+                    color: Theme.muted-foreground;
+                }
+
+                // Surface-tinted card around the row to match production use
+                // (rows live inside a Card or SectionCard, never bare).
+                Rectangle {
+                    background: Theme.surface;
+                    border-color: Theme.border;
+                    border-width: 1px;
+                    border-radius: 8px;
+                    VerticalLayout {
+                        padding: Spacing.md;
+                        KeyValueRow {
+                            label:          root.v-label;
+                            label-icon:     root.v-label-icon;
+                            description:    root.v-description;
+                            value:          root.v-value;
+                            value-unit:     root.v-value-unit;
+                            value-icon:     root.v-value-icon;
+                            emphasis:       root.emphasis-enum;
+                            value-tone:     root.value-tone-enum;
+                            value-monospace: root.v-value-monospace;
+                            show-status:    root.v-show-status;
+                            status-tone:    root.status-tone-enum;
+                            disclosure:     root.disclosure-enum;
+                            density:        root.density-enum;
+                            unit-position:  root.unit-position-enum;
+                            wrap:           root.v-wrap;
+                            show-divider:   root.v-show-divider;
+                            tooltip:        root.v-tooltip;
+                            debug-bounds:   root.v-debug-bounds;
+                        }
+                    }
+                }
+
+                // Code snippet panel.
+                Rectangle {
+                    background: #0f172a;
+                    border-radius: 8px;
+                    height: 320px;
+                    ScrollView {
+                        Text {
+                            x: 16px;
+                            y: 12px;
+                            text:
+                                  "KeyValueRow {\n"
+                                + (root.v-label != ""           ? "    label: \"" + root.v-label + "\";\n" : "")
+                                + (root.v-label-icon != ""      ? "    label-icon: \"" + root.v-label-icon + "\";\n" : "")
+                                + (root.v-description != ""     ? "    description: \"" + root.v-description + "\";\n" : "")
+                                + (root.v-value != ""           ? "    value: \"" + root.v-value + "\";\n" : "")
+                                + (root.v-value-unit != ""      ? "    value-unit: \"" + root.v-value-unit + "\";\n" : "")
+                                + (root.v-value-icon != ""      ? "    value-icon: \"" + root.v-value-icon + "\";\n" : "")
+                                + (root.v-emphasis != "normal"  ? "    emphasis: Emphasis." + root.v-emphasis + ";\n" : "")
+                                + (root.v-value-tone != "default" ? "    value-tone: Tone." + root.v-value-tone + ";\n" : "")
+                                + (root.v-value-monospace       ? "    value-monospace: true;\n" : "")
+                                + (root.v-show-status           ? "    show-status: true;\n" : "")
+                                + (root.v-show-status && root.v-status-tone != "muted"
+                                                                ? "    status-tone: Tone." + root.v-status-tone + ";\n" : "")
+                                + (root.v-disclosure != "none"  ? "    disclosure: DisclosureIndicator." + root.v-disclosure + ";\n" : "")
+                                + (root.v-density != "default"  ? "    density: Density." + root.v-density + ";\n" : "")
+                                + (root.v-unit-position != "trailing"
+                                                                ? "    unit-position: UnitPosition." + root.v-unit-position + ";\n" : "")
+                                + (root.v-wrap                  ? "    wrap: true;\n" : "")
+                                + (root.v-show-divider          ? "    show-divider: true;\n" : "")
+                                + (root.v-tooltip != ""         ? "    tooltip: \"" + root.v-tooltip + "\";\n" : "")
+                                + (root.v-debug-bounds          ? "    debug-bounds: true;\n" : "")
+                                + "}";
+                            color: #f8fafc;
+                            font-family: "monospace";
+                            font-size: 12px;
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- Property panel ----------------------------------------------
+        Rectangle {
+            width: 320px;
+            background: Theme.surface;
+            Rectangle { width: 1px; background: Theme.border; }
+
+            ScrollView {
+                VerticalBox {
+                    padding: 16px;
+                    spacing: 10px;
+
+                    Text { text: "Properties"; font-weight: 600; font-size: 14px; }
+
+                    // ----- Content -------------------------------------
+                    Text { text: "label"; font-size: 12px; color: Theme.muted-foreground; }
+                    LineEdit {
+                        text: root.v-label;
+                        placeholder-text: "Leading-side primary text";
+                        edited(s) => { root.v-label = s; }
+                    }
+
+                    Text { text: "label-icon (IconFont name, e.g. \"receipt\")"; font-size: 12px; color: Theme.muted-foreground; }
+                    LineEdit {
+                        text: root.v-label-icon;
+                        placeholder-text: "receipt, credit-card, alert-triangle …";
+                        edited(s) => { root.v-label-icon = s; }
+                    }
+
+                    Text { text: "description (renders below label when non-empty)"; font-size: 12px; color: Theme.muted-foreground; }
+                    LineEdit {
+                        text: root.v-description;
+                        placeholder-text: "Secondary text under the label";
+                        edited(s) => { root.v-description = s; }
+                    }
+
+                    Text { text: "value"; font-size: 12px; color: Theme.muted-foreground; }
+                    LineEdit {
+                        text: root.v-value;
+                        placeholder-text: "Trailing-side primary text";
+                        edited(s) => { root.v-value = s; }
+                    }
+
+                    Text { text: "value-unit"; font-size: 12px; color: Theme.muted-foreground; }
+                    LineEdit {
+                        text: root.v-value-unit;
+                        placeholder-text: "SAR, %, kg, $ …";
+                        edited(s) => { root.v-value-unit = s; }
+                    }
+
+                    Text { text: "value-icon (IconFont name)"; font-size: 12px; color: Theme.muted-foreground; }
+                    LineEdit {
+                        text: root.v-value-icon;
+                        placeholder-text: "arrow-up, credit-card …";
+                        edited(s) => { root.v-value-icon = s; }
+                    }
+
+                    // ----- Typography & tone ---------------------------
+                    Text { text: "emphasis"; font-size: 12px; color: Theme.muted-foreground; }
+                    ComboBox {
+                        model: ["subtle", "normal", "strong", "total"];
+                        current-value: root.v-emphasis;
+                        selected(v) => { root.v-emphasis = v; }
+                    }
+
+                    Text { text: "value-tone (colors the value cluster)"; font-size: 12px; color: Theme.muted-foreground; }
+                    ComboBox {
+                        model: ["default", "primary", "success", "warning", "destructive", "info", "muted"];
+                        current-value: root.v-value-tone;
+                        selected(v) => { root.v-value-tone = v; }
+                    }
+
+                    CheckBox {
+                        text: "value-monospace (tabular figures for stacked numerics)";
+                        checked: root.v-value-monospace;
+                        toggled => { root.v-value-monospace = self.checked; }
+                    }
+
+                    // ----- Affordances ---------------------------------
+                    CheckBox {
+                        text: "show-status (● dot at leading edge)";
+                        checked: root.v-show-status;
+                        toggled => { root.v-show-status = self.checked; }
+                    }
+
+                    Text { text: "status-tone (only meaningful when show-status)"; font-size: 12px; color: Theme.muted-foreground; }
+                    ComboBox {
+                        model: ["default", "primary", "success", "warning", "destructive", "info", "muted"];
+                        current-value: root.v-status-tone;
+                        enabled: root.v-show-status;
+                        selected(v) => { root.v-status-tone = v; }
+                    }
+
+                    Text { text: "disclosure (trailing-edge indicator)"; font-size: 12px; color: Theme.muted-foreground; }
+                    ComboBox {
+                        model: ["none", "chevron", "external"];
+                        current-value: root.v-disclosure;
+                        selected(v) => { root.v-disclosure = v; }
+                    }
+
+                    // ----- Layout & behaviour --------------------------
+                    Text { text: "density"; font-size: 12px; color: Theme.muted-foreground; }
+                    ComboBox {
+                        model: ["compact", "default", "comfortable"];
+                        current-value: root.v-density;
+                        selected(v) => { root.v-density = v; }
+                    }
+
+                    Text { text: "unit-position (reading order of value-unit)"; font-size: 12px; color: Theme.muted-foreground; }
+                    ComboBox {
+                        model: ["trailing", "leading"];
+                        current-value: root.v-unit-position;
+                        selected(v) => { root.v-unit-position = v; }
+                    }
+
+                    CheckBox {
+                        text: "wrap (label + description wrap; value stays single-line)";
+                        checked: root.v-wrap;
+                        toggled => { root.v-wrap = self.checked; }
+                    }
+
+                    CheckBox {
+                        text: "show-divider (1px bottom border)";
+                        checked: root.v-show-divider;
+                        toggled => { root.v-show-divider = self.checked; }
+                    }
+
+                    Text { text: "tooltip (cursor-anchored, 500ms delay, click-to-dismiss)"; font-size: 12px; color: Theme.muted-foreground; }
+                    LineEdit {
+                        text: root.v-tooltip;
+                        placeholder-text: "Hover text — empty disables";
+                        edited(s) => { root.v-tooltip = s; }
+                    }
+
+                    // ----- Debug ---------------------------------------
+                    CheckBox {
+                        text: "debug-bounds (2px magenta border on row root)";
+                        checked: root.v-debug-bounds;
+                        toggled => { root.v-debug-bounds = self.checked; }
+                    }
+                }
+            }
+        }
+    }
+}
