@@ -249,11 +249,14 @@ component SegmentColumn inherits Rectangle {
     min-height:        root.show ? stack.min-height       : 0px;
 
     stack := VerticalLayout {
+        alignment: start;
         spacing: root.vstack-spacing;
         @children
     }
 }
 ```
+
+`alignment: start` is load-bearing: when a parent allocates the SegmentColumn more vertical space than its preferred-height (which routinely happens when the column is one cell among taller siblings in a HorizontalLayout), Slint's default `alignment: stretch` distributes the slack proportionally between children — pushing the secondary line away from the primary with an unwanted gap. `alignment: start` packs children top-down at their preferred heights and lets the slack become trailing whitespace below the last child. This matches the "stack" semantics consumers expect.
 
 ### Composition mechanism
 

@@ -66,8 +66,20 @@ export component SegmentColumn inherits Rectangle {
     // self-zeros in BOTH dimensions when its text is empty (per Segment's
     // empty-state behavior), so an all-empty column produces zero width
     // and zero height even without `show: false`.
+    //
+    // `alignment: start` makes children pack top-down at their preferred
+    // heights — any vertical slack (when a parent allocates more height
+    // than the column needs) becomes trailing whitespace below the last
+    // child rather than getting distributed BETWEEN children. This matches
+    // the "stack" semantics consumers expect: a primary line directly
+    // followed by a secondary line, never split apart by slack. Without
+    // this, a SegmentColumn placed inside a HorizontalLayout that's been
+    // sized larger than the column's preferred-height would see its two
+    // Segments stretched evenly to fill the column, and the secondary
+    // text would drift below the primary with an unwanted gap.
 
     stack := VerticalLayout {
+        alignment: start;
         spacing: root.vstack-spacing;
         @children
     }

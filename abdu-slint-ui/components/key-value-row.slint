@@ -363,6 +363,7 @@ export component KeyValueRow inherits Rectangle {
             font-size:   root.status-size;
             text-color:  root.status-color;
             align-h:     center;
+            align-v:     top;
             padding-h:   Spacing.xs;
         }
         if !Locale.rtl: Segment {
@@ -371,6 +372,7 @@ export component KeyValueRow inherits Rectangle {
             font-size:   root.icon-size;
             text-color:  root.label-color;
             align-h:     left;
+            align-v:     top;
             padding-h:   Spacing.xs;
         }
         if !Locale.rtl: SegmentColumn {
@@ -402,6 +404,7 @@ export component KeyValueRow inherits Rectangle {
             font-size:   root.value-side-a-size;
             text-color:  root.value-color;
             align-h:     left;
+            align-v:     top;
             padding-h:   Spacing.xs;
         }
         if !Locale.rtl: Segment {
@@ -411,6 +414,7 @@ export component KeyValueRow inherits Rectangle {
             font-weight: root.value-font-weight;
             text-color:  root.value-color;
             align-h:     left;
+            align-v:     top;
             padding-h:   Spacing.xs;
             wrap:        root.wrap;
         }
@@ -420,6 +424,7 @@ export component KeyValueRow inherits Rectangle {
             font-size:   root.value-side-b-size;
             text-color:  root.value-color;
             align-h:     left;
+            align-v:     top;
             padding-h:   Spacing.xs;
         }
         if !Locale.rtl: Segment {
@@ -428,6 +433,7 @@ export component KeyValueRow inherits Rectangle {
             font-size:   root.icon-size;
             text-color:  Theme.muted-foreground;
             align-h:     right;
+            align-v:     top;
             padding-h:   Spacing.xs;
         }
 
@@ -438,6 +444,7 @@ export component KeyValueRow inherits Rectangle {
             font-size:   root.icon-size;
             text-color:  Theme.muted-foreground;
             align-h:     left;
+            align-v:     top;
             padding-h:   Spacing.xs;
         }
         if Locale.rtl: Segment {
@@ -446,6 +453,7 @@ export component KeyValueRow inherits Rectangle {
             font-size:   root.value-side-a-size;
             text-color:  root.value-color;
             align-h:     left;
+            align-v:     top;
             padding-h:   Spacing.xs;
         }
         if Locale.rtl: Segment {
@@ -455,6 +463,7 @@ export component KeyValueRow inherits Rectangle {
             font-weight: root.value-font-weight;
             text-color:  root.value-color;
             align-h:     right;
+            align-v:     top;
             padding-h:   Spacing.xs;
             wrap:        root.wrap;
         }
@@ -464,6 +473,7 @@ export component KeyValueRow inherits Rectangle {
             font-size:   root.value-side-b-size;
             text-color:  root.value-color;
             align-h:     left;
+            align-v:     top;
             padding-h:   Spacing.xs;
         }
         if Locale.rtl: Rectangle { horizontal-stretch: 1; }
@@ -495,6 +505,7 @@ export component KeyValueRow inherits Rectangle {
             font-size:   root.icon-size;
             text-color:  root.label-color;
             align-h:     left;
+            align-v:     top;
             padding-h:   Spacing.xs;
         }
         if Locale.rtl: Segment {
@@ -503,6 +514,7 @@ export component KeyValueRow inherits Rectangle {
             font-size:   root.status-size;
             text-color:  root.status-color;
             align-h:     center;
+            align-v:     top;
             padding-h:   Spacing.xs;
         }
     }
