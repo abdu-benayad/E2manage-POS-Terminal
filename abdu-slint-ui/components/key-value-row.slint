@@ -321,9 +321,189 @@ export component KeyValueRow inherits Rectangle {
 
     // ===== Root sizing & background ======================================
     //
-    // Phase 4 adds the outer HorizontalLayout with both LTR and RTL cell
-    // sequences. Phase 5 binds the locked-height sizing rules and the
-    // show-divider Rectangle. Phase 6 adds tooltip + debug-bounds.
+    // Phase 5 binds the locked-height sizing rules and the show-divider
+    // Rectangle. Phase 6 adds tooltip + debug-bounds.
 
     background: transparent;
+
+    // ===== Outer layout — two per-locale cell sequences ==================
+    //
+    // One outer `if Locale.rtl` branch per the segment-pattern's Invariant
+    // 4. Each cell is declared TWICE — once in the LTR branch, once in
+    // the RTL branch — with content bound from row-level derived
+    // properties at the call site (Invariant 6). The only stretching
+    // child of this HorizontalLayout is the bare slack Rectangle between
+    // the label-side and value-side cells (Invariant 7).
+    //
+    // Cell sequence in source order (= physical left-to-right, since
+    // Slint 1.14's HorizontalLayout is not locale-aware):
+    //
+    //   LTR: [status, label-icon, label-column, slack,
+    //         value-side-A, value, value-side-B, disclosure]
+    //   RTL: [disclosure, value-side-A, value, value-side-B, slack,
+    //         label-column, label-icon, status]
+    //
+    // Per-branch differences are concentrated in `align-h`:
+    //   - locale-dependent text (label, description, value) matches the
+    //     branch (left in LTR, right in RTL — elide trailing reading edge);
+    //   - locale-independent content (label-icon, value-side-A/B) stays
+    //     left in both branches;
+    //   - geometric-anchor cells (status, disclosure) push their glyph
+    //     against the row's outer edge per branch.
+
+    layout := HorizontalLayout {
+        spacing: 0;
+        padding-top:    root.padding-y;
+        padding-bottom: root.padding-y;
+
+        // ----- LTR branch — label leads, value-cluster trails ----------
+        if !Locale.rtl: Segment {
+            text:        root.status-glyph;
+            font-family: root.row-font;
+            font-size:   root.status-size;
+            text-color:  root.status-color;
+            align-h:     center;
+            padding-h:   Spacing.xs;
+        }
+        if !Locale.rtl: Segment {
+            text:        root.label-icon-glyph;
+            font-family: IconFont.font-family-name();
+            font-size:   root.icon-size;
+            text-color:  root.label-color;
+            align-h:     left;
+            padding-h:   Spacing.xs;
+        }
+        if !Locale.rtl: SegmentColumn {
+            Segment {
+                text:        root.label;
+                font-family: root.row-font;
+                font-size:   root.label-font-size;
+                font-weight: root.label-font-weight;
+                text-color:  root.label-color;
+                align-h:     left;
+                padding-h:   Spacing.xs;
+                wrap:        root.wrap;
+            }
+            Segment {
+                text:        root.description;
+                font-family: root.row-font;
+                font-size:   root.description-font-size;
+                font-weight: Typography.weight-regular;
+                text-color:  Theme.muted-foreground;
+                align-h:     left;
+                padding-h:   Spacing.xs;
+                wrap:        root.wrap;
+            }
+        }
+        if !Locale.rtl: Rectangle { horizontal-stretch: 1; }
+        if !Locale.rtl: Segment {
+            text:        root.value-side-a-text;
+            font-family: root.value-side-a-font;
+            font-size:   root.value-side-a-size;
+            text-color:  root.value-color;
+            align-h:     left;
+            padding-h:   Spacing.xs;
+        }
+        if !Locale.rtl: Segment {
+            text:        root.value;
+            font-family: root.value-monospace ? Typography.font-family-monospace : root.row-font;
+            font-size:   root.value-font-size;
+            font-weight: root.value-font-weight;
+            text-color:  root.value-color;
+            align-h:     left;
+            padding-h:   Spacing.xs;
+            wrap:        root.wrap;
+        }
+        if !Locale.rtl: Segment {
+            text:        root.value-side-b-text;
+            font-family: root.value-side-b-font;
+            font-size:   root.value-side-b-size;
+            text-color:  root.value-color;
+            align-h:     left;
+            padding-h:   Spacing.xs;
+        }
+        if !Locale.rtl: Segment {
+            text:        root.disclosure-glyph;
+            font-family: root.row-font;
+            font-size:   root.icon-size;
+            text-color:  Theme.muted-foreground;
+            align-h:     right;
+            padding-h:   Spacing.xs;
+        }
+
+        // ----- RTL branch — mirror sequence ----------------------------
+        if Locale.rtl: Segment {
+            text:        root.disclosure-glyph;
+            font-family: root.row-font;
+            font-size:   root.icon-size;
+            text-color:  Theme.muted-foreground;
+            align-h:     left;
+            padding-h:   Spacing.xs;
+        }
+        if Locale.rtl: Segment {
+            text:        root.value-side-a-text;
+            font-family: root.value-side-a-font;
+            font-size:   root.value-side-a-size;
+            text-color:  root.value-color;
+            align-h:     left;
+            padding-h:   Spacing.xs;
+        }
+        if Locale.rtl: Segment {
+            text:        root.value;
+            font-family: root.value-monospace ? Typography.font-family-monospace : root.row-font;
+            font-size:   root.value-font-size;
+            font-weight: root.value-font-weight;
+            text-color:  root.value-color;
+            align-h:     right;
+            padding-h:   Spacing.xs;
+            wrap:        root.wrap;
+        }
+        if Locale.rtl: Segment {
+            text:        root.value-side-b-text;
+            font-family: root.value-side-b-font;
+            font-size:   root.value-side-b-size;
+            text-color:  root.value-color;
+            align-h:     left;
+            padding-h:   Spacing.xs;
+        }
+        if Locale.rtl: Rectangle { horizontal-stretch: 1; }
+        if Locale.rtl: SegmentColumn {
+            Segment {
+                text:        root.label;
+                font-family: root.row-font;
+                font-size:   root.label-font-size;
+                font-weight: root.label-font-weight;
+                text-color:  root.label-color;
+                align-h:     right;
+                padding-h:   Spacing.xs;
+                wrap:        root.wrap;
+            }
+            Segment {
+                text:        root.description;
+                font-family: root.row-font;
+                font-size:   root.description-font-size;
+                font-weight: Typography.weight-regular;
+                text-color:  Theme.muted-foreground;
+                align-h:     right;
+                padding-h:   Spacing.xs;
+                wrap:        root.wrap;
+            }
+        }
+        if Locale.rtl: Segment {
+            text:        root.label-icon-glyph;
+            font-family: IconFont.font-family-name();
+            font-size:   root.icon-size;
+            text-color:  root.label-color;
+            align-h:     left;
+            padding-h:   Spacing.xs;
+        }
+        if Locale.rtl: Segment {
+            text:        root.status-glyph;
+            font-family: root.row-font;
+            font-size:   root.status-size;
+            text-color:  root.status-color;
+            align-h:     center;
+            padding-h:   Spacing.xs;
+        }
+    }
 }
