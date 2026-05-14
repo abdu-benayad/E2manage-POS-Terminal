@@ -1,0 +1,152 @@
+// KeyValueRow — labelled-value display row.
+//
+// Two primary content slots (`label` and `value`) rendered as separate
+// cells per the single-script segmentation principle. Optional
+// supporting elements (label-icon, description-under-label, value-icon,
+// value-unit, leading status indicator, trailing disclosure indicator)
+// each render as their own cell. The row computes shared typography
+// and color values at the row level and references them from two
+// per-locale cell sequences inside an outer HorizontalLayout.
+//
+// Composed on the segment-as-cell pattern's foundation primitives —
+// Segment, SegmentColumn, Badge — all private to the library
+// (`components/_*.slint`). No new private helpers needed for this row.
+//
+// Public API: 18 properties. See architecture/key-value-row.md for the
+// design rationale, the unit-position XNOR semantic, the locked-height
+// rule, and the status-dot-not-pill decision. See
+// architecture/segment-pattern.md for the seven invariants and the
+// show:bool convention that the foundation primitives enforce.
+//
+// Display-only in v1.0 — no `interactive` / `clicked()`. Consumers
+// needing clickable rows wrap KeyValueRow inside an interactive Card.
+
+import { Emphasis, Tone, Density, UnitPosition, DisclosureIndicator } from "../enums.slint";
+import { Theme } from "../globals/theme.slint";
+import { Typography } from "../globals/typography.slint";
+import { Sizes } from "../globals/sizes.slint";
+import { Radius } from "../globals/radius.slint";
+import { Spacing } from "../globals/spacing.slint";
+import { Animation } from "../globals/animation.slint";
+import { Locale } from "../globals/locale.slint";
+import { IconFont } from "../globals/icon-font.slint";
+
+import { Segment } from "./_segment.slint";
+import { SegmentColumn } from "./_segment-column.slint";
+import { Badge } from "./_badge.slint";
+
+export component KeyValueRow inherits Rectangle {
+    // ===== Public API — 18 properties ====================================
+    //
+    // Property groupings mirror the design doc:
+    //   Content (6), Typography & tone (3), Affordances (3),
+    //   Layout & behaviour (5), Debug (1).
+
+    // ----- Content (6) ---------------------------------------------------
+
+    /// Leading-side primary text. Single-script content — do not concatenate
+    /// bidi-mixed text into this string (Slint issue #7267).
+    in property <string> label: "";
+
+    /// Optional icon name (resolved through IconFont.resolve). Rendered
+    /// adjacent to `label`. Position flips with Locale.rtl — LTR places
+    /// the icon BEFORE the label, RTL places it AFTER.
+    in property <string> label-icon: "";
+
+    /// Optional secondary text rendered below `label`. When non-empty the
+    /// label cell becomes a two-line SegmentColumn (label primary +
+    /// description secondary). When empty the cell collapses to single-line
+    /// via Segment's empty-state self-zeroing. Smaller font, muted color.
+    in property <string> description: "";
+
+    /// Trailing-side primary text. Single-script content.
+    in property <string> value: "";
+
+    /// Optional unit/suffix rendered adjacent to `value` (e.g. "kg", "%",
+    /// "SAR"). Reading position relative to `value` is controlled by
+    /// `unit-position`.
+    in property <string> value-unit: "";
+
+    /// Optional icon rendered in the value cluster (trend arrows, status
+    /// glyphs). Resolved through IconFont.resolve.
+    in property <string> value-icon: "";
+
+    // ----- Typography & tone (3) -----------------------------------------
+
+    /// Typography preset — `subtle` / `normal` / `strong` / `total`. Drives
+    /// font-size and weight of label and value (and value-unit). See the
+    /// emphasis-resolution table in architecture/key-value-row.md.
+    in property <Emphasis> emphasis: Emphasis.normal;
+
+    /// Tone of the value cluster (value text + unit + icon share the tone).
+    /// Label is NEVER toned — always Theme.muted-foreground regardless of
+    /// this property's value.
+    in property <Tone> value-tone: Tone.default;
+
+    /// When true, the value cell renders in Typography.font-family-monospace
+    /// for tabular-figures alignment. Unit and icon cells unaffected.
+    in property <bool> value-monospace: false;
+
+    // ----- Affordances (3) -----------------------------------------------
+
+    /// When true, renders a small colored dot (`●` at Sizes.icon-xs = 12px)
+    /// at the row's leading edge. Useful for sync state, queue state,
+    /// unread indicators. Dot, not pill — see architecture/key-value-row.md
+    /// → "Status indicator: dot, not pill".
+    in property <bool> show-status: false;
+
+    /// Tone of the status dot. Resolves via the same mapping as `value-tone`.
+    /// Only meaningful when `show-status: true`. `Tone.muted` falls back to
+    /// Theme.muted-foreground (low contrast — see "Known risks" in
+    /// architecture/key-value-row-impl.md).
+    in property <Tone> status-tone: Tone.muted;
+
+    /// Trailing-edge disclosure indicator. `none` / `chevron` / `external`.
+    /// Glyph auto-flips with locale — `chevron` is `›` LTR / `‹` RTL;
+    /// `external` is `↗` LTR / `↖` RTL.
+    in property <DisclosureIndicator> disclosure: DisclosureIndicator.none;
+
+    // ----- Layout & behaviour (5) ----------------------------------------
+
+    /// Density preset — `compact` (padding-y: 8px) / `default` (12px) /
+    /// `comfortable` (16px). Horizontal padding is always 0 — KeyValueRow
+    /// expects to live inside a padded surface (Card / SectionCard).
+    in property <Density> density: Density.default;
+
+    /// Reading position of `value-unit` relative to `value`. `trailing`
+    /// (default) reads value→unit; `leading` reads unit→value
+    /// (currency-prefix style). The cluster's internal physical order is
+    /// determined by the XNOR of this property and Locale.rtl.
+    in property <UnitPosition> unit-position: UnitPosition.trailing;
+
+    /// When false, content is single-line and elides on overflow. When true
+    /// both label and value wrap; the row grows vertically and the locked
+    /// height becomes a floor.
+    in property <bool> wrap: false;
+
+    /// Renders a 1px Theme.border bottom edge. Consumers showing a column
+    /// of rows typically set this on every row except the last.
+    in property <bool> show-divider: false;
+
+    /// Hover text. A non-empty value installs a row-spanning TouchArea that
+    /// blocks click propagation to a wrapping interactive Card — choose
+    /// tooltip OR clickable-row-via-Card, not both.
+    in property <string> tooltip: "";
+
+    // ----- Debug (1) -----------------------------------------------------
+
+    /// Renders a 2px magenta border around the row root for layout
+    /// diagnosis. v1.0 is row-only — per-cell outlines are deferred. For
+    /// cell-level debugging during composition work, use
+    /// previews/_segment.slint's Bound helper.
+    in property <bool> debug-bounds: false;
+
+    // ===== Root sizing & background ======================================
+    //
+    // Phase 2 ships an inert skeleton — no derived state, no layout, no
+    // cells. Phase 3 adds the derived state; Phase 4 adds the outer
+    // HorizontalLayout with both LTR and RTL cell sequences; Phase 5 binds
+    // the locked-height sizing rules and the show-divider Rectangle.
+
+    background: transparent;
+}
