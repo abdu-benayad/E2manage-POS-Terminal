@@ -344,10 +344,47 @@ export component KeyValueRow inherits Rectangle {
 
     // ===== Root sizing & background ======================================
     //
-    // Phase 5 binds the locked-height sizing rules and the show-divider
-    // Rectangle. Phase 6 adds tooltip + debug-bounds.
+    // Locked-height behavior for locale stability:
+    //   - When there's no description AND no wrap, the row's height is
+    //     LOCKED to `row-total-height` (= 2*padding-y + value-font-size *
+    //     1.6). This prevents the row from resizing when Locale.current
+    //     toggles between "en" and "ar" — Noto Sans Arabic has a taller
+    //     natural line-height than Inter, and tracking the inner layout's
+    //     preferred-height would cause Cards containing the row to
+    //     resize on locale change.
+    //   - When description != "" OR wrap == true, the lock relaxes: the
+    //     row grows to fit content (preferred-height = layout.preferred-
+    //     height, max-height unbounded). min-height still floors at
+    //     row-total-height so a description-present row never renders
+    //     shorter than a single-line locked row.
+    //
+    // horizontal-stretch: 1.0 makes the row absorb horizontal slack from
+    // a parent layout — the slack Rectangle inside primary-row then
+    // pushes label-side and value-side to their respective edges.
 
     background: transparent;
+    horizontal-stretch: 1.0;
+    preferred-width:  layout.preferred-width;
+    min-width:        layout.min-width;
+    preferred-height: root.wrap || root.description != "" ? layout.preferred-height : root.row-total-height;
+    min-height:       root.row-total-height;
+    max-height:       root.wrap || root.description != "" ? 99999px               : root.row-total-height;
+
+    // ===== Bottom divider ================================================
+    //
+    // 1px Theme.border at the row's bottom edge when show-divider is set.
+    // Consumers showing a column of rows typically set this on every row
+    // except the last. Positioned absolutely against the row's bottom so
+    // it tracks the actual rendered height regardless of locked or
+    // content-driven sizing.
+
+    if root.show-divider: Rectangle {
+        x: 0;
+        y: parent.height - 1px;
+        width: parent.width;
+        height: 1px;
+        background: Theme.border;
+    }
 
     // ===== Outer layout — split into primary row + description row ======
     //
@@ -382,7 +419,7 @@ export component KeyValueRow inherits Rectangle {
     // label in both locales.
 
     layout := VerticalLayout {
-        alignment: start;
+        alignment: center;
         spacing: 0;
         padding-top:    root.padding-y;
         padding-bottom: root.padding-y;
@@ -397,6 +434,7 @@ export component KeyValueRow inherits Rectangle {
                 font-size:   root.status-size;
                 text-color:  root.status-color;
                 align-h:     center;
+                align-v:     top;
                 padding-h:   Spacing.xs;
             }
             if !Locale.rtl: Segment {
@@ -405,6 +443,7 @@ export component KeyValueRow inherits Rectangle {
                 font-size:   root.icon-size;
                 text-color:  root.label-color;
                 align-h:     left;
+                align-v:     top;
                 padding-h:   Spacing.xs;
             }
             if !Locale.rtl: Segment {
@@ -414,6 +453,7 @@ export component KeyValueRow inherits Rectangle {
                 font-weight: root.label-font-weight;
                 text-color:  root.label-color;
                 align-h:     left;
+                align-v:     top;
                 padding-h:   Spacing.xs;
                 wrap:        root.wrap;
             }
@@ -424,6 +464,7 @@ export component KeyValueRow inherits Rectangle {
                 font-size:   root.value-side-a-size;
                 text-color:  root.value-color;
                 align-h:     left;
+                align-v:     top;
                 padding-h:   Spacing.xs;
             }
             if !Locale.rtl: Segment {
@@ -433,8 +474,13 @@ export component KeyValueRow inherits Rectangle {
                 font-weight: root.value-font-weight;
                 text-color:  root.value-color;
                 align-h:     left;
+                align-v:     top;
                 padding-h:   Spacing.xs;
-                wrap:        root.wrap;
+                // value stays single-line regardless of `wrap` — numeric
+                // values shouldn't break mid-string (Slint's word-wrap
+                // treats "." in "42.00" as a word boundary, producing
+                // character-level breaks). `wrap` applies only to label
+                // and description, where multi-line content is meaningful.
             }
             if !Locale.rtl: Segment {
                 text:        root.value-side-b-text;
@@ -442,6 +488,7 @@ export component KeyValueRow inherits Rectangle {
                 font-size:   root.value-side-b-size;
                 text-color:  root.value-color;
                 align-h:     left;
+                align-v:     top;
                 padding-h:   Spacing.xs;
             }
             if !Locale.rtl: Segment {
@@ -450,6 +497,7 @@ export component KeyValueRow inherits Rectangle {
                 font-size:   root.icon-size;
                 text-color:  Theme.muted-foreground;
                 align-h:     right;
+                align-v:     top;
                 padding-h:   Spacing.xs;
             }
 
@@ -460,6 +508,7 @@ export component KeyValueRow inherits Rectangle {
                 font-size:   root.icon-size;
                 text-color:  Theme.muted-foreground;
                 align-h:     left;
+                align-v:     top;
                 padding-h:   Spacing.xs;
             }
             if Locale.rtl: Segment {
@@ -468,6 +517,7 @@ export component KeyValueRow inherits Rectangle {
                 font-size:   root.value-side-a-size;
                 text-color:  root.value-color;
                 align-h:     left;
+                align-v:     top;
                 padding-h:   Spacing.xs;
             }
             if Locale.rtl: Segment {
@@ -477,8 +527,9 @@ export component KeyValueRow inherits Rectangle {
                 font-weight: root.value-font-weight;
                 text-color:  root.value-color;
                 align-h:     right;
+                align-v:     top;
                 padding-h:   Spacing.xs;
-                wrap:        root.wrap;
+                // value stays single-line — see LTR-branch comment above.
             }
             if Locale.rtl: Segment {
                 text:        root.value-side-b-text;
@@ -486,6 +537,7 @@ export component KeyValueRow inherits Rectangle {
                 font-size:   root.value-side-b-size;
                 text-color:  root.value-color;
                 align-h:     left;
+                align-v:     top;
                 padding-h:   Spacing.xs;
             }
             if Locale.rtl: Rectangle { horizontal-stretch: 1; }
@@ -496,6 +548,7 @@ export component KeyValueRow inherits Rectangle {
                 font-weight: root.label-font-weight;
                 text-color:  root.label-color;
                 align-h:     right;
+                align-v:     top;
                 padding-h:   Spacing.xs;
                 wrap:        root.wrap;
             }
@@ -505,6 +558,7 @@ export component KeyValueRow inherits Rectangle {
                 font-size:   root.icon-size;
                 text-color:  root.label-color;
                 align-h:     left;
+                align-v:     top;
                 padding-h:   Spacing.xs;
             }
             if Locale.rtl: Segment {
@@ -513,6 +567,7 @@ export component KeyValueRow inherits Rectangle {
                 font-size:   root.status-size;
                 text-color:  root.status-color;
                 align-h:     center;
+                align-v:     top;
                 padding-h:   Spacing.xs;
             }
         }
@@ -537,6 +592,7 @@ export component KeyValueRow inherits Rectangle {
                 font-weight: Typography.weight-regular;
                 text-color:  Theme.muted-foreground;
                 align-h:     left;
+                align-v:     top;
                 padding-h:   Spacing.xs;
                 wrap:        root.wrap;
             }
@@ -550,6 +606,7 @@ export component KeyValueRow inherits Rectangle {
                 font-weight: Typography.weight-regular;
                 text-color:  Theme.muted-foreground;
                 align-h:     right;
+                align-v:     top;
                 padding-h:   Spacing.xs;
                 wrap:        root.wrap;
             }
