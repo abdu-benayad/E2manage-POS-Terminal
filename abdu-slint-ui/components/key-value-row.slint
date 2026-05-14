@@ -370,6 +370,13 @@ export component KeyValueRow inherits Rectangle {
     min-height:       root.row-total-height;
     max-height:       root.wrap || root.description != "" ? 99999px               : root.row-total-height;
 
+    // debug-bounds: 2px magenta border around the row root. v1.0 is
+    // row-only — per-cell outlines are deferred. For cell-level layout
+    // debugging during composition work, use previews/_segment.slint's
+    // Bound helper, which already visualizes cell boundaries.
+    border-width: root.debug-bounds ? 2px : 0px;
+    border-color: #ff00ff;
+
     // ===== Bottom divider ================================================
     //
     // 1px Theme.border at the row's bottom edge when show-divider is set.
@@ -611,6 +618,50 @@ export component KeyValueRow inherits Rectangle {
                 wrap:        root.wrap;
             }
             if Locale.rtl: Rectangle { width: root.leading-indent; }
+        }
+    }
+
+    // ===== Tooltip ======================================================
+    //
+    // A row-spanning TouchArea tracks hover when tooltip != "". The popup
+    // Rectangle renders 6px above the row, centered horizontally, with a
+    // drop shadow — matches Card's tooltip shape so consumers see a
+    // consistent tooltip presentation across library components.
+    //
+    // The TouchArea is always declared but only `enabled` when tooltip
+    // is non-empty. When disabled, it doesn't capture clicks or hover
+    // events, so a tooltip-less row stays transparent to a wrapping
+    // interactive Card. When enabled, it spans the row's full bounds
+    // and consumes hover; per the design doc, this blocks click
+    // propagation to a wrapping Card — consumers choose tooltip OR
+    // clickable-row-via-Card, not both.
+
+    tooltip-touch := TouchArea {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        enabled: root.tooltip != "";
+    }
+
+    if root.tooltip != "" && tooltip-touch.has-hover: Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: -self.height - 6px;
+        width:  tooltip-text.preferred-width + 16px;
+        height: tooltip-text.preferred-height + 8px;
+        background: Theme.tooltip-background;
+        border-radius: Radius.sm;
+        drop-shadow-blur:     Theme.shadow-md-blur;
+        drop-shadow-offset-y: Theme.shadow-md-y;
+        drop-shadow-color:    Theme.shadow-md-color;
+        opacity: 0.96;
+        tooltip-text := Text {
+            x: 8px;
+            y: 4px;
+            text: root.tooltip;
+            color: Theme.tooltip-foreground;
+            font-size: Typography.text-xs;
+            font-family: Typography.font-family;
         }
     }
 }
