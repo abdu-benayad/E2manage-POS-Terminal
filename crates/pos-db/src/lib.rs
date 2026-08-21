@@ -49,7 +49,7 @@ pub use draft_sync_queue::{
 };
 pub use drafts::DraftRow;
 pub use migrations::{get_schema_version, needs_migration, run_migrations};
-pub use operators::{OperatorPermissions, OperatorRow};
+pub use operators::OperatorRow;
 pub use parse::ParseError;
 pub use products::{CategoryRow, ProductRow};
 pub use schema::CURRENT_SCHEMA_VERSION;

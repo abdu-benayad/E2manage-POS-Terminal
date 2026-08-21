@@ -187,7 +187,7 @@ fn test_operator_by_code() {
         name_ar: None,
         pin_hash: "hash".to_string(),
         role: OperatorRole::Cashier,
-        permissions_json: None,
+        permissions: None,
         is_active: true,
         ..Default::default()
     };

@@ -2,13 +2,50 @@
 //!
 //! Handles operator (cashier) data storage and retrieval.
 
-use pos_models::OperatorRole;
+use pos_models::{OperatorPermissions, OperatorRole};
 
 use crate::column::operator_role;
 use rusqlite::{params, OptionalExtension, Result as SqliteResult};
 use serde::{Deserialize, Serialize};
 
 use super::Database;
+
+/// Serialises an operator's permissions for the `permissions_json` column.
+///
+/// `pos_models::OperatorPermissions` owns the only mapping to the server's shape, so this is a
+/// call into it rather than a second spelling of the keys.
+fn permissions_json(operator: &OperatorRow) -> SqliteResult<Option<String>> {
+    operator
+        .permissions
+        .as_ref()
+        .map(|permissions| {
+            serde_json::to_string(permissions)
+                .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))
+        })
+        .transpose()
+}
+
+/// Reads an operator's permissions back out of the column.
+///
+/// A row whose permissions will not parse is a **read failure the caller sees**. It used to be
+/// `.ok().unwrap_or_default()`, which turned an unreadable column into an operator holding no
+/// privileges — the same value as a genuinely unprivileged cashier, and indistinguishable from
+/// one. It failed closed, so nobody noticed; the mechanism was indifferent to direction.
+fn read_permissions(
+    row: &rusqlite::Row<'_>,
+    index: usize,
+) -> SqliteResult<Option<OperatorPermissions>> {
+    match row.get::<_, Option<String>>(index)? {
+        None => Ok(None),
+        Some(json) => serde_json::from_str(&json).map(Some).map_err(|error| {
+            rusqlite::Error::FromSqlConversionFailure(
+                index,
+                rusqlite::types::Type::Text,
+                Box::new(error),
+            )
+        }),
+    }
+}
 
 /// Operator row from database (HR Employee integrated)
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -33,8 +70,12 @@ pub struct OperatorRow {
     pub department: Option<String>,
     /// HR Position/Job title
     pub position: Option<String>,
-    /// Permissions JSON
-    pub permissions_json: Option<String>,
+    /// What the operator is allowed to do, as synced from the platform.
+    ///
+    /// Stored in the `permissions_json` `TEXT` column, still under that name, and mapped by
+    /// `pos_models::OperatorPermissions` — the one place in the workspace that spells the
+    /// server's permission keys. Two crates cannot drift from a mapping neither of them defines.
+    pub permissions: Option<OperatorPermissions>,
     /// Whether employee is active in HR
     pub is_active: bool,
 }
@@ -52,23 +93,10 @@ impl Default for OperatorRow {
             role: OperatorRole::Cashier,
             department: None,
             position: None,
-            permissions_json: None,
+            permissions: None,
             is_active: true,
         }
     }
-}
-
-/// Operator permissions parsed from JSON
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct OperatorPermissions {
-    pub can_void: bool,
-    pub can_refund: bool,
-    pub can_discount: bool,
-    pub max_discount_percent: f64,
-    pub can_open_drawer: bool,
-    pub can_view_reports: bool,
-    pub can_manage_shifts: bool,
-    pub can_access_settings: bool,
 }
 
 impl Database {
@@ -89,7 +117,7 @@ impl Database {
                 &operator.role.as_wire_str(),
                 &operator.department,
                 &operator.position,
-                &operator.permissions_json,
+                &permissions_json(operator)?,
                 &operator.is_active,
             ],
         )?;
@@ -123,7 +151,7 @@ impl Database {
                     operator.role.as_wire_str(),
                     operator.department,
                     operator.position,
-                    operator.permissions_json,
+                    permissions_json(operator)?,
                     operator.is_active,
                 ])?;
                 count += 1;
@@ -158,7 +186,7 @@ impl Database {
                 role: operator_role(row, 7)?,
                 department: row.get(8)?,
                 position: row.get(9)?,
-                permissions_json: row.get(10)?,
+                permissions: read_permissions(row, 10)?,
                 is_active: row.get(11)?,
             })
         })?;
@@ -187,7 +215,7 @@ impl Database {
                     role: operator_role(row, 7)?,
                     department: row.get(8)?,
                     position: row.get(9)?,
-                    permissions_json: row.get(10)?,
+                    permissions: read_permissions(row, 10)?,
                     is_active: row.get(11)?,
                 })
             },
@@ -219,7 +247,7 @@ impl Database {
                     role: operator_role(row, 7)?,
                     department: row.get(8)?,
                     position: row.get(9)?,
-                    permissions_json: row.get(10)?,
+                    permissions: read_permissions(row, 10)?,
                     is_active: row.get(11)?,
                 })
             },
@@ -254,7 +282,7 @@ impl Database {
                 role: operator_role(row, 7)?,
                 department: row.get(8)?,
                 position: row.get(9)?,
-                permissions_json: row.get(10)?,
+                permissions: read_permissions(row, 10)?,
                 is_active: row.get(11)?,
             })
         })?;
@@ -287,14 +315,6 @@ impl Database {
 }
 
 impl OperatorRow {
-    /// Parses permissions from JSON
-    pub fn permissions(&self) -> OperatorPermissions {
-        self.permissions_json
-            .as_ref()
-            .and_then(|json| serde_json::from_str(json).ok())
-            .unwrap_or_default()
-    }
-
     /// Gets the display name (Arabic if available, otherwise English)
     pub fn display_name(&self, prefer_ar: bool) -> &str {
         if prefer_ar {
@@ -319,6 +339,8 @@ impl OperatorRow {
 mod tests {
     use super::*;
     use crate::migrations::run_migrations;
+    use pos_models::{DiscountAuthority, DiscountPercent, Permission};
+    use rust_decimal::Decimal;
 
     fn setup_db() -> Database {
         let db = Database::in_memory().unwrap();
@@ -418,18 +440,45 @@ mod tests {
     }
 
     #[test]
-    fn test_operator_permissions() {
+    fn test_operator_permissions_round_trip_through_the_column() {
+        // This test used to feed a **snake_case** literal — a shape the server has never sent —
+        // through `OperatorRow::permissions()`, whose `.ok().unwrap_or_default()` meant it would
+        // have passed for a camelCase payload too, with every permission silently false. It now
+        // exercises the real path: `pos_models::OperatorPermissions` in, the column out, the
+        // same value back.
+        let db = setup_db();
+        let permissions = OperatorPermissions::new(
+            [Permission::VoidTransaction, Permission::ViewReports],
+            DiscountAuthority::UpTo(DiscountPercent::new(Decimal::from(10)).unwrap()),
+        );
+
         let operator = OperatorRow {
-            permissions_json: Some(
-                r#"{"can_void": true, "can_refund": false, "can_discount": true, "max_discount_percent": 10.0, "can_open_drawer": false, "can_view_reports": true, "can_manage_shifts": false, "can_access_settings": false}"#
-                    .to_string(),
-            ),
+            id: "op-1".to_string(),
+            permissions: Some(permissions.clone()),
             ..Default::default()
         };
+        db.save_operator(&operator).unwrap();
 
-        let perms = operator.permissions();
-        assert!(perms.can_void);
-        assert!(!perms.can_refund);
-        assert_eq!(perms.max_discount_percent, 10.0);
+        let stored = db
+            .get_operator_by_id("op-1")
+            .unwrap()
+            .expect("the operator was saved");
+
+        assert_eq!(stored.permissions, Some(permissions));
+    }
+
+    #[test]
+    fn test_operator_permissions_column_that_will_not_parse_is_a_read_failure() {
+        // Not an operator with no privileges. `.ok().unwrap_or_default()` made those two the same
+        // value, which is why the camelCase/snake_case drift went unnoticed for as long as it did.
+        let db = setup_db();
+        db.execute(
+            "INSERT INTO operators (id, code, name, pin_hash, role, permissions_json, is_active) \
+             VALUES ('op-1', 'C001', 'Ahmed', 'hash', 'CASHIER', '{\"canVoid\": ', 1)",
+            &[],
+        )
+        .unwrap();
+
+        assert!(db.get_operator_by_id("op-1").is_err());
     }
 }

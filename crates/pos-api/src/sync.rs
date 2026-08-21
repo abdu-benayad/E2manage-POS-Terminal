@@ -4,7 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use pos_models::OperatorRole;
+use pos_models::{OperatorPermissions, OperatorRole};
 
 /// Response from /api/pos/sync/catalog endpoint
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -262,26 +262,6 @@ pub struct OperatorDto {
     pub updated_at: Option<String>,
 }
 
-/// Operator permissions from API
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct OperatorPermissions {
-    #[serde(default)]
-    pub can_void: bool,
-    #[serde(default)]
-    pub can_refund: bool,
-    #[serde(default)]
-    pub can_discount: bool,
-    #[serde(default)]
-    pub can_open_drawer: bool,
-    #[serde(default)]
-    pub can_manage_shift: bool,
-    #[serde(default)]
-    pub can_view_reports: bool,
-    #[serde(default)]
-    pub max_discount_percent: Option<f64>,
-}
-
 /// Response from /api/pos/sync/screens endpoint
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -420,12 +400,6 @@ impl CategoryDto {
 impl OperatorDto {
     /// Converts to OperatorRow for database storage
     pub fn to_operator_row(&self) -> pos_db::OperatorRow {
-        // Serialize permissions to JSON string
-        let permissions_json = self
-            .permissions
-            .as_ref()
-            .map(|p| serde_json::to_string(p).unwrap_or_default());
-
         // Use employee_number as code, or generate from ID if not available
         let code = self
             .employee_number
@@ -443,7 +417,7 @@ impl OperatorDto {
             role: self.role,
             department: self.department.clone(),
             position: self.position.clone(),
-            permissions_json,
+            permissions: self.permissions.clone(),
             is_active: self.is_active,
         }
     }
@@ -618,10 +592,10 @@ mod tests {
             role: OperatorRole::Cashier,
             department: Some("Sales".to_string()),
             position: Some("Cashier".to_string()),
-            permissions: Some(OperatorPermissions {
-                can_void: true,
-                ..Default::default()
-            }),
+            permissions: Some(OperatorPermissions::new(
+                [pos_models::Permission::VoidTransaction],
+                pos_models::DiscountAuthority::Denied,
+            )),
             is_active: true,
             updated_at: None,
         };
@@ -631,7 +605,9 @@ mod tests {
         assert_eq!(row.code, "EMP001");
         assert_eq!(row.employee_id, Some("emp-1".to_string()));
         assert_eq!(row.department, Some("Sales".to_string()));
-        assert!(row.permissions_json.is_some());
+        // The row now carries the domain type, not a JSON string mapped a second way.
+        let permissions = row.permissions.expect("the DTO carried permissions");
+        assert!(permissions.allows(pos_models::Permission::VoidTransaction));
     }
 
     #[test]

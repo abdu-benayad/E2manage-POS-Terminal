@@ -109,7 +109,7 @@ pub fn sample_operator_row() -> OperatorRow {
         name_ar: Some("مشغل تجريبي".to_string()),
         pin_hash: "$2b$10$testhashedpin".to_string(),
         role: OperatorRole::Cashier,
-        permissions_json: None,
+        permissions: None,
         is_active: true,
         ..Default::default()
     }
@@ -124,7 +124,7 @@ pub fn create_test_operator(db: &Database, id: &str, name: &str) {
         name_ar: Some(format!("مشغل {}", id)),
         pin_hash: "testhash".to_string(),
         role: OperatorRole::Cashier,
-        permissions_json: None,
+        permissions: None,
         is_active: true,
         ..Default::default()
     };
@@ -281,7 +281,7 @@ impl TestApp {
             name_ar: Some("أحمد محمد".to_string()),
             pin_hash,
             role: OperatorRole::Cashier,
-            permissions_json: None,
+            permissions: None,
             is_active: true,
             ..Default::default()
         };
@@ -323,7 +323,7 @@ impl TestApp {
             name_ar: Some("مشغل تجريبي".to_string()),
             pin_hash,
             role: OperatorRole::Cashier,
-            permissions_json: None,
+            permissions: None,
             is_active: true,
             ..Default::default()
         };
