@@ -7,9 +7,12 @@
 //! - `ShiftSummary`, `VarianceStatus`, `ShiftStatus` - shift models
 //! - `ZReport` - end of day report model
 //! - `Feature`, `FeatureScreen` - feature library models
+//! - `OperatorId`, `OperatorName`, `OperatorRole`, `OperatorPermissions`, `VerifiedOperator` -
+//!   operator identity models
 
 pub mod cart;
 pub mod feature;
+pub mod operator;
 pub mod parse;
 pub mod product;
 pub mod shift;
@@ -19,6 +22,10 @@ pub mod z_report;
 // Re-export main types for convenience
 pub use cart::{Cart, CartItem};
 pub use feature::{Feature, FeatureDto, FeatureScreen, FeatureScreenDto, FeaturesResponse};
+pub use operator::{
+    DiscountAuthority, DiscountPercent, NameScript, OperatorError, OperatorId, OperatorName,
+    OperatorPermissions, OperatorRole, Permission, VerifiedOperator,
+};
 pub use parse::ParseError;
 pub use product::{
     Category, Product, ProductNature, ProductSearchResult, ProductType, ProductUnit,

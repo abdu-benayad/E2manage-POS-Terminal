@@ -35,4 +35,8 @@ pub enum ParseError {
     /// A product's nature column held something other than a known product nature.
     #[error("`{0}` is not a product nature (expected TANGIBLE, INTANGIBLE or HYBRID)")]
     ProductNature(String),
+
+    /// An operator's role column held something other than a role the server's enum admits.
+    #[error("`{0}` is not an operator role (expected CASHIER, SUPERVISOR or MANAGER)")]
+    OperatorRole(String),
 }
