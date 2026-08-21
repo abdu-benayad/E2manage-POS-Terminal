@@ -79,9 +79,15 @@ pos-api.workspace = true
 pos-printing.workspace = true
 pos-services.workspace = true
 
-# UI Framework - using specific backend to reduce compile time
+# UI Framework - optional, behind the `slint-ui` feature.
+#
+# Only `src/main.rs` and `build.rs` reference Slint; the library, `src/ui/`, every crate under
+# `crates/`, and every suite in `tests/` are free of it. Slint's graphics stack is more than half
+# of a full workspace build (363 crates with it, 165 without), so it is opt-in: the domain builds
+# and the test suite do not pay for a view layer they never touch.
+#
 # Available backends: backend-qt, backend-winit, backend-linuxkms
-slint = { version = "1.8", default-features = false, features = ["backend-winit", "renderer-femtovg", "compat-1-2"] }
+slint = { version = "1.8", default-features = false, features = ["backend-winit", "renderer-femtovg", "compat-1-2"], optional = true }
 
 # Async Runtime
 tokio = { version = "1", features = ["sync", "time", "rt-multi-thread", "macros"] }
@@ -114,7 +120,7 @@ once_cell = "1"
 # ============================================================================
 
 [build-dependencies]
-slint-build = "1.8"
+slint-build = { version = "1.8", optional = true }
 
 # ============================================================================
 # PLATFORM-SPECIFIC DEPENDENCIES
@@ -127,11 +133,26 @@ serialport = { version = "4", optional = true }
 serialport = { version = "4", optional = true }
 
 # ============================================================================
+# TARGETS
+# ============================================================================
+
+# `src/main.rs` is the Slint application and is the only file in the package that
+# uses Slint. `required-features` means a default `cargo build` / `cargo test`
+# skips it entirely rather than compiling the whole Slint stack to reach it.
+[[bin]]
+name = "e2manage-pos-terminal"
+path = "src/main.rs"
+required-features = ["slint-ui"]
+
+# ============================================================================
 # FEATURES
 # ============================================================================
 
 [features]
 default = []
+# Builds the Slint terminal binary. Off by default: `cargo run --features slint-ui`.
+# Retired by the `egui-auth-screen` issue, which deletes the Slint tree outright.
+slint-ui = ["dep:slint", "dep:slint-build"]
 hardware = ["serialport"]
 encrypted-db = []
 face-recognition = []
