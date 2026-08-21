@@ -1,10 +1,9 @@
 //! What happened when an operator entered their PIN.
 //!
-//! This replaces `PinVerificationResult { valid: bool, operator_id: String, operator_name:
-//! String, operator_role: String, message: Option<String> }`
-//! (`crates/pos-services/src/auth_service.rs:39-46`) — a boolean paired with four fields that are
-//! empty strings whenever it is false. That is a sum type spelled as a product, and every reader
-//! of it has to know which fields the boolean makes meaningful.
+//! This replaces `PinVerificationResult` (`crates/pos-services/src/auth_service.rs:39-46`) — a
+//! `valid` boolean beside an operator id, a name and a role, each a bare string, plus an optional
+//! message. All four are empty whenever the boolean is false. That is a sum type spelled as a
+//! product, and every reader of it has to know which fields the boolean makes meaningful.
 //!
 //! [`PinVerification`] is that sum type spelled correctly, and it is **total**: "the till could
 //! not find out" is a third case, not an error, so a `verify_pin` returning this returns it

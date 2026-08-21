@@ -4,6 +4,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use pos_models::OperatorRole;
+
 /// Response from /api/pos/sync/catalog endpoint
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -238,9 +240,12 @@ pub struct OperatorDto {
     /// BCrypt hashed PIN
     #[serde(default)]
     pub pin_hash: Option<String>,
-    /// POS role: CASHIER, SUPERVISOR, MANAGER
-    #[serde(default = "default_role")]
-    pub role: String,
+    /// POS role, as the server's `POS_OperatorRole` enum defines it.
+    ///
+    /// No serde default. The server's column is non-null and `getOperators` always emits it, so
+    /// an absent or unrecognised role means the contract moved — and the default this replaces
+    /// (`"CASHIER"`) was a privilege decision made by a fallback.
+    pub role: OperatorRole,
     /// HR Department name
     #[serde(default)]
     pub department: Option<String>,
@@ -275,10 +280,6 @@ pub struct OperatorPermissions {
     pub can_view_reports: bool,
     #[serde(default)]
     pub max_discount_percent: Option<f64>,
-}
-
-fn default_role() -> String {
-    "CASHIER".to_string()
 }
 
 /// Response from /api/pos/sync/screens endpoint
@@ -439,7 +440,7 @@ impl OperatorDto {
             name: self.name.clone(),
             name_ar: self.name_ar.clone(),
             pin_hash: self.pin_hash.clone().unwrap_or_default(),
-            role: self.role.clone(),
+            role: self.role,
             department: self.department.clone(),
             position: self.position.clone(),
             permissions_json,
@@ -502,9 +503,10 @@ mod tests {
             "operators": [
                 {
                     "id": "op1",
-                    "code": "C001",
+                    "employeeNumber": "C001",
                     "name": "Ahmed",
-                    "pinHash": "$2b$12$hash..."
+                    "pinHash": "$2b$12$hash...",
+                    "role": "SUPERVISOR"
                 }
             ]
         }"#;
@@ -512,7 +514,34 @@ mod tests {
         let response: OperatorsResponse = serde_json::from_str(json).unwrap();
         assert_eq!(response.operators.len(), 1);
         assert_eq!(response.operators[0].name, "Ahmed");
-        assert_eq!(response.operators[0].role, "CASHIER");
+        assert_eq!(response.operators[0].role, OperatorRole::Supervisor);
+    }
+
+    #[test]
+    fn test_operator_without_a_role_is_a_contract_breach() {
+        // This assertion is inverted from what it was. The DTO used to carry
+        // `#[serde(default = "default_role")]`, so an operator arriving with no role became a
+        // cashier — and this test asserted that, which made it a test that encoded the defect.
+        //
+        // `POS_OperatorProfile.role` is non-null and `getOperators` always emits it, so an
+        // absent role means the contract moved. Reading it as the least-privileged role would be
+        // a privilege decision made by a fallback, and the fallback is exactly what hides the
+        // fact that the two systems now disagree.
+        let json = r#"{"operators":[{"id":"op1","name":"Ahmed","pinHash":"$2b$12$h"}]}"#;
+
+        let refused = serde_json::from_str::<OperatorsResponse>(json).unwrap_err();
+        assert!(
+            refused.to_string().contains("missing field `role`"),
+            "got: {refused}"
+        );
+    }
+
+    #[test]
+    fn test_operator_with_an_unknown_role_is_refused() {
+        // The server's enum admits three values. A fourth means the contract moved.
+        let json = r#"{"operators":[{"id":"op1","name":"Ahmed","role":"ADMIN"}]}"#;
+
+        assert!(serde_json::from_str::<OperatorsResponse>(json).is_err());
     }
 
     #[test]
@@ -586,7 +615,7 @@ mod tests {
             name_ar: Some("أحمد".to_string()),
             email: None,
             pin_hash: Some("$2b$hash".to_string()),
-            role: "CASHIER".to_string(),
+            role: OperatorRole::Cashier,
             department: Some("Sales".to_string()),
             position: Some("Cashier".to_string()),
             permissions: Some(OperatorPermissions {

@@ -7,6 +7,7 @@ use anyhow::{anyhow, Result};
 use bcrypt::{hash, verify, DEFAULT_COST};
 use pos_api::{ApiClient, HeartbeatRequest, HeartbeatResponse, LoginTerminalResponse};
 use pos_db::Database;
+use pos_models::OperatorRole;
 use rusqlite::params;
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
@@ -36,12 +37,18 @@ pub struct TerminalSession {
 }
 
 /// Result of operator PIN verification
+///
+/// The `operator_role` is an `Option` because there is no role to report when the PIN was not
+/// accepted. It previously held `String::new()` on every failure path — an empty string standing
+/// in for "this was not a success", which is the confusion `pos_models::PinVerification` exists to
+/// end. This struct is replaced wholesale by `auth-outcome-and-offline-lockout`; until then the
+/// sentinel is at least spelled as the absence it is.
 #[derive(Debug, Clone)]
 pub struct PinVerificationResult {
     pub valid: bool,
     pub operator_id: String,
     pub operator_name: String,
-    pub operator_role: String,
+    pub operator_role: Option<OperatorRole>,
     pub message: Option<String>,
 }
 
@@ -288,7 +295,7 @@ impl AuthService {
                 valid: true,
                 operator_id: operator_id.to_string(),
                 operator_name: operator.0,
-                operator_role: operator.1,
+                operator_role: Some(operator.1),
                 message: None,
             })
         } else {
@@ -296,7 +303,7 @@ impl AuthService {
                 valid: false,
                 operator_id: operator_id.to_string(),
                 operator_name: String::new(),
-                operator_role: String::new(),
+                operator_role: None,
                 message: response.message,
             })
         }
@@ -319,12 +326,16 @@ impl AuthService {
 
         match result {
             Ok((pin_hash, name, role)) => {
+                // A row whose role column holds something the server's enum does not admit is a
+                // broken row, and refusing to authenticate against it is the fail-closed
+                // direction. Parsing before the PIN check keeps that true for a wrong PIN too.
+                let role: OperatorRole = role.parse()?;
                 let valid = verify(pin, &pin_hash).unwrap_or(false);
                 Ok(PinVerificationResult {
                     valid,
                     operator_id: operator_id.to_string(),
                     operator_name: if valid { name } else { String::new() },
-                    operator_role: if valid { role } else { String::new() },
+                    operator_role: valid.then_some(role),
                     message: if valid {
                         None
                     } else {
@@ -338,7 +349,7 @@ impl AuthService {
                     valid: false,
                     operator_id: operator_id.to_string(),
                     operator_name: String::new(),
-                    operator_role: String::new(),
+                    operator_role: None,
                     message: Some("Operator not found".to_string()),
                 })
             }
@@ -354,16 +365,19 @@ impl AuthService {
     }
 
     /// Gets operator info from local database
-    fn get_operator_info(&self, operator_id: &str) -> Result<(String, String)> {
+    fn get_operator_info(&self, operator_id: &str) -> Result<(String, OperatorRole)> {
         let conn = self.db.connection();
         let conn = conn.lock();
 
-        conn.query_row(
-            "SELECT name, role FROM operators WHERE id = ?1",
-            [operator_id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .map_err(|e| anyhow!("Operator not found: {}", e))
+        let (name, role): (String, String) = conn
+            .query_row(
+                "SELECT name, role FROM operators WHERE id = ?1",
+                [operator_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .map_err(|e| anyhow!("Operator not found: {}", e))?;
+
+        Ok((name, role.parse()?))
     }
 
     // ========================================================================
@@ -504,7 +518,7 @@ mod tests {
         let result = service.verify_pin_offline("op1", "1234").unwrap();
         assert!(result.valid);
         assert_eq!(result.operator_name, "Ahmed");
-        assert_eq!(result.operator_role, "CASHIER");
+        assert_eq!(result.operator_role, Some(OperatorRole::Cashier));
 
         // Test wrong PIN
         let result = service.verify_pin_offline("op1", "9999").unwrap();

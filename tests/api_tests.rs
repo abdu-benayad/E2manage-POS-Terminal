@@ -33,6 +33,7 @@
 )]
 
 use chrono::{DateTime, Utc};
+use e2manage_pos_terminal::models::OperatorRole;
 use reqwest::{Client, StatusCode};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::env;
@@ -1051,8 +1052,7 @@ mod p2_sync_apis {
         pub name: String,
         #[serde(default)]
         pub pin_hash: String,
-        #[serde(default)]
-        pub role: String,
+        pub role: OperatorRole,
         #[serde(default)]
         pub is_active: bool,
     }

@@ -849,6 +849,7 @@ mod deserialization_tests {
 /// These tests validate that the Rust DTOs match backend API contract
 mod contract_tests {
     use e2manage_pos_terminal::api::sync::{CategoryDto, OperatorDto, ProductDto};
+    use e2manage_pos_terminal::models::OperatorRole;
 
     #[test]
     fn test_product_dto_matches_backend() {
@@ -921,7 +922,7 @@ mod contract_tests {
 
         assert_eq!(operator.id, "op-001");
         assert_eq!(operator.employee_number, Some("C001".to_string()));
-        assert_eq!(operator.role, "CASHIER");
+        assert_eq!(operator.role, OperatorRole::Cashier);
         assert!(operator.is_active);
     }
 }

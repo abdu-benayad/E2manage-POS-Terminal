@@ -10,6 +10,7 @@ mod common;
 
 use common::TestApp;
 use e2manage_pos_terminal::models::transaction::TransactionStatus;
+use e2manage_pos_terminal::models::OperatorRole;
 use rust_decimal::Decimal;
 
 // ============================================================================
@@ -27,7 +28,7 @@ fn test_complete_cash_sale_workflow() {
     let pin_result = pin_result.unwrap();
     assert!(pin_result.valid);
     assert_eq!(pin_result.operator_name, "أحمد محمد");
-    assert_eq!(pin_result.operator_role, "cashier");
+    assert_eq!(pin_result.operator_role, Some(OperatorRole::Cashier));
 
     // 2. CREATE SHIFT (using direct DB to avoid async)
     let shift_id = app.create_shift("shift-001", "op-001", Decimal::from(500));

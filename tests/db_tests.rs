@@ -9,6 +9,7 @@ use common::*;
 use e2manage_pos_terminal::db::{
     OfflineTransactionRow, OperatorRow, ProductRow, ShiftStatus, SyncStatus,
 };
+use e2manage_pos_terminal::models::OperatorRole;
 use rust_decimal::Decimal;
 use std::str::FromStr;
 
@@ -185,7 +186,7 @@ fn test_operator_by_code() {
         name: "Test Operator".to_string(),
         name_ar: None,
         pin_hash: "hash".to_string(),
-        role: "cashier".to_string(),
+        role: OperatorRole::Cashier,
         permissions_json: None,
         is_active: true,
         ..Default::default()
@@ -205,12 +206,12 @@ fn test_operator_update() {
     db.save_operator(&operator).unwrap();
 
     operator.name = "Updated Name".to_string();
-    operator.role = "manager".to_string();
+    operator.role = OperatorRole::Manager;
     db.save_operator(&operator).unwrap();
 
     let found = db.get_operator_by_id(&operator.id).unwrap().unwrap();
     assert_eq!(found.name, "Updated Name");
-    assert_eq!(found.role, "manager");
+    assert_eq!(found.role, OperatorRole::Manager);
 }
 
 // ============================================================================

@@ -2,10 +2,32 @@
 //!
 //! Handles operator (cashier) data storage and retrieval.
 
+use pos_models::OperatorRole;
 use rusqlite::{params, OptionalExtension, Result as SqliteResult};
 use serde::{Deserialize, Serialize};
 
 use super::Database;
+
+/// Reads an operator's role from a text column, refusing a value the server's enum does not
+/// admit.
+///
+/// A free function rather than `impl FromSql for OperatorRole`, which would be `E0117`: `FromSql`
+/// belongs to `rusqlite` and `OperatorRole` to `pos-models`, and neither is local to this crate —
+/// the same coherence wall that shaped `pos_models::StoreFailure`.
+///
+/// The parse failure is returned, never defaulted. A role this till does not recognise means the
+/// contract moved, or the row was written by something other than the sync; reading it as
+/// `Cashier` would be a privilege decision made by a fallback.
+fn operator_role(row: &rusqlite::Row<'_>, index: usize) -> SqliteResult<OperatorRole> {
+    let raw: String = row.get(index)?;
+    raw.parse().map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(
+            index,
+            rusqlite::types::Type::Text,
+            Box::new(error),
+        )
+    })
+}
 
 /// Operator row from database (HR Employee integrated)
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -24,8 +46,8 @@ pub struct OperatorRow {
     pub name_ar: Option<String>,
     /// BCrypt hashed PIN
     pub pin_hash: String,
-    /// POS role: CASHIER, SUPERVISOR, MANAGER
-    pub role: String,
+    /// POS role, as the server's `POS_OperatorRole` enum defines it.
+    pub role: OperatorRole,
     /// HR Department name
     pub department: Option<String>,
     /// HR Position/Job title
@@ -46,7 +68,7 @@ impl Default for OperatorRow {
             name: String::new(),
             name_ar: None,
             pin_hash: String::new(),
-            role: "CASHIER".to_string(),
+            role: OperatorRole::Cashier,
             department: None,
             position: None,
             permissions_json: None,
@@ -83,7 +105,7 @@ impl Database {
                 &operator.name,
                 &operator.name_ar,
                 &operator.pin_hash,
-                &operator.role,
+                &operator.role.as_wire_str(),
                 &operator.department,
                 &operator.position,
                 &operator.permissions_json,
@@ -117,7 +139,7 @@ impl Database {
                     operator.name,
                     operator.name_ar,
                     operator.pin_hash,
-                    operator.role,
+                    operator.role.as_wire_str(),
                     operator.department,
                     operator.position,
                     operator.permissions_json,
@@ -152,7 +174,7 @@ impl Database {
                 name: row.get(4)?,
                 name_ar: row.get(5)?,
                 pin_hash: row.get(6)?,
-                role: row.get(7)?,
+                role: operator_role(row, 7)?,
                 department: row.get(8)?,
                 position: row.get(9)?,
                 permissions_json: row.get(10)?,
@@ -181,7 +203,7 @@ impl Database {
                     name: row.get(4)?,
                     name_ar: row.get(5)?,
                     pin_hash: row.get(6)?,
-                    role: row.get(7)?,
+                    role: operator_role(row, 7)?,
                     department: row.get(8)?,
                     position: row.get(9)?,
                     permissions_json: row.get(10)?,
@@ -213,7 +235,7 @@ impl Database {
                     name: row.get(4)?,
                     name_ar: row.get(5)?,
                     pin_hash: row.get(6)?,
-                    role: row.get(7)?,
+                    role: operator_role(row, 7)?,
                     department: row.get(8)?,
                     position: row.get(9)?,
                     permissions_json: row.get(10)?,
@@ -248,7 +270,7 @@ impl Database {
                 name: row.get(4)?,
                 name_ar: row.get(5)?,
                 pin_hash: row.get(6)?,
-                role: row.get(7)?,
+                role: operator_role(row, 7)?,
                 department: row.get(8)?,
                 position: row.get(9)?,
                 permissions_json: row.get(10)?,
@@ -337,7 +359,7 @@ mod tests {
             name: "Ahmed Hassan".to_string(),
             name_ar: Some("أحمد حسن".to_string()),
             pin_hash: "$2b$12$hashedpin".to_string(),
-            role: "CASHIER".to_string(),
+            role: OperatorRole::Cashier,
             ..Default::default()
         };
 

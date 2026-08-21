@@ -13,6 +13,7 @@ use e2manage_pos_terminal::db::migrations::run_migrations;
 use e2manage_pos_terminal::db::{Database, OperatorRow, ProductRow, ShiftRow};
 use e2manage_pos_terminal::models::cart::{Cart, CartItem};
 use e2manage_pos_terminal::models::product::{Product, ProductUnit};
+use e2manage_pos_terminal::models::OperatorRole;
 use e2manage_pos_terminal::services::auth_service::AuthService;
 use e2manage_pos_terminal::services::cart_service::CartService;
 use e2manage_pos_terminal::services::draft_service::DraftService;
@@ -96,7 +97,7 @@ pub fn sample_operator_row() -> OperatorRow {
         name: "Test Operator".to_string(),
         name_ar: Some("مشغل تجريبي".to_string()),
         pin_hash: "$2b$10$testhashedpin".to_string(),
-        role: "cashier".to_string(),
+        role: OperatorRole::Cashier,
         permissions_json: None,
         is_active: true,
         ..Default::default()
@@ -111,7 +112,7 @@ pub fn create_test_operator(db: &Database, id: &str, name: &str) {
         name: name.to_string(),
         name_ar: Some(format!("مشغل {}", id)),
         pin_hash: "testhash".to_string(),
-        role: "cashier".to_string(),
+        role: OperatorRole::Cashier,
         permissions_json: None,
         is_active: true,
         ..Default::default()
@@ -268,7 +269,7 @@ impl TestApp {
             name: "أحمد محمد".to_string(),
             name_ar: Some("أحمد محمد".to_string()),
             pin_hash,
-            role: "cashier".to_string(),
+            role: OperatorRole::Cashier,
             permissions_json: None,
             is_active: true,
             ..Default::default()
@@ -310,7 +311,7 @@ impl TestApp {
             name: "Test Operator".to_string(),
             name_ar: Some("مشغل تجريبي".to_string()),
             pin_hash,
-            role: "cashier".to_string(),
+            role: OperatorRole::Cashier,
             permissions_json: None,
             is_active: true,
             ..Default::default()
