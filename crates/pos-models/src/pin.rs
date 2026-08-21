@@ -7,9 +7,10 @@
 //! [`Pin`] has a hand-written [`fmt::Debug`] that prints `Pin(****)`, and a [`Drop`] that
 //! zeroizes its buffer. They defend different things and neither substitutes for the other:
 //!
-//! - The redacted `Debug` protects **logs**. `VerifyPinRequest` (`crates/pos-api/src/auth.rs:66-73`)
-//!   derives `Debug` over a `pub pin: String` today, which puts a live PIN one `tracing` call away
-//!   from a rotated log file on the till's disk.
+//! - The redacted `Debug` protects **logs**. `VerifyPinRequest` in `pos-api` carries the PIN as a
+//!   `String` until this type is wired in, so it had to give up its derived `Debug` to stay safe —
+//!   one `tracing` call on it would otherwise write a live PIN to a rotated log file on the till's
+//!   disk. A `Pin` field needs no such abstinence, which is the point of the redaction.
 //! - The zeroizing `Drop` protects **memory**. A freed `String` keeps its digits until something
 //!   else reuses the allocation, where a core dump or a memory scrape can still read them.
 //!
@@ -356,6 +357,7 @@ impl Drop for Pin {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::operator::OperatorId;
 
     fn policy() -> PinPolicy {
         PinPolicy::new(
@@ -376,17 +378,17 @@ mod tests {
 
     #[test]
     fn pin_stays_redacted_inside_a_derived_debug() {
-        // The scenario this type exists for: `VerifyPinRequest`
-        // (`crates/pos-api/src/auth.rs:66-73`) derives `Debug` over a `pub pin: String`, so one
-        // `tracing` call writes a live PIN to disk. With a `Pin` field it cannot.
+        // The scenario this type exists for. `VerifyPinRequest` in `pos-api` holds the PIN as a
+        // `String`, so it can only stay out of the logs by refusing the `Debug` derive. A `Pin`
+        // field keeps the derive and still cannot leak.
         #[derive(Debug)]
         struct VerifyPin {
-            operator_id: &'static str,
+            operator_id: OperatorId,
             pin: Pin,
         }
 
         let request = VerifyPin {
-            operator_id: "op-1",
+            operator_id: OperatorId::new("op-1").unwrap(),
             pin: Pin::parse("1234", PinLength::Four).unwrap(),
         };
         let rendered = format!("{request:?}");
@@ -394,7 +396,10 @@ mod tests {
         assert!(rendered.contains("Pin(****)"), "got {rendered}");
         assert!(!rendered.contains("1234"), "got {rendered}");
         // The other fields still render normally — the redaction is the PIN's, not the struct's.
-        assert!(rendered.contains(request.operator_id), "got {rendered}");
+        assert!(
+            rendered.contains(request.operator_id.as_str()),
+            "got {rendered}"
+        );
         assert_eq!(request.pin.length(), 4);
     }
 

@@ -65,17 +65,23 @@ pub struct HeartbeatRequest {
 }
 
 /// Operator PIN verification request
-#[derive(Debug, Serialize)]
+///
+/// **Deliberately not `Debug`.** While `pin` is a `String`, a derived `Debug` puts a live PIN one
+/// `tracing` call away from a rotated log file on the till's disk. Nothing formats this struct,
+/// and `ApiClient::post` needs only `Serialize`, so the derive costs nothing to drop — and
+/// `tests/guards.rs` fails the build if it comes back.
+#[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VerifyPinRequest {
     /// Operator ID
     pub operator_id: OperatorId,
     /// PIN to verify
     ///
-    /// Still a `String`, and still inside a derived `Debug`. `pos_models::Pin` exists to close
-    /// that (`05-pin-and-pin-policy`); wiring it here is `auth-outcome-and-offline-lockout`'s
-    /// work, because the PIN has to reach this struct from a policy-aware parse rather than as a
-    /// bare string handed down from a caller.
+    /// Still a `String`. `pos_models::Pin` is the type that belongs here
+    /// (`05-pin-and-pin-policy`), and once it lands the `Debug` derive is safe to restore, because
+    /// `Pin`'s own `Debug` renders `Pin(****)`. Wiring it is `auth-outcome-and-offline-lockout`'s
+    /// work: the PIN has to reach this struct from a policy-aware parse — which needs the
+    /// terminal's configured PIN length — rather than as a bare string handed down from a caller.
     pub pin: String,
 }
 
