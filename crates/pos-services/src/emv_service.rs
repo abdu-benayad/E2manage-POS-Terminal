@@ -49,7 +49,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 
 /// Result of a card payment transaction
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct CardPaymentResult {
     /// Whether the payment was successful
     pub success: bool,
@@ -75,25 +75,6 @@ pub struct CardPaymentResult {
     pub cryptogram: Option<String>,
     /// Transaction timestamp
     pub timestamp: Option<String>,
-}
-
-impl Default for CardPaymentResult {
-    fn default() -> Self {
-        Self {
-            success: false,
-            card_type: None,
-            last_four: None,
-            auth_code: None,
-            transaction_id: None,
-            error_message: None,
-            response_code: None,
-            masked_pan: None,
-            cardholder_name: None,
-            application_label: None,
-            cryptogram: None,
-            timestamp: None,
-        }
-    }
 }
 
 impl CardPaymentResult {
@@ -154,7 +135,9 @@ pub enum EmvEvent {
     /// PIN has been entered (don't include actual PIN!)
     PinEntered,
     /// Transaction approved
-    Approved(CardPaymentResult),
+    /// Boxed because `CardPaymentResult` dwarfs every other variant, and this enum is
+    /// broadcast to every subscriber.
+    Approved(Box<CardPaymentResult>),
     /// Transaction declined by issuer
     Declined(String),
     /// Error during transaction
@@ -326,7 +309,7 @@ impl EmvService {
             error_message: None,
         };
 
-        let _ = tx.send(EmvEvent::Approved(result.clone()));
+        let _ = tx.send(EmvEvent::Approved(Box::new(result.clone())));
 
         // Step 9: Remove card prompt
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;

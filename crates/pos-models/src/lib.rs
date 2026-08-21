@@ -10,6 +10,7 @@
 
 pub mod cart;
 pub mod feature;
+pub mod parse;
 pub mod product;
 pub mod shift;
 pub mod transaction;
@@ -18,6 +19,7 @@ pub mod z_report;
 // Re-export main types for convenience
 pub use cart::{Cart, CartItem};
 pub use feature::{Feature, FeatureDto, FeatureScreen, FeatureScreenDto, FeaturesResponse};
+pub use parse::ParseError;
 pub use product::{
     Category, Product, ProductNature, ProductSearchResult, ProductType, ProductUnit,
 };

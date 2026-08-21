@@ -294,7 +294,7 @@ impl SharedDraftService {
         request: &CreateCartRequest,
     ) -> SharedDraftResult<SharedDraft> {
         let local_id = Uuid::new_v4().to_string();
-        let temp_token = format!("L{}", &local_id[..5].to_uppercase());
+        let temp_token = format!("L{}", local_id[..5].to_uppercase());
         let now = Utc::now().to_rfc3339();
 
         // Create shared draft row
@@ -675,7 +675,22 @@ impl SharedDraftService {
         for item in items {
             let _ = self.db.mark_draft_sync_syncing(&item.id);
 
-            match item.operation_type() {
+            // Previously the operation column was parsed with a silent fallback to `Create`,
+            // so a queue row with an unrecognised operation was executed as a cart create.
+            let operation = match item.operation_type() {
+                Ok(operation) => operation,
+                Err(e) => {
+                    error!(
+                        "Draft sync item {} has an unreadable operation: {e}",
+                        item.id
+                    );
+                    let _ = self.db.mark_draft_sync_failed(&item.id, &e.to_string());
+                    result.failed += 1;
+                    continue;
+                }
+            };
+
+            match operation {
                 DraftSyncOperation::Create => match self.process_create_sync(&item).await {
                     Ok(_) => result.synced += 1,
                     Err(e) => {

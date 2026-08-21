@@ -51,17 +51,17 @@ mod log_service_integration {
 
         for level in levels {
             let str_repr = level.as_str();
-            let parsed = LogLevel::from_str(str_repr);
-            assert_eq!(level, parsed, "Failed roundtrip for {:?}", level);
+            let parsed = str_repr.parse::<LogLevel>();
+            assert_eq!(Ok(level), parsed, "Failed roundtrip for {:?}", level);
         }
     }
 
     #[test]
     fn test_log_level_case_insensitive() {
-        assert_eq!(LogLevel::from_str("error"), LogLevel::Error);
-        assert_eq!(LogLevel::from_str("ERROR"), LogLevel::Error);
-        assert_eq!(LogLevel::from_str("Error"), LogLevel::Error);
-        assert_eq!(LogLevel::from_str("eRrOr"), LogLevel::Error);
+        assert_eq!("error".parse(), Ok(LogLevel::Error));
+        assert_eq!("ERROR".parse(), Ok(LogLevel::Error));
+        assert_eq!("Error".parse(), Ok(LogLevel::Error));
+        assert_eq!("eRrOr".parse(), Ok(LogLevel::Error));
     }
 
     #[test]

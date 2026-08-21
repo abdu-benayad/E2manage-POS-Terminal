@@ -88,6 +88,7 @@ pub mod feature_service;
 pub mod log_service;
 pub mod offline_service;
 pub mod pairing_service;
+pub mod parse;
 pub mod platform_heartbeat_service;
 pub mod policy_service;
 pub mod product_service;
@@ -126,6 +127,7 @@ pub use offline_service::{
     OfflineService, QueueStats, SyncFailureType, SyncResult, BATCH_SIZE, MAX_RETRY_COUNT,
 };
 pub use pairing_service::{PairingService, PairingState, TerminalRegistration};
+pub use parse::ParseError;
 pub use platform_heartbeat_service::{
     HeartbeatError, HeartbeatEvent, PlatformHeartbeatService, SystemMetrics,
     DEFAULT_HEARTBEAT_INTERVAL_SECONDS,

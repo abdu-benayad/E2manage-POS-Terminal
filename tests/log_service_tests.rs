@@ -12,40 +12,45 @@ use tempfile::TempDir;
 
 #[test]
 fn test_log_level_from_str_error() {
-    assert_eq!(LogLevel::from_str("ERROR"), LogLevel::Error);
-    assert_eq!(LogLevel::from_str("error"), LogLevel::Error);
-    assert_eq!(LogLevel::from_str("Error"), LogLevel::Error);
+    assert_eq!("ERROR".parse(), Ok(LogLevel::Error));
+    assert_eq!("error".parse(), Ok(LogLevel::Error));
+    assert_eq!("Error".parse(), Ok(LogLevel::Error));
 }
 
 #[test]
 fn test_log_level_from_str_warn() {
-    assert_eq!(LogLevel::from_str("WARN"), LogLevel::Warn);
-    assert_eq!(LogLevel::from_str("warn"), LogLevel::Warn);
+    assert_eq!("WARN".parse(), Ok(LogLevel::Warn));
+    assert_eq!("warn".parse(), Ok(LogLevel::Warn));
 }
 
 #[test]
 fn test_log_level_from_str_info() {
-    assert_eq!(LogLevel::from_str("INFO"), LogLevel::Info);
-    assert_eq!(LogLevel::from_str("info"), LogLevel::Info);
+    assert_eq!("INFO".parse(), Ok(LogLevel::Info));
+    assert_eq!("info".parse(), Ok(LogLevel::Info));
 }
 
 #[test]
 fn test_log_level_from_str_debug() {
-    assert_eq!(LogLevel::from_str("DEBUG"), LogLevel::Debug);
-    assert_eq!(LogLevel::from_str("debug"), LogLevel::Debug);
+    assert_eq!("DEBUG".parse(), Ok(LogLevel::Debug));
+    assert_eq!("debug".parse(), Ok(LogLevel::Debug));
 }
 
 #[test]
 fn test_log_level_from_str_trace() {
-    assert_eq!(LogLevel::from_str("TRACE"), LogLevel::Trace);
-    assert_eq!(LogLevel::from_str("trace"), LogLevel::Trace);
+    assert_eq!("TRACE".parse(), Ok(LogLevel::Trace));
+    assert_eq!("trace".parse(), Ok(LogLevel::Trace));
 }
 
 #[test]
 fn test_log_level_from_str_unknown() {
-    // Unknown levels default to Trace
-    assert_eq!(LogLevel::from_str("UNKNOWN"), LogLevel::Trace);
-    assert_eq!(LogLevel::from_str(""), LogLevel::Trace);
+    // Was: unknown levels silently became Trace. They are now rejected, and the log-line
+    // parser opts into the Trace default explicitly at its own call site.
+    assert!("UNKNOWN".parse::<LogLevel>().is_err());
+    assert!("".parse::<LogLevel>().is_err());
+    assert_eq!(
+        "UNKNOWN".parse::<LogLevel>().unwrap_or(LogLevel::Trace),
+        LogLevel::Trace
+    );
 }
 
 #[test]
@@ -65,13 +70,13 @@ fn test_log_level_as_str() {
 fn test_log_service_new() {
     let service = LogService::new();
     // Should initialize without panicking
-    assert!(service.log_directory().as_os_str().len() > 0);
+    assert!(!service.log_directory().as_os_str().is_empty());
 }
 
 #[test]
 fn test_log_service_default() {
     let service = LogService::default();
-    assert!(service.log_directory().as_os_str().len() > 0);
+    assert!(!service.log_directory().as_os_str().is_empty());
 }
 
 // ============================================================================

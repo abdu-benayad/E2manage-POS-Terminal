@@ -247,15 +247,11 @@ impl Draft {
             .map_err(|e| DraftError::DeserializationError(e.to_string()))?
             .with_timezone(&Utc);
 
-        let expires_at = row
-            .expires_at
-            .as_ref()
-            .map(|s| {
-                DateTime::parse_from_rfc3339(s)
-                    .map(|dt| dt.with_timezone(&Utc))
-                    .ok()
-            })
-            .flatten();
+        let expires_at = row.expires_at.as_ref().and_then(|s| {
+            DateTime::parse_from_rfc3339(s)
+                .map(|dt| dt.with_timezone(&Utc))
+                .ok()
+        });
 
         Ok(Self {
             id: row.id,

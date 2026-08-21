@@ -3,8 +3,12 @@
 //! This module contains the core domain models for products and categories
 //! in the POS terminal.
 
+use std::str::FromStr;
+
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+
+use crate::parse::ParseError;
 
 /// Product type classification
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -40,27 +44,25 @@ impl ProductType {
             ProductType::RawMaterial => "RAW_MATERIAL",
         }
     }
+}
 
-    pub fn from_str(s: &str) -> Self {
+impl FromStr for ProductType {
+    type Err = ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_uppercase().replace('-', "_").as_str() {
-            "PHYSICAL_GOOD" => ProductType::PhysicalGood,
-            "CONSUMABLE" => ProductType::Consumable,
-            "BUNDLE" => ProductType::Bundle,
-            "SERVICE" => ProductType::Service,
-            "FEE" => ProductType::Fee,
-            "LABOR" => ProductType::Labor,
-            "DIGITAL" => ProductType::Digital,
-            "SUBSCRIPTION" => ProductType::Subscription,
-            "RENTAL" => ProductType::Rental,
-            "WARRANTY" => ProductType::Warranty,
-            "RAW_MATERIAL" => ProductType::RawMaterial,
-            unknown => {
-                tracing::warn!(
-                    "Unknown product type: {}, defaulting to PhysicalGood",
-                    unknown
-                );
-                ProductType::PhysicalGood
-            }
+            "PHYSICAL_GOOD" => Ok(ProductType::PhysicalGood),
+            "CONSUMABLE" => Ok(ProductType::Consumable),
+            "BUNDLE" => Ok(ProductType::Bundle),
+            "SERVICE" => Ok(ProductType::Service),
+            "FEE" => Ok(ProductType::Fee),
+            "LABOR" => Ok(ProductType::Labor),
+            "DIGITAL" => Ok(ProductType::Digital),
+            "SUBSCRIPTION" => Ok(ProductType::Subscription),
+            "RENTAL" => Ok(ProductType::Rental),
+            "WARRANTY" => Ok(ProductType::Warranty),
+            "RAW_MATERIAL" => Ok(ProductType::RawMaterial),
+            _ => Err(ParseError::ProductType(s.to_string())),
         }
     }
 }
@@ -89,13 +91,17 @@ impl ProductNature {
             ProductNature::Hybrid => "HYBRID",
         }
     }
+}
 
-    pub fn from_str(s: &str) -> Self {
+impl FromStr for ProductNature {
+    type Err = ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_uppercase().as_str() {
-            "TANGIBLE" => ProductNature::Tangible,
-            "INTANGIBLE" => ProductNature::Intangible,
-            "HYBRID" => ProductNature::Hybrid,
-            _ => ProductNature::Tangible,
+            "TANGIBLE" => Ok(ProductNature::Tangible),
+            "INTANGIBLE" => Ok(ProductNature::Intangible),
+            "HYBRID" => Ok(ProductNature::Hybrid),
+            _ => Err(ParseError::ProductNature(s.to_string())),
         }
     }
 }
@@ -644,12 +650,12 @@ mod tests {
     fn test_product_type_raw_material_from_str() {
         assert_eq!(
             ProductType::from_str("RAW_MATERIAL"),
-            ProductType::RawMaterial
+            Ok(ProductType::RawMaterial)
         );
         // Also accepts lowercase and mixed case
         assert_eq!(
             ProductType::from_str("raw_material"),
-            ProductType::RawMaterial
+            Ok(ProductType::RawMaterial)
         );
     }
 
@@ -664,12 +670,33 @@ mod tests {
     }
 
     #[test]
-    fn test_product_type_unknown_defaults_to_physical_good() {
-        // Unknown strings should fall back to PhysicalGood
+    fn test_product_type_unknown_is_rejected_and_named() {
+        // Was: unknown strings silently became PhysicalGood, which is the variant that decides
+        // `track_inventory`. The parse now fails and names the offending value; a caller that
+        // wants the old behaviour asks for it explicitly.
         assert_eq!(
             ProductType::from_str("TOTALLY_UNKNOWN_TYPE"),
+            Err(ParseError::ProductType("TOTALLY_UNKNOWN_TYPE".to_string()))
+        );
+        let message = ProductType::from_str("TOTALLY_UNKNOWN_TYPE")
+            .unwrap_err()
+            .to_string();
+        assert!(message.contains("TOTALLY_UNKNOWN_TYPE"), "{message}");
+        assert_eq!(
+            "TOTALLY_UNKNOWN_TYPE"
+                .parse::<ProductType>()
+                .unwrap_or_default(),
             ProductType::PhysicalGood
         );
+    }
+
+    #[test]
+    fn product_nature_unknown_is_rejected_and_named() {
+        assert_eq!(
+            ProductNature::from_str("NOT_A_NATURE"),
+            Err(ParseError::ProductNature("NOT_A_NATURE".to_string()))
+        );
+        assert_eq!(ProductNature::from_str("HYBRID"), Ok(ProductNature::Hybrid));
     }
 
     #[test]
@@ -692,7 +719,7 @@ mod tests {
             assert_eq!(variant.as_str(), *s, "as_str mismatch for {:?}", variant);
             assert_eq!(
                 ProductType::from_str(s),
-                *variant,
+                Ok(variant.clone()),
                 "from_str mismatch for {}",
                 s
             );

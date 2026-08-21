@@ -4,11 +4,14 @@
 //! Used when the terminal is offline - operations are queued here and synced
 //! when connectivity is restored.
 
+use std::str::FromStr;
+
 use chrono::Utc;
 use rusqlite::{params, OptionalExtension, Result as SqliteResult};
 use serde::{Deserialize, Serialize};
 
 use super::Database;
+use crate::parse::ParseError;
 
 /// Maximum retries for failed sync operations
 pub const MAX_DRAFT_SYNC_RETRIES: i32 = 5;
@@ -32,12 +35,17 @@ impl DraftSyncOperation {
             Self::Delete => "DELETE",
         }
     }
+}
 
-    pub fn from_str(s: &str) -> Self {
+impl FromStr for DraftSyncOperation {
+    type Err = ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "CONVERT" => Self::Convert,
-            "DELETE" => Self::Delete,
-            _ => Self::Create,
+            "CREATE" => Ok(Self::Create),
+            "CONVERT" => Ok(Self::Convert),
+            "DELETE" => Ok(Self::Delete),
+            _ => Err(ParseError::DraftSyncOperation(s.to_string())),
         }
     }
 }
@@ -64,13 +72,18 @@ impl DraftQueueSyncStatus {
             Self::Failed => "FAILED",
         }
     }
+}
 
-    pub fn from_str(s: &str) -> Self {
+impl FromStr for DraftQueueSyncStatus {
+    type Err = ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "SYNCING" => Self::Syncing,
-            "SYNCED" => Self::Synced,
-            "FAILED" => Self::Failed,
-            _ => Self::Pending,
+            "PENDING" => Ok(Self::Pending),
+            "SYNCING" => Ok(Self::Syncing),
+            "SYNCED" => Ok(Self::Synced),
+            "FAILED" => Ok(Self::Failed),
+            _ => Err(ParseError::DraftQueueSyncStatus(s.to_string())),
         }
     }
 }
@@ -164,14 +177,14 @@ impl DraftSyncQueueItem {
         }
     }
 
-    /// Returns the operation type
-    pub fn operation_type(&self) -> DraftSyncOperation {
-        DraftSyncOperation::from_str(&self.operation)
+    /// Returns the operation type, or names the stored value if it is not one.
+    pub fn operation_type(&self) -> Result<DraftSyncOperation, ParseError> {
+        self.operation.parse()
     }
 
-    /// Returns the sync status
-    pub fn status(&self) -> DraftQueueSyncStatus {
-        DraftQueueSyncStatus::from_str(&self.sync_status)
+    /// Returns the sync status, or names the stored value if it is not one.
+    pub fn status(&self) -> Result<DraftQueueSyncStatus, ParseError> {
+        self.sync_status.parse()
     }
 
     /// Returns true if the item has exceeded max retries
@@ -531,19 +544,29 @@ mod tests {
 
         assert_eq!(
             DraftSyncOperation::from_str("CREATE"),
-            DraftSyncOperation::Create
+            Ok(DraftSyncOperation::Create)
         );
         assert_eq!(
             DraftSyncOperation::from_str("CONVERT"),
-            DraftSyncOperation::Convert
+            Ok(DraftSyncOperation::Convert)
         );
         assert_eq!(
             DraftSyncOperation::from_str("DELETE"),
-            DraftSyncOperation::Delete
+            Ok(DraftSyncOperation::Delete)
         );
+    }
+
+    #[test]
+    fn draft_sync_operation_rejects_unknown_rather_than_creating() {
+        // Was: `assert_eq!(from_str("UNKNOWN"), Create)` — the test pinned the defect. An
+        // unrecognised operation must not be silently executed as a cart create.
         assert_eq!(
             DraftSyncOperation::from_str("UNKNOWN"),
-            DraftSyncOperation::Create
+            Err(ParseError::DraftSyncOperation("UNKNOWN".to_string()))
+        );
+        assert_eq!(
+            DraftQueueSyncStatus::from_str("NOPE"),
+            Err(ParseError::DraftQueueSyncStatus("NOPE".to_string()))
         );
     }
 

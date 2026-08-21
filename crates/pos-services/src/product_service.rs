@@ -331,9 +331,17 @@ fn product_from_row(row: ProductRow) -> Product {
         is_weighable: row.is_weighable,
         is_serialized: row.is_serialized,
         is_active: row.is_active,
-        product_type: ProductType::from_str(&row.product_type),
+        // An unreadable classification defaults, as it did before, but the decision and its
+        // warning now live at the call site rather than inside the parser.
+        product_type: row.product_type.parse().unwrap_or_else(|e| {
+            warn!("{e}; defaulting to {}", ProductType::default().as_str());
+            ProductType::default()
+        }),
         track_inventory: row.track_inventory,
-        product_nature: ProductNature::from_str(&row.product_nature),
+        product_nature: row.product_nature.parse().unwrap_or_else(|e| {
+            warn!("{e}; defaulting to {}", ProductNature::default().as_str());
+            ProductNature::default()
+        }),
     }
 }
 
@@ -693,6 +701,9 @@ mod tests {
             is_weighable: true,
             is_serialized: false,
             is_active: true,
+            product_type: "PHYSICAL_GOOD".to_string(),
+            track_inventory: true,
+            product_nature: "TANGIBLE".to_string(),
         };
 
         db.save_product(&row).unwrap();

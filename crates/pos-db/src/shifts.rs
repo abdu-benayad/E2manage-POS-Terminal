@@ -2,12 +2,15 @@
 //!
 //! Handles shift data storage and management.
 
+use std::str::FromStr;
+
 use chrono::Utc;
 use rusqlite::{params, OptionalExtension, Result as SqliteResult};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use super::Database;
+use crate::parse::ParseError;
 use crate::{decimal_from_sqlite, decimal_to_sqlite};
 
 /// Shift status
@@ -26,13 +29,17 @@ impl ShiftStatus {
             ShiftStatus::Suspended => "SUSPENDED",
         }
     }
+}
 
-    pub fn from_str(s: &str) -> Option<Self> {
+impl FromStr for ShiftStatus {
+    type Err = ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_uppercase().as_str() {
-            "ACTIVE" => Some(ShiftStatus::Active),
-            "CLOSED" => Some(ShiftStatus::Closed),
-            "SUSPENDED" => Some(ShiftStatus::Suspended),
-            _ => None,
+            "ACTIVE" => Ok(ShiftStatus::Active),
+            "CLOSED" => Ok(ShiftStatus::Closed),
+            "SUSPENDED" => Ok(ShiftStatus::Suspended),
+            _ => Err(ParseError::ShiftStatus(s.to_string())),
         }
     }
 }
@@ -261,7 +268,7 @@ impl Database {
                ORDER BY started_at DESC"#,
         )?;
 
-        let rows = stmt.query_map(params![start_date, end_date], |row| read_shift_row(row))?;
+        let rows = stmt.query_map(params![start_date, end_date], read_shift_row)?;
 
         rows.collect()
     }
@@ -279,7 +286,7 @@ impl Database {
                ORDER BY started_at ASC"#,
         )?;
 
-        let rows = stmt.query_map([], |row| read_shift_row(row))?;
+        let rows = stmt.query_map([], read_shift_row)?;
 
         rows.collect()
     }

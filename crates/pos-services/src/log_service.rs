@@ -11,6 +11,9 @@ use directories::{BaseDirs, ProjectDirs};
 use std::fs;
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
+use std::str::FromStr;
+
+use crate::parse::ParseError;
 use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
 
@@ -42,17 +45,22 @@ pub enum LogLevel {
     Trace,
 }
 
-impl LogLevel {
-    pub fn from_str(s: &str) -> Self {
+impl FromStr for LogLevel {
+    type Err = ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_uppercase().as_str() {
-            "ERROR" => LogLevel::Error,
-            "WARN" => LogLevel::Warn,
-            "INFO" => LogLevel::Info,
-            "DEBUG" => LogLevel::Debug,
-            _ => LogLevel::Trace,
+            "ERROR" => Ok(LogLevel::Error),
+            "WARN" => Ok(LogLevel::Warn),
+            "INFO" => Ok(LogLevel::Info),
+            "DEBUG" => Ok(LogLevel::Debug),
+            "TRACE" => Ok(LogLevel::Trace),
+            _ => Err(ParseError::LogLevel(s.to_string())),
         }
     }
+}
 
+impl LogLevel {
     pub fn as_str(&self) -> &'static str {
         match self {
             LogLevel::Error => "ERROR",
@@ -144,7 +152,9 @@ impl LogService {
             if simple_parts.len() >= 3 {
                 return Some(LogEntry {
                     timestamp: simple_parts[0].to_string(),
-                    level: LogLevel::from_str(simple_parts[1]),
+                    // A log line whose level field is unreadable is noise, not a failure: default
+                    // here, visibly, rather than letting the parser decide for every caller.
+                    level: simple_parts[1].parse().unwrap_or(LogLevel::Trace),
                     target: String::new(),
                     message: simple_parts[2..].join(" "),
                 });
@@ -154,7 +164,7 @@ impl LogService {
 
         Some(LogEntry {
             timestamp: parts[0].to_string(),
-            level: LogLevel::from_str(parts[1]),
+            level: parts[1].parse().unwrap_or(LogLevel::Trace),
             target: parts
                 .get(2)
                 .map(|s| s.trim_end_matches(':'))
@@ -173,7 +183,7 @@ impl LogService {
         let files: Vec<String> = fs::read_dir(&self.log_dir)
             .map_err(LogError::IoError)?
             .filter_map(|e| e.ok())
-            .filter(|e| e.path().extension().map_or(false, |ext| ext == "log"))
+            .filter(|e| e.path().extension().is_some_and(|ext| ext == "log"))
             .filter_map(|e| e.file_name().into_string().ok())
             .collect();
 
@@ -205,7 +215,7 @@ impl LogService {
                 let entry = entry.map_err(LogError::IoError)?;
                 let path = entry.path();
 
-                if path.extension().map_or(false, |e| e == "log") {
+                if path.extension().is_some_and(|e| e == "log") {
                     let file_name = path
                         .file_name()
                         .and_then(|n| n.to_str())
@@ -213,9 +223,8 @@ impl LogService {
 
                     let content = fs::read_to_string(&path).map_err(LogError::IoError)?;
 
-                    zip.start_file(file_name, options).map_err(|e| {
-                        LogError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e))
-                    })?;
+                    zip.start_file(file_name, options)
+                        .map_err(|e| LogError::IoError(std::io::Error::other(e)))?;
                     zip.write_all(content.as_bytes())
                         .map_err(LogError::IoError)?;
                 }
@@ -225,7 +234,7 @@ impl LogService {
         // Add system info file
         let system_info = self.gather_system_info();
         zip.start_file("system-info.txt", options)
-            .map_err(|e| LogError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+            .map_err(|e| LogError::IoError(std::io::Error::other(e)))?;
         zip.write_all(system_info.as_bytes())
             .map_err(LogError::IoError)?;
 
@@ -235,9 +244,8 @@ impl LogService {
             .unwrap_or_else(|| PathBuf::from("./data/pos_terminal.db"));
 
         if db_path.exists() {
-            zip.start_file("database-info.txt", options).map_err(|e| {
-                LogError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e))
-            })?;
+            zip.start_file("database-info.txt", options)
+                .map_err(|e| LogError::IoError(std::io::Error::other(e)))?;
             let db_info = format!(
                 "Database path: {:?}\nDatabase size: {} bytes\n",
                 db_path,
@@ -248,7 +256,7 @@ impl LogService {
         }
 
         zip.finish()
-            .map_err(|e| LogError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+            .map_err(|e| LogError::IoError(std::io::Error::other(e)))?;
 
         Ok(zip_path)
     }
@@ -296,7 +304,7 @@ impl LogService {
             .map(|entries| {
                 entries
                     .filter_map(|e| e.ok())
-                    .filter(|e| e.path().extension().map_or(false, |ext| ext == "log"))
+                    .filter(|e| e.path().extension().is_some_and(|ext| ext == "log"))
                     .filter_map(|e| e.metadata().ok())
                     .map(|m| m.len())
                     .sum()

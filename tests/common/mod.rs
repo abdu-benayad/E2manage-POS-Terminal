@@ -2,6 +2,12 @@
 //!
 //! Shared setup functions and test data for integration tests.
 
+// `#[allow]` rather than `#[expect]`, deliberately: this module is included by `mod common;`
+// into several independent integration-test crates, and each uses a different subset of these
+// helpers. `#[expect(dead_code)]` would be unfulfilled — and so itself an error — in whichever
+// crate happens to use all of them.
+#![allow(dead_code)]
+
 use e2manage_pos_terminal::api::ApiClient;
 use e2manage_pos_terminal::db::migrations::run_migrations;
 use e2manage_pos_terminal::db::{Database, OperatorRow, ProductRow, ShiftRow};

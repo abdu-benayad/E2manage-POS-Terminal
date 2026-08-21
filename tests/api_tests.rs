@@ -26,6 +26,12 @@
 // 8. Reports
 // 9. Fleet Management
 
+#![expect(
+    dead_code,
+    reason = "response DTOs mirror the backend contract in full; every field documents the wire \
+              shape even where no assertion reads it yet"
+)]
+
 use chrono::{DateTime, Utc};
 use reqwest::{Client, StatusCode};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -245,6 +251,12 @@ pub struct UserInfo {
 pub struct E2EClient {
     client: Client,
     base_url: String,
+}
+
+impl Default for E2EClient {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl E2EClient {
@@ -3984,8 +3996,6 @@ mod p11_pos_config {
     #[tokio::test]
     #[ignore = "Requires running backend"]
     async fn test_04_config_requires_admin() {
-        let client = E2EClient::new();
-
         // Try to update config without auth
         let request = serde_json::json!({
             "defaultCurrency": "LYD",

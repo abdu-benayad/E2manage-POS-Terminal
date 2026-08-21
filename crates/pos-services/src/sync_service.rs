@@ -485,8 +485,8 @@ impl SyncService {
             .and_then(|s| s.last_sync);
 
         // If we have an ETag and last_sync, try delta sync first
-        if etag.is_some() && last_sync.is_some() {
-            if let Ok(true) = self.try_delta_sync(tx, &last_sync.unwrap()).await {
+        if let (Some(_), Some(last_sync)) = (&etag, &last_sync) {
+            if let Ok(true) = self.try_delta_sync(tx, last_sync).await {
                 return Ok(());
             }
             // Delta sync failed or returned nothing, fall through to full sync
@@ -879,8 +879,13 @@ mod tests {
     use super::*;
     use pos_db::init_memory_database;
 
+    /// Port 1 is reserved and never listening, so `is_online()` resolves to `Offline`
+    /// immediately. Pointing at a conventional dev port instead makes these tests pass or
+    /// fail depending on whether a backend happens to be running on the machine.
+    const UNREACHABLE_BACKEND: &str = "http://127.0.0.1:1";
+
     fn setup() -> (Arc<ApiClient>, Arc<Database>) {
-        let api = Arc::new(ApiClient::new("http://localhost:3000"));
+        let api = Arc::new(ApiClient::new(UNREACHABLE_BACKEND));
         let db = Arc::new(init_memory_database().unwrap());
         (api, db)
     }
@@ -977,12 +982,12 @@ mod tests {
             _ => panic!("Expected Started event"),
         }
 
-        // Should receive either Offline or Failed event
+        // The backend is unreachable, so the cycle stops at the online check.
         let event = rx.recv().await;
         assert!(event.is_ok());
         match event.unwrap() {
-            SyncEvent::Offline | SyncEvent::Failed(_) => {}
-            e => panic!("Expected Offline or Failed event, got {:?}", e),
+            SyncEvent::Offline => {}
+            e => panic!("Expected Offline event, got {e:?}"),
         }
     }
 

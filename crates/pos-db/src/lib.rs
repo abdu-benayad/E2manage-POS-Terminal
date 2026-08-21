@@ -32,6 +32,7 @@ pub mod drafts;
 pub mod features;
 pub mod migrations;
 pub mod operators;
+pub mod parse;
 pub mod products;
 pub mod schema;
 pub mod shared_drafts;
@@ -48,6 +49,7 @@ pub use draft_sync_queue::{
 pub use drafts::DraftRow;
 pub use migrations::{get_schema_version, needs_migration, run_migrations};
 pub use operators::{OperatorPermissions, OperatorRow};
+pub use parse::ParseError;
 pub use products::{CategoryRow, ProductRow};
 pub use schema::CURRENT_SCHEMA_VERSION;
 pub use shared_drafts::{SharedDraftRow, SharedDraftSyncStatus};

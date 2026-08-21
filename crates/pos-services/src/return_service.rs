@@ -43,6 +43,9 @@
 //! ```
 
 use chrono::{DateTime, Utc};
+use std::str::FromStr;
+
+use crate::parse::ParseError;
 use pos_api::ApiClient;
 use pos_db::decimal_from_sqlite;
 use pos_db::transactions::OfflineTransactionRow;
@@ -185,19 +188,6 @@ impl ReturnReason {
     }
 
     /// Creates a reason from a string
-    pub fn from_str(s: &str) -> Option<Self> {
-        match s.to_uppercase().as_str() {
-            "DEFECTIVE" => Some(ReturnReason::Defective),
-            "WRONG_PRODUCT" => Some(ReturnReason::WrongProduct),
-            "CHANGED_MIND" => Some(ReturnReason::ChangedMind),
-            "EXPIRED" => Some(ReturnReason::Expired),
-            "PRICE_ADJUSTMENT" => Some(ReturnReason::PriceAdjustment),
-            "EXCHANGE" => Some(ReturnReason::Exchange),
-            "OTHER" => Some(ReturnReason::Other),
-            _ => None,
-        }
-    }
-
     /// Returns the display name for this reason
     pub fn display_name(&self, locale: &str) -> &'static str {
         if locale == "ar" {
@@ -232,6 +222,23 @@ impl ReturnReason {
     }
 }
 
+impl FromStr for ReturnReason {
+    type Err = ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_uppercase().as_str() {
+            "DEFECTIVE" => Ok(ReturnReason::Defective),
+            "WRONG_PRODUCT" => Ok(ReturnReason::WrongProduct),
+            "CHANGED_MIND" => Ok(ReturnReason::ChangedMind),
+            "EXPIRED" => Ok(ReturnReason::Expired),
+            "PRICE_ADJUSTMENT" => Ok(ReturnReason::PriceAdjustment),
+            "EXCHANGE" => Ok(ReturnReason::Exchange),
+            "OTHER" => Ok(ReturnReason::Other),
+            _ => Err(ParseError::ReturnReason(s.to_string())),
+        }
+    }
+}
+
 /// Refund method
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RefundMethod {
@@ -255,16 +262,6 @@ impl RefundMethod {
         }
     }
 
-    pub fn from_str(s: &str) -> Option<Self> {
-        match s.to_uppercase().as_str() {
-            "CASH" => Some(RefundMethod::Cash),
-            "CARD" => Some(RefundMethod::Card),
-            "STORE_CREDIT" => Some(RefundMethod::StoreCredit),
-            "EXCHANGE" => Some(RefundMethod::Exchange),
-            _ => None,
-        }
-    }
-
     pub fn display_name(&self, locale: &str) -> &'static str {
         if locale == "ar" {
             match self {
@@ -280,6 +277,20 @@ impl RefundMethod {
                 RefundMethod::StoreCredit => "Store Credit",
                 RefundMethod::Exchange => "Exchange",
             }
+        }
+    }
+}
+
+impl FromStr for RefundMethod {
+    type Err = ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_uppercase().as_str() {
+            "CASH" => Ok(RefundMethod::Cash),
+            "CARD" => Ok(RefundMethod::Card),
+            "STORE_CREDIT" => Ok(RefundMethod::StoreCredit),
+            "EXCHANGE" => Ok(RefundMethod::Exchange),
+            _ => Err(ParseError::RefundMethod(s.to_string())),
         }
     }
 }
@@ -618,8 +629,7 @@ impl ReturnService {
 
                             Payment {
                                 id: p.id.clone(),
-                                method: PaymentMethod::from_str(&p.method)
-                                    .unwrap_or(PaymentMethod::Cash),
+                                method: p.method.parse().unwrap_or(PaymentMethod::Cash),
                                 amount: p.amount,
                                 currency: p.currency.clone(),
                                 reference: p.reference.clone(),
@@ -649,8 +659,7 @@ impl ReturnService {
                         terminal_id: dto.terminal_id,
                         operator_id: dto.operator_id,
                         operator_name: dto.operator_name,
-                        status: TransactionStatus::from_str(&dto.status)
-                            .unwrap_or(TransactionStatus::Completed),
+                        status: dto.status.parse().unwrap_or(TransactionStatus::Completed),
                         created_at,
                         completed_at,
                         voided_at: None,
@@ -684,8 +693,10 @@ impl ReturnService {
             .map(|dt| dt.with_timezone(&Utc))
             .unwrap_or_else(|_| Utc::now());
 
-        let status =
-            TransactionStatus::from_str(&row.sync_status).unwrap_or(TransactionStatus::Completed);
+        let status = row
+            .sync_status
+            .parse()
+            .unwrap_or(TransactionStatus::Completed);
 
         Ok(Transaction {
             id: row.offline_id.clone(),
@@ -816,6 +827,13 @@ impl ReturnService {
     /// Processes a return transaction
     ///
     /// Creates a return transaction, calculates refund, and syncs to server
+    // Four adjacent `&str` parameters are freely swappable at the call site; that is the
+    // defect, not the count. `type-driven-domain-core` task 09 replaces `operator_id` and
+    // `operator_name`, at which point `#[expect]` fails and forces this to be revisited.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "signature is rewritten by type-driven-domain-core task 09 (adopt OperatorId)"
+    )]
     pub async fn process_return(
         &self,
         original_txn: &Transaction,
@@ -1204,11 +1222,11 @@ mod tests {
     #[test]
     fn test_return_reason_conversion() {
         assert_eq!(ReturnReason::Defective.as_str(), "DEFECTIVE");
+        assert_eq!("DEFECTIVE".parse(), Ok(ReturnReason::Defective));
         assert_eq!(
-            ReturnReason::from_str("DEFECTIVE"),
-            Some(ReturnReason::Defective)
+            "invalid".parse::<ReturnReason>(),
+            Err(ParseError::ReturnReason("invalid".to_string()))
         );
-        assert_eq!(ReturnReason::from_str("invalid"), None);
     }
 
     #[test]
@@ -1230,8 +1248,11 @@ mod tests {
     #[test]
     fn test_refund_method_conversion() {
         assert_eq!(RefundMethod::Cash.as_str(), "CASH");
-        assert_eq!(RefundMethod::from_str("CASH"), Some(RefundMethod::Cash));
-        assert_eq!(RefundMethod::from_str("invalid"), None);
+        assert_eq!("CASH".parse(), Ok(RefundMethod::Cash));
+        assert_eq!(
+            "invalid".parse::<RefundMethod>(),
+            Err(ParseError::RefundMethod("invalid".to_string()))
+        );
     }
 
     #[test]

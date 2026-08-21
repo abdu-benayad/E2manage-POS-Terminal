@@ -616,8 +616,10 @@ impl ShiftService {
     // ========================================================================
 
     fn row_to_summary(&self, row: &ShiftRow) -> ShiftResult<ShiftSummary> {
-        let status = ShiftStatus::from_str(&row.status)
-            .ok_or_else(|| ShiftError::InvalidState(format!("Unknown status: {}", row.status)))?;
+        let status = row
+            .status
+            .parse::<ShiftStatus>()
+            .map_err(|e| ShiftError::InvalidState(e.to_string()))?;
 
         let variance_status = row.variance.map(VarianceStatus::from_variance);
 
@@ -649,6 +651,13 @@ impl ShiftService {
         })
     }
 
+    // Four adjacent `&str` parameters are freely swappable at the call site; that is the
+    // defect, not the count. `type-driven-domain-core` task 09 replaces `operator_id` with
+    // `OperatorId`, at which point `#[expect]` fails and forces this to be revisited.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "signature is rewritten by type-driven-domain-core task 09 (adopt OperatorId)"
+    )]
     async fn sync_shift_start(
         &self,
         _shift_id: &str,
@@ -681,19 +690,24 @@ impl ShiftService {
         variance: Decimal,
         note: Option<&str>,
     ) -> Result<()> {
-        let cash_count = self.cash_count.read();
-        let denomination_breakdown = cash_count.as_ref().map(|cc| {
-            cc.denominations
-                .iter()
-                .filter(|d| d.count > 0)
-                .map(|d| DenominationDto {
-                    label: d.label.clone(),
-                    value: d.value,
-                    count: d.count,
-                    subtotal: d.subtotal,
-                })
-                .collect()
-        });
+        // Scoped so the `parking_lot` read guard is released before the `.await` below.
+        // Holding it across the await can deadlock: the future may be resumed on another
+        // thread while a writer is waiting, and `parking_lot` guards are not send-safe here.
+        let denomination_breakdown: Option<Vec<DenominationDto>> = {
+            let cash_count = self.cash_count.read();
+            cash_count.as_ref().map(|cc| {
+                cc.denominations
+                    .iter()
+                    .filter(|d| d.count > 0)
+                    .map(|d| DenominationDto {
+                        label: d.label.clone(),
+                        value: d.value,
+                        count: d.count,
+                        subtotal: d.subtotal,
+                    })
+                    .collect()
+            })
+        };
 
         let request = EndShiftRequest {
             closing_cash,

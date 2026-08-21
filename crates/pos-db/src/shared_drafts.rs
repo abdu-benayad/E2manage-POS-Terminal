@@ -4,11 +4,14 @@
 //! These are carts that have been synced to the backend and can be accessed
 //! by any terminal in the same warehouse.
 
+use std::str::FromStr;
+
 use chrono::Utc;
 use rusqlite::{params, OptionalExtension, Result as SqliteResult};
 use serde::{Deserialize, Serialize};
 
 use super::Database;
+use crate::parse::ParseError;
 
 /// Shared draft row from database
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -98,12 +101,17 @@ impl SharedDraftSyncStatus {
             Self::PendingDelete => "PENDING_DELETE",
         }
     }
+}
 
-    pub fn from_str(s: &str) -> Self {
+impl FromStr for SharedDraftSyncStatus {
+    type Err = ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "PENDING_CONVERT" => Self::PendingConvert,
-            "PENDING_DELETE" => Self::PendingDelete,
-            _ => Self::Synced,
+            "SYNCED" => Ok(Self::Synced),
+            "PENDING_CONVERT" => Ok(Self::PendingConvert),
+            "PENDING_DELETE" => Ok(Self::PendingDelete),
+            _ => Err(ParseError::SharedDraftSyncStatus(s.to_string())),
         }
     }
 }
@@ -543,15 +551,21 @@ mod tests {
 
         assert_eq!(
             SharedDraftSyncStatus::from_str("SYNCED"),
-            SharedDraftSyncStatus::Synced
+            Ok(SharedDraftSyncStatus::Synced)
         );
         assert_eq!(
             SharedDraftSyncStatus::from_str("PENDING_CONVERT"),
-            SharedDraftSyncStatus::PendingConvert
+            Ok(SharedDraftSyncStatus::PendingConvert)
         );
+    }
+
+    #[test]
+    fn shared_draft_sync_status_rejects_unknown_rather_than_reporting_it_synced() {
+        // Was: `assert_eq!(from_str("unknown"), Synced)` — the test pinned the defect. A draft
+        // whose status cannot be read must not be reported as already synced.
         assert_eq!(
             SharedDraftSyncStatus::from_str("unknown"),
-            SharedDraftSyncStatus::Synced
+            Err(ParseError::SharedDraftSyncStatus("unknown".to_string()))
         );
     }
 }

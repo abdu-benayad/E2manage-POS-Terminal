@@ -119,7 +119,9 @@ async fn test_catalog_sync_with_auth_header() {
 
     // Create sync service
     let sync_service = SyncService::new(Arc::clone(&api), Arc::clone(&db), 5);
-    let (tx, mut rx) = broadcast::channel::<SyncEvent>(16);
+    // `_rx` is never read; it exists so the channel keeps a live subscriber while
+    // `sync_all` publishes into `tx`.
+    let (tx, _rx) = broadcast::channel::<SyncEvent>(16);
 
     // Try to sync catalog
     println!("\nSyncing catalog...");
@@ -250,7 +252,9 @@ async fn test_catalog_sync_etag_caching() {
 
     // Create sync service
     let sync_service = SyncService::new(Arc::clone(&api), Arc::clone(&db), 5);
-    let (tx, mut rx) = broadcast::channel::<SyncEvent>(16);
+    // `_rx` is never read; it exists so the channel keeps a live subscriber while
+    // `sync_all` publishes into `tx`.
+    let (tx, _rx) = broadcast::channel::<SyncEvent>(16);
 
     // First sync - should get full data
     println!("First sync (should get full data)...");

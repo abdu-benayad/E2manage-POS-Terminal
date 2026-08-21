@@ -204,8 +204,8 @@ impl ZReportService {
         // Convert to ShiftSummary
         let shift_summaries: Vec<ShiftSummary> = shifts
             .iter()
-            .map(|row| {
-                ShiftSummary {
+            .map(|row| -> Result<ShiftSummary, ZReportError> {
+                Ok(ShiftSummary {
                     id: row.id.clone(),
                     shift_number: row.shift_number.clone(),
                     operator_id: row.operator_id.clone(),
@@ -218,7 +218,9 @@ impl ZReportService {
                     variance_status: row.variance.map(VarianceStatus::from_variance),
                     started_at: row.started_at.clone(),
                     ended_at: row.ended_at.clone(),
-                    status: pos_models::ShiftStatus::from_str(&row.status),
+                    status: row.status.parse().map_err(|e: pos_models::ParseError| {
+                        ZReportError::InvalidState(e.to_string())
+                    })?,
                     transaction_count: 0,
                     cash_sales: Decimal::ZERO,
                     card_sales: Decimal::ZERO,
@@ -229,9 +231,9 @@ impl ZReportService {
                     net_sales: Decimal::ZERO,
                     currency: "LYD".to_string(),
                     note: row.notes.clone(),
-                }
+                })
             })
-            .collect();
+            .collect::<Result<Vec<_>, _>>()?;
 
         // Get transaction totals for today
         let day_totals = self
@@ -455,16 +457,19 @@ mod tests {
 
     #[test]
     fn test_z_report_variance_status_str() {
-        let mut report = ZReport::default();
+        let cases = [
+            (VarianceStatus::Balanced, "balanced"),
+            (VarianceStatus::Short, "short"),
+            (VarianceStatus::Over, "over"),
+        ];
 
-        report.variance_status = VarianceStatus::Balanced;
-        assert_eq!(report.variance_status_str(), "balanced");
-
-        report.variance_status = VarianceStatus::Short;
-        assert_eq!(report.variance_status_str(), "short");
-
-        report.variance_status = VarianceStatus::Over;
-        assert_eq!(report.variance_status_str(), "over");
+        for (variance_status, expected) in cases {
+            let report = ZReport {
+                variance_status,
+                ..Default::default()
+            };
+            assert_eq!(report.variance_status_str(), expected);
+        }
     }
 
     #[test]

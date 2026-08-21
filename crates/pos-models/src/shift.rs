@@ -2,13 +2,18 @@
 //!
 //! This module contains shift-related domain models.
 
+use std::str::FromStr;
+
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
+use crate::parse::ParseError;
+
 /// Variance status for cash reconciliation
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum VarianceStatus {
     /// Cash matches expected
+    #[default]
     Balanced,
     /// Cash is less than expected
     Short,
@@ -38,16 +43,11 @@ impl VarianceStatus {
     }
 }
 
-impl Default for VarianceStatus {
-    fn default() -> Self {
-        VarianceStatus::Balanced
-    }
-}
-
 /// Shift status
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ShiftStatus {
     /// Shift is currently active
+    #[default]
     Active,
     /// Shift was closed normally
     Closed,
@@ -63,20 +63,20 @@ impl ShiftStatus {
             ShiftStatus::Suspended => "suspended",
         }
     }
-
-    pub fn from_str(s: &str) -> Self {
-        match s.to_lowercase().as_str() {
-            "active" => ShiftStatus::Active,
-            "closed" => ShiftStatus::Closed,
-            "suspended" => ShiftStatus::Suspended,
-            _ => ShiftStatus::Active,
-        }
-    }
 }
 
-impl Default for ShiftStatus {
-    fn default() -> Self {
-        ShiftStatus::Active
+impl FromStr for ShiftStatus {
+    type Err = ParseError;
+
+    /// Case-insensitive, because `pos-models` writes these lowercase and `pos-db` writes them
+    /// uppercase into the same column.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "active" => Ok(ShiftStatus::Active),
+            "closed" => Ok(ShiftStatus::Closed),
+            "suspended" => Ok(ShiftStatus::Suspended),
+            _ => Err(ParseError::ShiftStatus(s.to_string())),
+        }
     }
 }
 
@@ -158,5 +158,71 @@ impl Default for ShiftSummary {
             currency: "LYD".to_string(),
             note: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shift_status_round_trips_through_its_stored_form() {
+        for status in [
+            ShiftStatus::Active,
+            ShiftStatus::Closed,
+            ShiftStatus::Suspended,
+        ] {
+            assert_eq!(ShiftStatus::from_str(status.as_str()), Ok(status));
+        }
+    }
+
+    #[test]
+    fn shift_status_parses_either_crate_s_casing() {
+        // `pos-models` writes "active"; `pos-db` writes "ACTIVE" into the same column.
+        assert_eq!(ShiftStatus::from_str("active"), Ok(ShiftStatus::Active));
+        assert_eq!(ShiftStatus::from_str("ACTIVE"), Ok(ShiftStatus::Active));
+        assert_eq!(
+            ShiftStatus::from_str("Suspended"),
+            Ok(ShiftStatus::Suspended)
+        );
+    }
+
+    #[test]
+    fn shift_status_rejects_unknown_rather_than_reporting_it_open() {
+        // The defect this guards: the previous inherent `from_str` returned `Self` and mapped
+        // every unrecognised string to `Active`, so a corrupt status column read back as an
+        // open shift. A shift that cannot be identified must not silently look open.
+        assert_eq!(
+            ShiftStatus::from_str("bogus"),
+            Err(ParseError::ShiftStatus("bogus".to_string()))
+        );
+        assert_eq!(
+            ShiftStatus::from_str(""),
+            Err(ParseError::ShiftStatus(String::new()))
+        );
+        let message = ShiftStatus::from_str("bogus").unwrap_err().to_string();
+        assert!(message.contains("bogus"), "{message}");
+    }
+
+    #[test]
+    fn defaults_are_unchanged_by_the_move_to_derive() {
+        assert_eq!(ShiftStatus::default(), ShiftStatus::Active);
+        assert_eq!(VarianceStatus::default(), VarianceStatus::Balanced);
+    }
+
+    #[test]
+    fn variance_status_follows_the_sign_of_the_variance() {
+        assert_eq!(
+            VarianceStatus::from_variance(Decimal::ZERO),
+            VarianceStatus::Balanced
+        );
+        assert_eq!(
+            VarianceStatus::from_variance(Decimal::from(-1)),
+            VarianceStatus::Short
+        );
+        assert_eq!(
+            VarianceStatus::from_variance(Decimal::from(1)),
+            VarianceStatus::Over
+        );
     }
 }

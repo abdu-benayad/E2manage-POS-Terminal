@@ -320,11 +320,13 @@ fn test_shift_totals_default() {
 
 #[test]
 fn test_shift_totals_net_calculations() {
-    let mut totals = ShiftTotals::default();
-    totals.sales_total = Decimal::from(1000);
-    totals.cash_total = Decimal::from(600);
-    totals.card_total = Decimal::from(400);
-    totals.return_total = Decimal::from(100);
+    let totals = ShiftTotals {
+        sales_total: Decimal::from(1000),
+        cash_total: Decimal::from(600),
+        card_total: Decimal::from(400),
+        return_total: Decimal::from(100),
+        ..Default::default()
+    };
 
     // net_cash = cash_total - return_total = 600 - 100 = 500
     assert_eq!(totals.net_cash(), Decimal::from(500));

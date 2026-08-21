@@ -227,6 +227,14 @@ impl Database {
     }
 
     /// Creates a draft with auto-generated name
+    // The four adjacent `Option<&str>` parameters are freely swappable at the call site, which
+    // is the defect, not the count. `type-driven-domain-core` task 09 replaces `operator_id`
+    // with `OperatorId`; `#[expect]` fails once that lands, forcing this to be revisited then
+    // rather than half-fixed now.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "signature is rewritten by type-driven-domain-core task 09 (adopt OperatorId)"
+    )]
     pub fn create_draft(
         &self,
         id: &str,

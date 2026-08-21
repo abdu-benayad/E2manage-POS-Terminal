@@ -96,7 +96,8 @@ impl FromStr for ScaleProtocol {
         match s.to_lowercase().as_str() {
             "cas" => Ok(ScaleProtocol::Cas),
             "toledo" | "mt-sics" | "mtsics" => Ok(ScaleProtocol::Toledo),
-            "generic" | _ => Ok(ScaleProtocol::Generic),
+            // "generic", and anything unrecognised, falls back to the generic protocol.
+            _ => Ok(ScaleProtocol::Generic),
         }
     }
 }

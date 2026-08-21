@@ -67,6 +67,12 @@ pub struct TestClient {
     csrf_token: Option<String>,
 }
 
+impl Default for TestClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TestClient {
     /// Create a new test client
     pub fn new() -> Self {
@@ -683,7 +689,6 @@ async fn test_terminal_authentication() {
 
 /// Test that Rust serialization matches what backend expects
 mod serialization_tests {
-    use super::*;
     use e2manage_pos_terminal::api::auth::{
         HeartbeatRequest, LoginTerminalRequest, VerifyPinRequest,
     };
@@ -834,7 +839,6 @@ mod deserialization_tests {
 
 /// These tests validate that the Rust DTOs match backend API contract
 mod contract_tests {
-    use super::*;
     use e2manage_pos_terminal::api::sync::{CategoryDto, OperatorDto, ProductDto};
 
     #[test]

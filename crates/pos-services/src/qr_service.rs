@@ -80,7 +80,7 @@ pub enum QrEvent {
 }
 
 /// QR payment result
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct QrPaymentResult {
     /// Whether payment was successful
     pub success: bool,
@@ -90,17 +90,6 @@ pub struct QrPaymentResult {
     pub transaction_id: String,
     /// Error message if failed
     pub error_message: String,
-}
-
-impl Default for QrPaymentResult {
-    fn default() -> Self {
-        Self {
-            success: false,
-            wallet_type: String::new(),
-            transaction_id: String::new(),
-            error_message: String::new(),
-        }
-    }
 }
 
 /// QR service errors

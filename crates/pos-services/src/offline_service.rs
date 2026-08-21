@@ -1057,18 +1057,24 @@ mod tests {
 
     #[test]
     fn test_sync_result_has_activity() {
-        let mut result = SyncResult::default();
+        let single_counter = [
+            SyncResult {
+                synced: 1,
+                ..Default::default()
+            },
+            SyncResult {
+                failed: 1,
+                ..Default::default()
+            },
+            SyncResult {
+                conflicts: 1,
+                ..Default::default()
+            },
+        ];
 
-        result.synced = 1;
-        assert!(result.has_activity());
-
-        result.synced = 0;
-        result.failed = 1;
-        assert!(result.has_activity());
-
-        result.failed = 0;
-        result.conflicts = 1;
-        assert!(result.has_activity());
+        for result in single_counter {
+            assert!(result.has_activity(), "{result:?} should report activity");
+        }
     }
 
     #[test]

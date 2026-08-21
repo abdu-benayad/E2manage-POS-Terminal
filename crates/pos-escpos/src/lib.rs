@@ -531,7 +531,7 @@ impl EscPos {
     /// GS v 0 m xL xH yL yH d1...dk
     /// This is a simplified implementation for monochrome bitmaps
     pub fn image(&mut self, width: u16, height: u16, data: &[u8]) -> &mut Self {
-        let bytes_per_row = (width + 7) / 8;
+        let bytes_per_row = width.div_ceil(8);
         let xl = (bytes_per_row % 256) as u8;
         let xh = (bytes_per_row / 256) as u8;
         let yl = (height % 256) as u8;
@@ -593,10 +593,11 @@ impl Default for EscPos {
 }
 
 /// Text alignment options
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Alignment {
     /// Left alignment (default)
+    #[default]
     Left = 0,
     /// Center alignment
     Center = 1,
@@ -604,14 +605,8 @@ pub enum Alignment {
     Right = 2,
 }
 
-impl Default for Alignment {
-    fn default() -> Self {
-        Self::Left
-    }
-}
-
 /// Barcode format types
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[repr(u8)]
 pub enum BarcodeFormat {
     /// UPC-A barcode (11-12 digits)
@@ -627,17 +622,12 @@ pub enum BarcodeFormat {
     /// Code 93 barcode (alphanumeric)
     Code93 = 72,
     /// Code 128 barcode (alphanumeric, most flexible)
+    #[default]
     Code128 = 73,
 }
 
-impl Default for BarcodeFormat {
-    fn default() -> Self {
-        Self::Code128
-    }
-}
-
 /// Barcode text position
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[repr(u8)]
 pub enum BarcodeTextPosition {
     /// No text printed
@@ -645,22 +635,18 @@ pub enum BarcodeTextPosition {
     /// Text printed above barcode
     Above = 1,
     /// Text printed below barcode
+    #[default]
     Below = 2,
     /// Text printed above and below
     Both = 3,
 }
 
-impl Default for BarcodeTextPosition {
-    fn default() -> Self {
-        Self::Below
-    }
-}
-
 /// Character code page
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[repr(u8)]
 pub enum CodePage {
     /// CP437 (US/Europe, default)
+    #[default]
     Cp437 = 0,
     /// Katakana
     Katakana = 1,
@@ -694,12 +680,6 @@ pub enum CodePage {
     Wcp1258 = 25,
     /// UTF-8 (if supported by printer)
     Utf8 = 255,
-}
-
-impl Default for CodePage {
-    fn default() -> Self {
-        Self::Cp437
-    }
 }
 
 #[cfg(test)]
@@ -916,7 +896,7 @@ mod tests {
         // Should contain QR code commands
         assert!(!commands.is_empty());
         // Check for model selection command
-        assert!(commands.windows(4).any(|w| w == &[0x1D, 0x28, 0x6B, 0x04]));
+        assert!(commands.windows(4).any(|w| w == [0x1D, 0x28, 0x6B, 0x04]));
     }
 
     #[test]

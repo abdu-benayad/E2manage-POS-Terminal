@@ -78,7 +78,14 @@ fn test_support_service_new() {
 
 #[test]
 fn test_support_service_default() {
-    let service = SupportService::default();
+    // Constructed through the `Default` bound rather than `SupportService::default()`:
+    // the direct call on a unit struct is what `clippy::default_constructed_unit_structs`
+    // flags, and the generic position is the only place the impl actually earns its keep.
+    fn default_of<T: Default>() -> T {
+        T::default()
+    }
+
+    let service: SupportService = default_of();
     let contact = service.get_contact_info();
     assert!(!contact.email.is_empty());
 }
