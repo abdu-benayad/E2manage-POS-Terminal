@@ -8,7 +8,7 @@
 
 mod common;
 
-use common::TestApp;
+use common::{op_id, op_name, TestApp};
 use e2manage_pos_terminal::models::transaction::TransactionStatus;
 use e2manage_pos_terminal::models::OperatorRole;
 use rust_decimal::Decimal;
@@ -23,15 +23,15 @@ fn test_complete_cash_sale_workflow() {
     app.seed_test_data();
 
     // 1. VERIFY OPERATOR PIN (simulates login)
-    let pin_result = app.auth_service.verify_pin_sync("op-001", "1234");
+    let pin_result = app.auth_service.verify_pin_sync(&op_id("op-001"), "1234");
     assert!(pin_result.is_ok());
     let pin_result = pin_result.unwrap();
     assert!(pin_result.valid);
-    assert_eq!(pin_result.operator_name, "أحمد محمد");
+    assert_eq!(pin_result.operator_name, Some(op_name("أحمد محمد")));
     assert_eq!(pin_result.operator_role, Some(OperatorRole::Cashier));
 
     // 2. CREATE SHIFT (using direct DB to avoid async)
-    let shift_id = app.create_shift("shift-001", "op-001", Decimal::from(500));
+    let shift_id = app.create_shift("shift-001", &op_id("op-001"), Decimal::from(500));
     assert!(!shift_id.is_empty());
 
     // 3. SEARCH PRODUCT
@@ -57,8 +57,8 @@ fn test_complete_cash_sale_workflow() {
         "LYD",
         &shift_id,
         "TERM-001",
-        "op-001",
-        "أحمد محمد",
+        &op_id("op-001"),
+        &op_name("أحمد محمد"),
     );
     assert!(txn_result.is_ok());
 
@@ -81,7 +81,7 @@ fn test_complete_cash_sale_workflow() {
     // 7. VERIFY TRANSACTION STATE
     assert!(!txn.transaction_number.is_empty());
     assert_eq!(txn.payments.len(), 1);
-    assert_eq!(txn.operator_id, "op-001");
+    assert_eq!(txn.operator_id, op_id("op-001"));
     assert_eq!(txn.shift_id, shift_id);
 
     // 8. CLEAR CART FOR NEXT CUSTOMER
@@ -101,10 +101,13 @@ fn test_split_payment_workflow() {
     app.seed_test_data();
 
     // Setup: Login and create shift
-    let pin_result = app.auth_service.verify_pin_sync("op-001", "1234").unwrap();
+    let pin_result = app
+        .auth_service
+        .verify_pin_sync(&op_id("op-001"), "1234")
+        .unwrap();
     assert!(pin_result.valid);
 
-    let shift_id = app.create_shift("shift-002", "op-001", Decimal::from(500));
+    let shift_id = app.create_shift("shift-002", &op_id("op-001"), Decimal::from(500));
 
     // Add multiple products to cart (use SKU to avoid FTS5 hyphen issue)
     let result1 = app.product_service.search("SKU001", 10).unwrap();
@@ -126,7 +129,14 @@ fn test_split_payment_workflow() {
 
     // Create transaction
     app.transaction_service
-        .create_from_cart(&cart, "LYD", &shift_id, "TERM-001", "op-001", "Operator")
+        .create_from_cart(
+            &cart,
+            "LYD",
+            &shift_id,
+            "TERM-001",
+            &op_id("op-001"),
+            &op_name("Operator"),
+        )
         .unwrap();
 
     let txn = app.transaction_service.get_current().unwrap();
@@ -165,7 +175,7 @@ fn test_card_only_payment_workflow() {
     let app = TestApp::new();
     app.seed_test_data();
 
-    let shift_id = app.create_shift("shift-003", "op-001", Decimal::from(500));
+    let shift_id = app.create_shift("shift-003", &op_id("op-001"), Decimal::from(500));
 
     // Search and add product
     let result = app.product_service.search("SKU005", 10).unwrap();
@@ -177,7 +187,14 @@ fn test_card_only_payment_workflow() {
 
     // Create transaction
     app.transaction_service
-        .create_from_cart(&cart, "LYD", &shift_id, "TERM-001", "op-001", "Operator")
+        .create_from_cart(
+            &cart,
+            "LYD",
+            &shift_id,
+            "TERM-001",
+            &op_id("op-001"),
+            &op_name("Operator"),
+        )
         .unwrap();
 
     let txn = app.transaction_service.get_current().unwrap();
@@ -205,7 +222,7 @@ fn test_multiple_items_transaction() {
     let app = TestApp::new();
     app.seed_test_data();
 
-    let shift_id = app.create_shift("shift-004", "op-001", Decimal::from(500));
+    let shift_id = app.create_shift("shift-004", &op_id("op-001"), Decimal::from(500));
 
     // Add products with different quantities (use SKU to avoid FTS5 hyphen issue)
     for i in 1..=5 {
@@ -230,7 +247,14 @@ fn test_multiple_items_transaction() {
 
     // Create and pay transaction
     app.transaction_service
-        .create_from_cart(&cart, "LYD", &shift_id, "TERM-001", "op-001", "Operator")
+        .create_from_cart(
+            &cart,
+            "LYD",
+            &shift_id,
+            "TERM-001",
+            &op_id("op-001"),
+            &op_name("Operator"),
+        )
         .unwrap();
 
     let txn = app.transaction_service.get_current().unwrap();
@@ -254,7 +278,7 @@ fn test_barcode_lookup_and_sale() {
     let app = TestApp::new();
     app.seed_test_data();
 
-    let shift_id = app.create_shift("shift-005", "op-001", Decimal::from(500));
+    let shift_id = app.create_shift("shift-005", &op_id("op-001"), Decimal::from(500));
 
     // Lookup by barcode (barcode format: 1000000000001 for prod-001)
     let result = app.product_service.lookup_barcode("1000000000001");
@@ -269,7 +293,14 @@ fn test_barcode_lookup_and_sale() {
     let cart = app.cart_service.get_cart();
 
     app.transaction_service
-        .create_from_cart(&cart, "LYD", &shift_id, "TERM-001", "op-001", "Operator")
+        .create_from_cart(
+            &cart,
+            "LYD",
+            &shift_id,
+            "TERM-001",
+            &op_id("op-001"),
+            &op_name("Operator"),
+        )
         .unwrap();
 
     let txn = app.transaction_service.get_current().unwrap();
@@ -295,7 +326,7 @@ fn test_discount_application_workflow() {
     let app = TestApp::new();
     app.seed_test_data();
 
-    let shift_id = app.create_shift("shift-006", "op-001", Decimal::from(500));
+    let shift_id = app.create_shift("shift-006", &op_id("op-001"), Decimal::from(500));
 
     // Add product
     let result = app.product_service.search("SKU001", 10).unwrap();
@@ -322,8 +353,8 @@ fn test_discount_application_workflow() {
             "LYD",
             &shift_id,
             "TERM-001",
-            "op-001",
-            "Operator",
+            &op_id("op-001"),
+            &op_name("Operator"),
         )
         .unwrap();
 

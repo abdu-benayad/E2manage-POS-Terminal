@@ -53,6 +53,7 @@ use pos_db::Database;
 use pos_models::transaction::{
     Payment, PaymentMethod, Transaction, TransactionItem, TransactionStatus,
 };
+use pos_models::{OperatorId, RecordedOperatorName};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -485,7 +486,7 @@ impl ReturnService {
                         customer_id: row.get(9)?,
                         customer_name: row.get(10)?,
                         shift_id: row.get(11)?,
-                        operator_id: row.get(12)?,
+                        operator_id: pos_db::column::optional_operator_id(row, 12)?,
                         terminal_id: row.get(13)?,
                         receipt_number: row.get(14)?,
                         notes: row.get(15)?,
@@ -541,8 +542,8 @@ impl ReturnService {
             customer_name: Option<String>,
             shift_id: String,
             terminal_id: String,
-            operator_id: String,
-            operator_name: String,
+            operator_id: OperatorId,
+            operator_name: RecordedOperatorName,
             status: String,
             created_at: String,
             completed_at: Option<String>,
@@ -658,7 +659,7 @@ impl ReturnService {
                         shift_id: dto.shift_id,
                         terminal_id: dto.terminal_id,
                         operator_id: dto.operator_id,
-                        operator_name: dto.operator_name,
+                        operator_name: Some(dto.operator_name),
                         status: dto.status.parse().unwrap_or(TransactionStatus::Completed),
                         created_at,
                         completed_at,
@@ -713,8 +714,18 @@ impl ReturnService {
             customer_name: row.customer_name.clone(),
             shift_id: row.shift_id.clone().unwrap_or_default(),
             terminal_id: row.terminal_id.clone().unwrap_or_default(),
-            operator_id: row.operator_id.clone().unwrap_or_default(),
-            operator_name: String::new(),
+            // The row's `operator_id` is nullable and a transaction's is not. A queued
+            // transaction with no operator cannot be rebuilt into one, and saying so is the
+            // point: `unwrap_or_default()` used to turn it into a transaction rung by nobody.
+            // `operator_name` has no column at all, so the reconstruction reports the absence
+            // rather than inventing an empty name.
+            operator_id: row.operator_id.clone().ok_or_else(|| {
+                ReturnError::DatabaseError(format!(
+                    "offline transaction {} has no operator_id and cannot be rebuilt",
+                    row.offline_id
+                ))
+            })?,
+            operator_name: None,
             status,
             created_at,
             completed_at: Some(created_at),
@@ -827,20 +838,21 @@ impl ReturnService {
     /// Processes a return transaction
     ///
     /// Creates a return transaction, calculates refund, and syncs to server
-    // Four adjacent `&str` parameters are freely swappable at the call site; that is the
-    // defect, not the count. `type-driven-domain-core` task 09 replaces `operator_id` and
-    // `operator_name`, at which point `#[expect]` fails and forces this to be revisited.
+    // Task 09 typed `operator_id` and `operator_name`, so neither is swappable any more.
+    // `shift_id` and `terminal_id` remain adjacent `&str` and remain swappable; they belong to a
+    // later tier of `type-driven-domain-core`. The arity is unchanged, so the `expect` holds.
     #[expect(
         clippy::too_many_arguments,
-        reason = "signature is rewritten by type-driven-domain-core task 09 (adopt OperatorId)"
+        reason = "eight parameters; the two identity ones are typed, the rest belong to later \
+                  tiers of type-driven-domain-core"
     )]
     pub async fn process_return(
         &self,
         original_txn: &Transaction,
         items: &[ReturnItem],
         refund_method: RefundMethod,
-        operator_id: &str,
-        operator_name: &str,
+        operator_id: &OperatorId,
+        operator_name: &RecordedOperatorName,
         shift_id: &str,
         terminal_id: &str,
     ) -> ReturnServiceResult<ReturnResult> {
@@ -921,8 +933,8 @@ impl ReturnService {
             customer_name: original_txn.customer_name.clone(),
             shift_id: shift_id.to_string(),
             terminal_id: terminal_id.to_string(),
-            operator_id: operator_id.to_string(),
-            operator_name: operator_name.to_string(),
+            operator_id: operator_id.clone(),
+            operator_name: Some(operator_name.clone()),
             status: TransactionStatus::Completed,
             created_at: Utc::now(),
             completed_at: Some(Utc::now()),
@@ -1048,7 +1060,7 @@ impl ReturnService {
             items: Vec<ReturnItemRequest>,
             refund_method: String,
             refund_amount: Decimal,
-            operator_id: String,
+            operator_id: OperatorId,
             terminal_id: String,
             shift_id: String,
         }
@@ -1119,6 +1131,14 @@ mod tests {
     use pos_models::product::{Product, ProductUnit};
     use rust_decimal::Decimal;
 
+    fn op_id(id: &str) -> OperatorId {
+        OperatorId::new(id).expect("a fixture id is never blank")
+    }
+
+    fn op_name(name: &str) -> RecordedOperatorName {
+        RecordedOperatorName::new(name).expect("a fixture name is never blank")
+    }
+
     fn create_test_product() -> Product {
         Product {
             id: "prod-001".to_string(),
@@ -1140,7 +1160,14 @@ mod tests {
         cart.items.push(CartItem::new(&product, Decimal::from(2)));
         cart.recalculate();
 
-        Transaction::from_cart(&cart, "LYD", "shift-1", "TERM-001", "op-1", "Ahmed")
+        Transaction::from_cart(
+            &cart,
+            "LYD",
+            "shift-1",
+            "TERM-001",
+            op_id("op-1"),
+            op_name("Ahmed"),
+        )
     }
 
     #[test]

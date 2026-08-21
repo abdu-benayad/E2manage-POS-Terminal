@@ -36,7 +36,14 @@ fn test_create_transaction_from_cart() {
     cart_service.add_item(&product, Decimal::from(2)).unwrap();
     let cart = cart_service.get_cart();
 
-    let result = service.create_from_cart(&cart, "LYD", "shift-1", "TERM-001", "op-1", "Ahmed");
+    let result = service.create_from_cart(
+        &cart,
+        "LYD",
+        "shift-1",
+        "TERM-001",
+        &op_id("op-1"),
+        &op_name("Ahmed"),
+    );
     assert!(result.is_ok());
 
     let txn = service.get_current();
@@ -45,7 +52,7 @@ fn test_create_transaction_from_cart() {
     assert_eq!(txn.items.len(), 1);
     assert_eq!(txn.status, TransactionStatus::Draft);
     assert_eq!(txn.shift_id, "shift-1");
-    assert_eq!(txn.operator_id, "op-1");
+    assert_eq!(txn.operator_id, op_id("op-1"));
 }
 
 #[test]
@@ -53,7 +60,14 @@ fn test_create_from_empty_cart_fails() {
     let service = setup_transaction_service();
     let cart = e2manage_pos_terminal::models::Cart::new();
 
-    let result = service.create_from_cart(&cart, "LYD", "shift-1", "TERM-001", "op-1", "Ahmed");
+    let result = service.create_from_cart(
+        &cart,
+        "LYD",
+        "shift-1",
+        "TERM-001",
+        &op_id("op-1"),
+        &op_name("Ahmed"),
+    );
     assert!(matches!(result, Err(TransactionError::EmptyTransaction)));
 }
 
@@ -76,8 +90,8 @@ fn test_clear_current() {
             "LYD",
             "shift-1",
             "TERM-001",
-            "op-1",
-            "Ahmed",
+            &op_id("op-1"),
+            &op_name("Ahmed"),
         )
         .unwrap();
 
@@ -104,8 +118,8 @@ fn test_add_cash_payment() {
             "LYD",
             "shift-1",
             "TERM-001",
-            "op-1",
-            "Ahmed",
+            &op_id("op-1"),
+            &op_name("Ahmed"),
         )
         .unwrap();
 
@@ -128,8 +142,8 @@ fn test_add_card_payment() {
             "LYD",
             "shift-1",
             "TERM-001",
-            "op-1",
-            "Ahmed",
+            &op_id("op-1"),
+            &op_name("Ahmed"),
         )
         .unwrap();
 
@@ -151,8 +165,8 @@ fn test_split_payment() {
             "LYD",
             "shift-1",
             "TERM-001",
-            "op-1",
-            "Ahmed",
+            &op_id("op-1"),
+            &op_name("Ahmed"),
         )
         .unwrap();
 
@@ -181,8 +195,8 @@ fn test_change_calculation() {
             "LYD",
             "shift-1",
             "TERM-001",
-            "op-1",
-            "Ahmed",
+            &op_id("op-1"),
+            &op_name("Ahmed"),
         )
         .unwrap();
 
@@ -214,8 +228,8 @@ fn test_remaining_and_change() {
             "LYD",
             "shift-1",
             "TERM-001",
-            "op-1",
-            "Ahmed",
+            &op_id("op-1"),
+            &op_name("Ahmed"),
         )
         .unwrap();
 
@@ -251,8 +265,8 @@ fn test_void_transaction() {
             "LYD",
             "shift-1",
             "TERM-001",
-            "op-1",
-            "Ahmed",
+            &op_id("op-1"),
+            &op_name("Ahmed"),
         )
         .unwrap();
 
@@ -286,8 +300,8 @@ fn test_is_fully_paid_initial() {
             "LYD",
             "shift-1",
             "TERM-001",
-            "op-1",
-            "Ahmed",
+            &op_id("op-1"),
+            &op_name("Ahmed"),
         )
         .unwrap();
 

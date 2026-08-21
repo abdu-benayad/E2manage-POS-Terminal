@@ -36,7 +36,7 @@
 
 use anyhow::{Context, Result};
 use pos_escpos::{CodePage, EscPos};
-use pos_models::{PaymentMethod, Transaction};
+use pos_models::{PaymentMethod, RecordedOperatorName, Transaction};
 use rust_decimal::prelude::*;
 use rust_decimal::Decimal;
 use tracing::info;
@@ -105,8 +105,13 @@ impl Default for PrinterConfig {
 pub struct ShiftReport {
     /// Shift number/ID
     pub shift_number: String,
-    /// Operator name
-    pub operator_name: String,
+    /// The operator's name as recorded on the shift, when it is known.
+    ///
+    /// Optional because the `shifts` table stores only `operator_id`, and the two callers that
+    /// build a report do not yet run the lookup (both marked `// Would need lookup`). When it is
+    /// absent the operator line is omitted rather than printed blank — a report that cannot say
+    /// who ran the shift should not print an empty claim that it can.
+    pub operator_name: Option<RecordedOperatorName>,
     /// Terminal ID
     pub terminal_id: String,
     /// When shift started
@@ -293,7 +298,9 @@ impl PrintService {
         } else {
             "Cashier:"
         };
-        esc.two_col(cashier_label, &txn.operator_name, w);
+        if let Some(operator_name) = &txn.operator_name {
+            esc.two_col(cashier_label, operator_name.as_str(), w);
+        }
 
         // Terminal
         let terminal_label = if is_arabic {
@@ -598,7 +605,9 @@ impl PrintService {
         } else {
             "Operator:"
         };
-        esc.two_col(operator_label, &report.operator_name, w);
+        if let Some(operator_name) = &report.operator_name {
+            esc.two_col(operator_label, operator_name.as_str(), w);
+        }
 
         let terminal_label = if is_arabic {
             "الجهاز:"
@@ -846,7 +855,9 @@ impl PrintService {
         } else {
             "Operator:"
         };
-        esc.two_col(operator_label, &report.operator_name, w);
+        if let Some(operator_name) = &report.operator_name {
+            esc.two_col(operator_label, operator_name.as_str(), w);
+        }
 
         let terminal_label = if is_arabic {
             "الجهاز:"
@@ -1233,6 +1244,14 @@ mod tests {
     use pos_models::{Cart, CartItem, Product, ProductUnit, Transaction};
     use rust_decimal::Decimal;
 
+    fn op_id(id: &str) -> pos_models::OperatorId {
+        pos_models::OperatorId::new(id).expect("a non-blank id")
+    }
+
+    fn recorded(name: &str) -> RecordedOperatorName {
+        RecordedOperatorName::new(name).expect("a non-blank name")
+    }
+
     fn create_test_product() -> Product {
         Product {
             id: "prod-001".to_string(),
@@ -1258,8 +1277,14 @@ mod tests {
 
     fn create_test_transaction() -> Transaction {
         let cart = create_test_cart();
-        let mut txn =
-            Transaction::from_cart(&cart, "LYD", "shift-1", "TERM-001", "op-1", "Ahmed Mohamed");
+        let mut txn = Transaction::from_cart(
+            &cart,
+            "LYD",
+            "shift-1",
+            "TERM-001",
+            op_id("op-1"),
+            recorded("Ahmed Mohamed"),
+        );
         txn.add_cash_payment(Decimal::from(30));
         txn.set_receipt_number("RCP-001");
         txn
@@ -1268,7 +1293,7 @@ mod tests {
     fn create_test_shift_report() -> ShiftReport {
         ShiftReport {
             shift_number: "SH-2024-001".to_string(),
-            operator_name: "Ahmed Mohamed".to_string(),
+            operator_name: Some(RecordedOperatorName::new("Ahmed Mohamed").unwrap()),
             terminal_id: "TERM-001".to_string(),
             start_time: "2024-12-12 08:00".to_string(),
             end_time: Some("2024-12-12 16:00".to_string()),
@@ -1443,7 +1468,14 @@ mod tests {
     #[test]
     fn test_receipt_with_customer() {
         let cart = create_test_cart();
-        let mut txn = Transaction::from_cart(&cart, "LYD", "shift-1", "TERM-001", "op-1", "Ahmed");
+        let mut txn = Transaction::from_cart(
+            &cart,
+            "LYD",
+            "shift-1",
+            "TERM-001",
+            op_id("op-1"),
+            recorded("Ahmed"),
+        );
         txn.customer_id = Some("cust-001".to_string());
         txn.customer_name = Some("John Doe".to_string());
         txn.add_cash_payment(Decimal::from(30));
@@ -1459,7 +1491,14 @@ mod tests {
     #[test]
     fn test_receipt_with_card_payment() {
         let cart = create_test_cart();
-        let mut txn = Transaction::from_cart(&cart, "LYD", "shift-1", "TERM-001", "op-1", "Ahmed");
+        let mut txn = Transaction::from_cart(
+            &cart,
+            "LYD",
+            "shift-1",
+            "TERM-001",
+            op_id("op-1"),
+            recorded("Ahmed"),
+        );
         txn.add_card_payment(Decimal::from(23), "1234", "VISA", "AUTH123");
 
         let service = PrintService::console_only();
@@ -1479,7 +1518,14 @@ mod tests {
         cart.items.push(item);
         cart.recalculate();
 
-        let mut txn = Transaction::from_cart(&cart, "LYD", "shift-1", "TERM-001", "op-1", "Ahmed");
+        let mut txn = Transaction::from_cart(
+            &cart,
+            "LYD",
+            "shift-1",
+            "TERM-001",
+            op_id("op-1"),
+            recorded("Ahmed"),
+        );
         txn.add_cash_payment(Decimal::from(30));
 
         let service = PrintService::console_only();

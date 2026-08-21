@@ -20,7 +20,7 @@
 //! let service = DraftService::new(Arc::new(db));
 //!
 //! // Save current cart as draft
-//! let draft = service.save_cart(&cart, Some("Ahmed's order"), "op-1", "shift-1")?;
+//! let draft = service.save_cart(&cart, Some("Ahmed's order"), &op_id("op-1"), "shift-1")?;
 //! println!("Saved draft: {} ({})", draft.name, draft.id);
 //!
 //! // Get all drafts for current shift
@@ -37,6 +37,7 @@
 //! ```
 
 use chrono::{DateTime, Duration, Utc};
+use pos_models::OperatorId;
 use rust_decimal::prelude::*;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -112,7 +113,7 @@ pub struct Draft {
     /// Customer name for display
     pub customer_name: Option<String>,
     /// Operator who created the draft
-    pub operator_id: Option<String>,
+    pub operator_id: Option<OperatorId>,
     /// Shift when draft was created
     pub shift_id: Option<String>,
     /// When the draft was created
@@ -126,7 +127,7 @@ impl Draft {
     pub fn from_cart(
         cart: &Cart,
         name: Option<String>,
-        operator_id: Option<String>,
+        operator_id: Option<OperatorId>,
         shift_id: Option<String>,
         expiry_hours: Option<i64>,
     ) -> Self {
@@ -299,7 +300,7 @@ impl DraftService {
         &self,
         cart: &Cart,
         name: Option<String>,
-        operator_id: &str,
+        operator_id: &OperatorId,
         shift_id: &str,
     ) -> DraftResult<Draft> {
         self.save_cart_with_expiry(
@@ -316,7 +317,7 @@ impl DraftService {
         &self,
         cart: &Cart,
         name: Option<String>,
-        operator_id: &str,
+        operator_id: &OperatorId,
         shift_id: &str,
         expiry_hours: Option<i64>,
     ) -> DraftResult<Draft> {
@@ -335,7 +336,7 @@ impl DraftService {
         let draft = Draft::from_cart(
             cart,
             name,
-            Some(operator_id.to_string()),
+            Some(operator_id.clone()),
             Some(shift_id.to_string()),
             expiry_hours,
         );
@@ -393,7 +394,7 @@ impl DraftService {
     }
 
     /// Lists drafts for a specific operator
-    pub fn list_by_operator(&self, operator_id: &str) -> DraftResult<Vec<Draft>> {
+    pub fn list_by_operator(&self, operator_id: &OperatorId) -> DraftResult<Vec<Draft>> {
         let rows = self
             .db
             .get_drafts_by_operator(operator_id)
@@ -420,7 +421,7 @@ impl DraftService {
     }
 
     /// Counts drafts for an operator
-    pub fn count_by_operator(&self, operator_id: &str) -> DraftResult<usize> {
+    pub fn count_by_operator(&self, operator_id: &OperatorId) -> DraftResult<usize> {
         Ok(self.list_by_operator(operator_id)?.len())
     }
 
@@ -462,6 +463,10 @@ mod tests {
     use pos_db::migrations::run_migrations;
     use pos_models::product::{Product, ProductUnit};
     use rust_decimal::Decimal;
+
+    fn op_id(id: &str) -> OperatorId {
+        OperatorId::new(id).expect("a fixture id is never blank")
+    }
 
     fn setup_db() -> Database {
         let db = Database::in_memory().unwrap();
@@ -515,7 +520,12 @@ mod tests {
 
         let cart = create_test_cart();
         let draft = service
-            .save_cart(&cart, Some("Test Draft".to_string()), "op-1", "shift-1")
+            .save_cart(
+                &cart,
+                Some("Test Draft".to_string()),
+                &op_id("op-1"),
+                "shift-1",
+            )
             .unwrap();
 
         assert_eq!(draft.name, Some("Test Draft".to_string()));
@@ -530,7 +540,7 @@ mod tests {
         let service = DraftService::new(db);
 
         let cart = Cart::new();
-        let result = service.save_cart(&cart, None, "op-1", "shift-1");
+        let result = service.save_cart(&cart, None, &op_id("op-1"), "shift-1");
 
         assert!(matches!(result, Err(DraftError::EmptyCart)));
     }
@@ -542,7 +552,9 @@ mod tests {
         let service = DraftService::new(db);
 
         let cart = create_test_cart();
-        let draft = service.save_cart(&cart, None, "op-1", "shift-1").unwrap();
+        let draft = service
+            .save_cart(&cart, None, &op_id("op-1"), "shift-1")
+            .unwrap();
 
         let recalled_cart = service.recall(&draft.id).unwrap();
 
@@ -560,7 +572,9 @@ mod tests {
         let service = DraftService::new(db);
 
         let cart = create_test_cart();
-        let draft = service.save_cart(&cart, None, "op-1", "shift-1").unwrap();
+        let draft = service
+            .save_cart(&cart, None, &op_id("op-1"), "shift-1")
+            .unwrap();
         let draft_id = draft.id.clone();
 
         let _recalled = service.recall_and_delete(&draft_id).unwrap();
@@ -581,17 +595,32 @@ mod tests {
 
         // Create drafts for different operators
         service
-            .save_cart(&cart, Some("Draft 1".to_string()), "op-1", "shift-1")
+            .save_cart(
+                &cart,
+                Some("Draft 1".to_string()),
+                &op_id("op-1"),
+                "shift-1",
+            )
             .unwrap();
         service
-            .save_cart(&cart, Some("Draft 2".to_string()), "op-1", "shift-1")
+            .save_cart(
+                &cart,
+                Some("Draft 2".to_string()),
+                &op_id("op-1"),
+                "shift-1",
+            )
             .unwrap();
         service
-            .save_cart(&cart, Some("Draft 3".to_string()), "op-2", "shift-1")
+            .save_cart(
+                &cart,
+                Some("Draft 3".to_string()),
+                &op_id("op-2"),
+                "shift-1",
+            )
             .unwrap();
 
-        let op1_drafts = service.list_by_operator("op-1").unwrap();
-        let op2_drafts = service.list_by_operator("op-2").unwrap();
+        let op1_drafts = service.list_by_operator(&op_id("op-1")).unwrap();
+        let op2_drafts = service.list_by_operator(&op_id("op-2")).unwrap();
 
         assert_eq!(op1_drafts.len(), 2);
         assert_eq!(op2_drafts.len(), 1);
@@ -606,9 +635,15 @@ mod tests {
         let cart = create_test_cart();
 
         // Create drafts for different shifts
-        service.save_cart(&cart, None, "op-1", "shift-1").unwrap();
-        service.save_cart(&cart, None, "op-1", "shift-1").unwrap();
-        service.save_cart(&cart, None, "op-1", "shift-2").unwrap();
+        service
+            .save_cart(&cart, None, &op_id("op-1"), "shift-1")
+            .unwrap();
+        service
+            .save_cart(&cart, None, &op_id("op-1"), "shift-1")
+            .unwrap();
+        service
+            .save_cart(&cart, None, &op_id("op-1"), "shift-2")
+            .unwrap();
 
         let shift1_drafts = service.list_by_shift("shift-1").unwrap();
         let shift2_drafts = service.list_by_shift("shift-2").unwrap();
@@ -624,7 +659,9 @@ mod tests {
         let service = DraftService::new(db);
 
         let cart = create_test_cart();
-        let draft = service.save_cart(&cart, None, "op-1", "shift-1").unwrap();
+        let draft = service
+            .save_cart(&cart, None, &op_id("op-1"), "shift-1")
+            .unwrap();
 
         let deleted = service.delete(&draft.id).unwrap();
         assert!(deleted);
@@ -640,7 +677,9 @@ mod tests {
         let service = DraftService::new(db);
 
         let cart = create_test_cart();
-        let draft = service.save_cart(&cart, None, "op-1", "shift-1").unwrap();
+        let draft = service
+            .save_cart(&cart, None, &op_id("op-1"), "shift-1")
+            .unwrap();
 
         let renamed = service
             .rename(&draft.id, Some("New Name".to_string()))
@@ -662,8 +701,12 @@ mod tests {
 
         assert_eq!(service.count_active().unwrap(), 0);
 
-        service.save_cart(&cart, None, "op-1", "shift-1").unwrap();
-        service.save_cart(&cart, None, "op-1", "shift-1").unwrap();
+        service
+            .save_cart(&cart, None, &op_id("op-1"), "shift-1")
+            .unwrap();
+        service
+            .save_cart(&cart, None, &op_id("op-1"), "shift-1")
+            .unwrap();
 
         assert_eq!(service.count_active().unwrap(), 2);
     }
@@ -678,12 +721,19 @@ mod tests {
 
         // Draft with name
         let draft1 = service
-            .save_cart(&cart, Some("My Draft".to_string()), "op-1", "shift-1")
+            .save_cart(
+                &cart,
+                Some("My Draft".to_string()),
+                &op_id("op-1"),
+                "shift-1",
+            )
             .unwrap();
         assert_eq!(draft1.display_name(), "My Draft");
 
         // Draft without name
-        let draft2 = service.save_cart(&cart, None, "op-1", "shift-1").unwrap();
+        let draft2 = service
+            .save_cart(&cart, None, &op_id("op-1"), "shift-1")
+            .unwrap();
         assert_eq!(draft2.display_name(), "Unnamed Draft");
     }
 
@@ -692,13 +742,13 @@ mod tests {
         let cart = create_test_cart();
 
         // Draft with expiry
-        let draft = Draft::from_cart(&cart, None, Some("op-1".to_string()), None, Some(24));
+        let draft = Draft::from_cart(&cart, None, Some(op_id("op-1")), None, Some(24));
         assert!(draft.expires_at.is_some());
         assert!(!draft.is_expired());
         assert!(draft.time_until_expiry().unwrap() > Duration::hours(23));
 
         // Draft without expiry
-        let draft2 = Draft::from_cart(&cart, None, Some("op-1".to_string()), None, None);
+        let draft2 = Draft::from_cart(&cart, None, Some(op_id("op-1")), None, None);
         assert!(draft2.expires_at.is_none());
         assert!(!draft2.is_expired());
     }
@@ -714,12 +764,22 @@ mod tests {
         // Create max drafts
         for i in 0..MAX_DRAFTS_PER_OPERATOR {
             service
-                .save_cart(&cart, Some(format!("Draft {}", i)), "op-1", "shift-1")
+                .save_cart(
+                    &cart,
+                    Some(format!("Draft {}", i)),
+                    &op_id("op-1"),
+                    "shift-1",
+                )
                 .unwrap();
         }
 
         // Try to create one more
-        let result = service.save_cart(&cart, Some("Extra Draft".to_string()), "op-1", "shift-1");
+        let result = service.save_cart(
+            &cart,
+            Some("Extra Draft".to_string()),
+            &op_id("op-1"),
+            "shift-1",
+        );
         assert!(matches!(result, Err(DraftError::LimitExceeded(_))));
     }
 
@@ -734,7 +794,9 @@ mod tests {
         cart.recalculate();
         let original_total = cart.grand_total;
 
-        let draft = service.save_cart(&cart, None, "op-1", "shift-1").unwrap();
+        let draft = service
+            .save_cart(&cart, None, &op_id("op-1"), "shift-1")
+            .unwrap();
         let recalled = service.recall(&draft.id).unwrap();
 
         assert_eq!(recalled.cart_discount_percent, Decimal::from(10));

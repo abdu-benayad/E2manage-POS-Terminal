@@ -190,6 +190,76 @@ impl fmt::Display for OperatorName {
     }
 }
 
+/// An operator's name as it was written onto a document — a receipt, a shift report, a parked
+/// cart, a shared draft.
+///
+/// **Not the same concept as [`OperatorName`], and deliberately a different type.** Two facts
+/// separate them:
+///
+/// - **One script, because every place that keeps one has room for one.** `shared_drafts
+///   .operator_name` is a single `TEXT` column and the platform's cart API sends a single JSON
+///   string; the `shifts`, `drafts` and `offline_transactions` tables keep no name at all. If a
+///   document held an [`OperatorName`], its Arabic half would be present in memory and absent
+///   after a save, and nothing could tell that apart from an operator who has no Arabic name.
+///   Widening those columns is tier 3a's problem; this type states the constraint rather than
+///   hiding it.
+/// - **It is a snapshot, not a reference.** The operator may be renamed afterwards, and a receipt
+///   reprinted next year has to say what it said. An id points at whoever the operator is now; a
+///   recorded name says who they were then. Both belong on a financial record, for that reason.
+///
+/// Serialized as a bare string, which is what the single column and the single JSON field hold.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct RecordedOperatorName(String);
+
+impl RecordedOperatorName {
+    /// Records a name onto a document, rejecting a blank one.
+    pub fn new(name: impl Into<String>) -> Result<Self, OperatorError> {
+        let name = name.into();
+        if name.trim().is_empty() {
+            Err(OperatorError::BlankName)
+        } else {
+            Ok(Self(name))
+        }
+    }
+
+    /// The recorded name.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl OperatorName {
+    /// Takes the snapshot a document keeps, in the script the till was rendering.
+    ///
+    /// The script is a parameter because the choice is real: a receipt printed in Arabic should
+    /// record the Arabic spelling, and nothing else in the system can make that call afterwards
+    /// from a single column.
+    pub fn recorded_in(&self, script: NameScript) -> RecordedOperatorName {
+        RecordedOperatorName(self.in_script(script).to_string())
+    }
+}
+
+impl TryFrom<String> for RecordedOperatorName {
+    type Error = OperatorError;
+
+    fn try_from(name: String) -> Result<Self, Self::Error> {
+        Self::new(name)
+    }
+}
+
+impl From<RecordedOperatorName> for String {
+    fn from(name: RecordedOperatorName) -> Self {
+        name.0
+    }
+}
+
+impl fmt::Display for RecordedOperatorName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
 // ============================================================================
 // OperatorRole
 // ============================================================================
@@ -715,6 +785,36 @@ mod tests {
     fn operator_name_treats_a_blank_arabic_name_as_absent() {
         let name = OperatorName::new("Ahmed Hassan", Some("   ")).unwrap();
         assert_eq!(name.arabic(), None);
+    }
+
+    #[test]
+    fn operator_recorded_name_snapshots_the_script_the_till_rendered() {
+        let name = OperatorName::new("Ahmed Hassan", Some("أحمد حسن")).unwrap();
+
+        assert_eq!(name.recorded_in(NameScript::Arabic).as_str(), "أحمد حسن");
+        assert_eq!(name.recorded_in(NameScript::Latin).as_str(), "Ahmed Hassan");
+    }
+
+    #[test]
+    fn operator_recorded_name_round_trips_as_a_bare_string() {
+        // A single TEXT column and a single JSON field are what actually hold one of these.
+        let recorded = RecordedOperatorName::new("Ahmed Hassan").unwrap();
+        let json = serde_json::to_string(&recorded).unwrap();
+
+        assert_eq!(json, "\"Ahmed Hassan\"");
+        assert_eq!(
+            serde_json::from_str::<RecordedOperatorName>(&json).unwrap(),
+            recorded
+        );
+    }
+
+    #[test]
+    fn operator_recorded_name_rejects_a_blank_snapshot() {
+        assert_eq!(
+            RecordedOperatorName::new("  "),
+            Err(OperatorError::BlankName)
+        );
+        assert!(serde_json::from_str::<RecordedOperatorName>("\"\"").is_err());
     }
 
     #[test]

@@ -7,6 +7,8 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+use pos_models::OperatorId;
+
 // ============================================================================
 // REQUEST TYPES
 // ============================================================================
@@ -59,7 +61,7 @@ pub struct HeartbeatRequest {
     pub current_shift_id: Option<String>,
     /// Current operator ID (if logged in)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub current_operator_id: Option<String>,
+    pub current_operator_id: Option<OperatorId>,
 }
 
 /// Operator PIN verification request
@@ -67,8 +69,13 @@ pub struct HeartbeatRequest {
 #[serde(rename_all = "camelCase")]
 pub struct VerifyPinRequest {
     /// Operator ID
-    pub operator_id: String,
+    pub operator_id: OperatorId,
     /// PIN to verify
+    ///
+    /// Still a `String`, and still inside a derived `Debug`. `pos_models::Pin` exists to close
+    /// that (`05-pin-and-pin-policy`); wiring it here is `auth-outcome-and-offline-lockout`'s
+    /// work, because the PIN has to reach this struct from a policy-aware parse rather than as a
+    /// bare string handed down from a caller.
     pub pin: String,
 }
 
@@ -413,11 +420,11 @@ impl ApiClient {
     /// Verification result
     pub async fn verify_operator_pin(
         &self,
-        operator_id: &str,
+        operator_id: &OperatorId,
         pin: &str,
     ) -> Result<VerifyPinResponse> {
         let request = VerifyPinRequest {
-            operator_id: operator_id.to_string(),
+            operator_id: operator_id.clone(),
             pin: pin.to_string(),
         };
 

@@ -209,7 +209,10 @@ impl ZReportService {
                     id: row.id.clone(),
                     shift_number: row.shift_number.clone(),
                     operator_id: row.operator_id.clone(),
-                    operator_name: String::new(), // Would need lookup
+                    // The `shifts` table keeps no name column, so this report genuinely
+                    // does not know it. `None` reports that; `String::new()` claimed the
+                    // operator was called "".
+                    operator_name: None,
                     terminal_id: row.terminal_id.clone().unwrap_or_default(),
                     opening_cash: row.opening_cash,
                     expected_cash: row.expected_cash.unwrap_or(row.opening_cash),

@@ -9,7 +9,10 @@ use rusqlite::{params, OptionalExtension, Result as SqliteResult};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
+use pos_models::OperatorId;
+
 use super::Database;
+use crate::column;
 use crate::parse::ParseError;
 use crate::{decimal_from_sqlite, decimal_to_sqlite};
 
@@ -49,7 +52,7 @@ impl FromStr for ShiftStatus {
 pub struct ShiftRow {
     pub id: String,
     pub shift_number: String,
-    pub operator_id: String,
+    pub operator_id: OperatorId,
     pub terminal_id: Option<String>,
     pub opening_cash: Decimal,
     pub closing_cash: Option<Decimal>,
@@ -63,32 +66,17 @@ pub struct ShiftRow {
     pub notes: Option<String>,
 }
 
-impl Default for ShiftRow {
-    fn default() -> Self {
-        Self {
-            id: String::new(),
-            shift_number: String::new(),
-            operator_id: String::new(),
-            terminal_id: None,
-            opening_cash: Decimal::ZERO,
-            closing_cash: None,
-            expected_cash: None,
-            variance: None,
-            started_at: String::new(),
-            ended_at: None,
-            status: "ACTIVE".to_string(),
-            sync_status: "PENDING".to_string(),
-            server_id: None,
-            notes: None,
-        }
-    }
-}
+// There is deliberately no `impl Default for ShiftRow`.
+//
+// The one it replaces gave a shift an empty `operator_id` and a status of `ACTIVE`, so
+// `ShiftRow::default()` was an open shift belonging to nobody. `shifts.operator_id` is
+// `NOT NULL`; there is no such row to model. Nothing called it.
 
 fn read_shift_row(row: &rusqlite::Row) -> rusqlite::Result<ShiftRow> {
     Ok(ShiftRow {
         id: row.get(0)?,
         shift_number: row.get(1)?,
-        operator_id: row.get(2)?,
+        operator_id: column::operator_id(row, 2)?,
         terminal_id: row.get(3)?,
         opening_cash: decimal_from_sqlite(row.get::<_, f64>(4)?),
         closing_cash: row.get::<_, Option<f64>>(5)?.map(decimal_from_sqlite),
@@ -119,7 +107,7 @@ impl Database {
             &[
                 &shift.id,
                 &shift.shift_number,
-                &shift.operator_id,
+                &shift.operator_id.as_str(),
                 &shift.terminal_id,
                 &opening_cash,
                 &closing_cash,
@@ -152,7 +140,7 @@ impl Database {
     }
 
     /// Gets the active shift for an operator
-    pub fn get_active_shift(&self, operator_id: &str) -> SqliteResult<Option<ShiftRow>> {
+    pub fn get_active_shift(&self, operator_id: &OperatorId) -> SqliteResult<Option<ShiftRow>> {
         let conn = self.connection();
         let conn = conn.lock();
 
@@ -161,7 +149,7 @@ impl Database {
                       expected_cash, variance, started_at, ended_at, status, sync_status, server_id, notes
                FROM shifts WHERE operator_id = ?1 AND status = 'ACTIVE'
                ORDER BY started_at DESC LIMIT 1"#,
-            [operator_id],
+            [operator_id.as_str()],
             read_shift_row,
         )
         .optional()
@@ -188,7 +176,7 @@ impl Database {
         &self,
         id: &str,
         shift_number: &str,
-        operator_id: &str,
+        operator_id: &OperatorId,
         terminal_id: Option<&str>,
         opening_cash: Decimal,
     ) -> SqliteResult<ShiftRow> {
@@ -197,13 +185,18 @@ impl Database {
         let shift = ShiftRow {
             id: id.to_string(),
             shift_number: shift_number.to_string(),
-            operator_id: operator_id.to_string(),
+            operator_id: operator_id.clone(),
             terminal_id: terminal_id.map(String::from),
             opening_cash,
+            closing_cash: None,
+            expected_cash: None,
+            variance: None,
             started_at: now,
+            ended_at: None,
             status: "ACTIVE".to_string(),
             sync_status: "PENDING".to_string(),
-            ..Default::default()
+            server_id: None,
+            notes: None,
         };
 
         self.save_shift(&shift)?;
@@ -326,6 +319,10 @@ mod tests {
     use crate::migrations::run_migrations;
     use crate::operators::OperatorRow;
 
+    fn op_id(id: &str) -> OperatorId {
+        OperatorId::new(id).expect("a non-blank id")
+    }
+
     fn setup_db() -> Database {
         let db = Database::in_memory().unwrap();
         {
@@ -357,7 +354,7 @@ mod tests {
             .start_shift(
                 "shift-1",
                 "T01-20240101-001",
-                "op-1",
+                &op_id("op-1"),
                 Some("term-1"),
                 Decimal::from(100),
             )
@@ -367,7 +364,7 @@ mod tests {
         assert_eq!(shift.opening_cash, Decimal::from(100));
 
         // Get active shift
-        let active = db.get_active_shift("op-1").unwrap();
+        let active = db.get_active_shift(&op_id("op-1")).unwrap();
         assert!(active.is_some());
 
         // End shift
@@ -384,7 +381,7 @@ mod tests {
         assert_eq!(ended.variance, Some(Decimal::from(50)));
 
         // No more active shift
-        let active = db.get_active_shift("op-1").unwrap();
+        let active = db.get_active_shift(&op_id("op-1")).unwrap();
         assert!(active.is_none());
     }
 
@@ -398,7 +395,7 @@ mod tests {
         assert!(num1.ends_with("-001"));
 
         // Create a shift with this number
-        db.start_shift("s1", &num1, "op-1", None, Decimal::ZERO)
+        db.start_shift("s1", &num1, &op_id("op-1"), None, Decimal::ZERO)
             .unwrap();
 
         // Next number should be 002
@@ -412,9 +409,9 @@ mod tests {
         create_test_operator(&db, "op-1");
         create_test_operator(&db, "op-2");
 
-        db.start_shift("s1", "S001", "op-1", None, Decimal::from(100))
+        db.start_shift("s1", "S001", &op_id("op-1"), None, Decimal::from(100))
             .unwrap();
-        db.start_shift("s2", "S002", "op-2", None, Decimal::from(200))
+        db.start_shift("s2", "S002", &op_id("op-2"), None, Decimal::from(200))
             .unwrap();
 
         let pending = db.get_pending_shifts().unwrap();

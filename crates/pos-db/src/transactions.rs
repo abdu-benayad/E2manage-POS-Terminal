@@ -9,7 +9,10 @@ use rusqlite::{OptionalExtension, Result as SqliteResult};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
+use pos_models::OperatorId;
+
 use super::{decimal_from_sqlite, decimal_to_sqlite, Database};
+use crate::column;
 use crate::parse::ParseError;
 
 /// Transaction type
@@ -101,7 +104,7 @@ pub struct OfflineTransactionRow {
     pub customer_id: Option<String>,
     pub customer_name: Option<String>,
     pub shift_id: Option<String>,
-    pub operator_id: Option<String>,
+    pub operator_id: Option<OperatorId>,
     pub terminal_id: Option<String>,
     pub receipt_number: Option<String>,
     pub notes: Option<String>,
@@ -144,7 +147,7 @@ impl Database {
                 &txn.customer_id,
                 &txn.customer_name,
                 &txn.shift_id,
-                &txn.operator_id,
+                &txn.operator_id.as_ref().map(OperatorId::as_str),
                 &txn.terminal_id,
                 &txn.receipt_number,
                 &txn.notes,
@@ -189,7 +192,7 @@ impl Database {
                     customer_id: row.get(9)?,
                     customer_name: row.get(10)?,
                     shift_id: row.get(11)?,
-                    operator_id: row.get(12)?,
+                    operator_id: column::optional_operator_id(row, 12)?,
                     terminal_id: row.get(13)?,
                     receipt_number: row.get(14)?,
                     notes: row.get(15)?,
@@ -236,7 +239,7 @@ impl Database {
                 customer_id: row.get(9)?,
                 customer_name: row.get(10)?,
                 shift_id: row.get(11)?,
-                operator_id: row.get(12)?,
+                operator_id: column::optional_operator_id(row, 12)?,
                 terminal_id: row.get(13)?,
                 receipt_number: row.get(14)?,
                 notes: row.get(15)?,
@@ -354,7 +357,7 @@ impl Database {
                 customer_id: row.get(9)?,
                 customer_name: row.get(10)?,
                 shift_id: row.get(11)?,
-                operator_id: row.get(12)?,
+                operator_id: column::optional_operator_id(row, 12)?,
                 terminal_id: row.get(13)?,
                 receipt_number: row.get(14)?,
                 notes: row.get(15)?,
@@ -437,7 +440,7 @@ impl Database {
                 customer_id: row.get(9)?,
                 customer_name: row.get(10)?,
                 shift_id: row.get(11)?,
-                operator_id: row.get(12)?,
+                operator_id: column::optional_operator_id(row, 12)?,
                 terminal_id: row.get(13)?,
                 receipt_number: row.get(14)?,
                 notes: row.get(15)?,
@@ -541,7 +544,7 @@ mod tests {
             customer_id: None,
             customer_name: None,
             shift_id: None, // Don't use shift FK in tests
-            operator_id: Some("op-1".to_string()),
+            operator_id: Some(OperatorId::new("op-1").unwrap()),
             terminal_id: Some("term-1".to_string()),
             receipt_number: Some("R001".to_string()),
             notes: None,
@@ -583,7 +586,7 @@ mod tests {
                 customer_id: None,
                 customer_name: None,
                 shift_id: None, // Don't use shift FK in tests
-                operator_id: Some("op-1".to_string()),
+                operator_id: Some(OperatorId::new("op-1").unwrap()),
                 terminal_id: None,
                 receipt_number: None,
                 notes: None,

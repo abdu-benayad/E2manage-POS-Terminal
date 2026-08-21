@@ -8,7 +8,7 @@
 
 mod common;
 
-use common::TestApp;
+use common::{op_id, op_name, TestApp};
 use rust_decimal::Decimal;
 
 // ============================================================================
@@ -20,7 +20,7 @@ fn test_offline_transaction_queuing() {
     let app = TestApp::new();
     app.seed_test_data();
 
-    let shift_id = app.create_shift("shift-001", "op-001", Decimal::from(500));
+    let shift_id = app.create_shift("shift-001", &op_id("op-001"), Decimal::from(500));
 
     // Create a transaction
     let result = app.product_service.search("SKU001", 10).unwrap();
@@ -30,7 +30,14 @@ fn test_offline_transaction_queuing() {
 
     let cart = app.cart_service.get_cart();
     app.transaction_service
-        .create_from_cart(&cart, "LYD", &shift_id, "TERM-001", "op-001", "Operator")
+        .create_from_cart(
+            &cart,
+            "LYD",
+            &shift_id,
+            "TERM-001",
+            &op_id("op-001"),
+            &op_name("Operator"),
+        )
         .unwrap();
 
     let txn = app.transaction_service.get_current().unwrap();
@@ -62,7 +69,7 @@ fn test_multiple_offline_transactions() {
     let app = TestApp::new();
     app.seed_test_data();
 
-    let shift_id = app.create_shift("shift-002", "op-001", Decimal::from(500));
+    let shift_id = app.create_shift("shift-002", &op_id("op-001"), Decimal::from(500));
 
     // Get initial pending count
     let initial_pending = app.offline_service.pending_count().unwrap();
@@ -80,7 +87,14 @@ fn test_multiple_offline_transactions() {
 
         let cart = app.cart_service.get_cart();
         app.transaction_service
-            .create_from_cart(&cart, "LYD", &shift_id, "TERM-001", "op-001", "Operator")
+            .create_from_cart(
+                &cart,
+                "LYD",
+                &shift_id,
+                "TERM-001",
+                &op_id("op-001"),
+                &op_name("Operator"),
+            )
             .unwrap();
 
         let txn = app.transaction_service.get_current().unwrap();
@@ -110,7 +124,7 @@ fn test_has_pending_transactions() {
     let app = TestApp::new();
     app.seed_test_data();
 
-    let shift_id = app.create_shift("shift-003", "op-001", Decimal::from(500));
+    let shift_id = app.create_shift("shift-003", &op_id("op-001"), Decimal::from(500));
 
     // Check if there's any pending (from other tests)
     let initial_has_pending = app.offline_service.has_pending().unwrap();
@@ -124,7 +138,14 @@ fn test_has_pending_transactions() {
 
         let cart = app.cart_service.get_cart();
         app.transaction_service
-            .create_from_cart(&cart, "LYD", &shift_id, "TERM-001", "op-001", "Operator")
+            .create_from_cart(
+                &cart,
+                "LYD",
+                &shift_id,
+                "TERM-001",
+                &op_id("op-001"),
+                &op_name("Operator"),
+            )
             .unwrap();
 
         let txn = app.transaction_service.get_current().unwrap();
@@ -152,7 +173,7 @@ fn test_offline_id_is_unique() {
     let app = TestApp::new();
     app.seed_test_data();
 
-    let shift_id = app.create_shift("shift-004", "op-001", Decimal::from(500));
+    let shift_id = app.create_shift("shift-004", &op_id("op-001"), Decimal::from(500));
 
     let mut offline_ids = Vec::new();
 
@@ -169,7 +190,14 @@ fn test_offline_id_is_unique() {
 
         let cart = app.cart_service.get_cart();
         app.transaction_service
-            .create_from_cart(&cart, "LYD", &shift_id, "TERM-001", "op-001", "Operator")
+            .create_from_cart(
+                &cart,
+                "LYD",
+                &shift_id,
+                "TERM-001",
+                &op_id("op-001"),
+                &op_name("Operator"),
+            )
             .unwrap();
 
         let txn = app.transaction_service.get_current().unwrap();
@@ -202,7 +230,7 @@ fn test_transaction_data_integrity_in_queue() {
     let app = TestApp::new();
     app.seed_test_data();
 
-    let shift_id = app.create_shift("shift-005", "op-001", Decimal::from(500));
+    let shift_id = app.create_shift("shift-005", &op_id("op-001"), Decimal::from(500));
 
     // Create transaction with multiple items
     let result1 = app.product_service.search("SKU001", 10).unwrap();
@@ -220,7 +248,14 @@ fn test_transaction_data_integrity_in_queue() {
     let expected_total = cart.grand_total; // Decimal
 
     app.transaction_service
-        .create_from_cart(&cart, "LYD", &shift_id, "TERM-001", "op-001", "Operator")
+        .create_from_cart(
+            &cart,
+            "LYD",
+            &shift_id,
+            "TERM-001",
+            &op_id("op-001"),
+            &op_name("Operator"),
+        )
         .unwrap();
 
     let txn = app.transaction_service.get_current().unwrap();
@@ -257,7 +292,7 @@ fn test_queue_statistics() {
     // Get initial count
     let initial_count = app.offline_service.pending_count().unwrap();
 
-    let shift_id = app.create_shift("shift-006", "op-001", Decimal::from(500));
+    let shift_id = app.create_shift("shift-006", &op_id("op-001"), Decimal::from(500));
 
     // Add some transactions to queue
     let to_add = 2u32;
@@ -273,7 +308,14 @@ fn test_queue_statistics() {
 
         let cart = app.cart_service.get_cart();
         app.transaction_service
-            .create_from_cart(&cart, "LYD", &shift_id, "TERM-001", "op-001", "Operator")
+            .create_from_cart(
+                &cart,
+                "LYD",
+                &shift_id,
+                "TERM-001",
+                &op_id("op-001"),
+                &op_name("Operator"),
+            )
             .unwrap();
 
         let txn = app.transaction_service.get_current().unwrap();
@@ -302,7 +344,7 @@ fn test_transaction_with_payments_in_queue() {
     let app = TestApp::new();
     app.seed_test_data();
 
-    let shift_id = app.create_shift("shift-007", "op-001", Decimal::from(500));
+    let shift_id = app.create_shift("shift-007", &op_id("op-001"), Decimal::from(500));
 
     // Create transaction with split payment
     let result = app.product_service.search("SKU010", 10).unwrap();
@@ -312,7 +354,14 @@ fn test_transaction_with_payments_in_queue() {
 
     let cart = app.cart_service.get_cart();
     app.transaction_service
-        .create_from_cart(&cart, "LYD", &shift_id, "TERM-001", "op-001", "Operator")
+        .create_from_cart(
+            &cart,
+            "LYD",
+            &shift_id,
+            "TERM-001",
+            &op_id("op-001"),
+            &op_name("Operator"),
+        )
         .unwrap();
 
     let txn = app.transaction_service.get_current().unwrap();
@@ -349,7 +398,7 @@ fn test_queue_simulates_network_failure() {
     let app = TestApp::new();
     app.seed_test_data();
 
-    let shift_id = app.create_shift("shift-008", "op-001", Decimal::from(500));
+    let shift_id = app.create_shift("shift-008", &op_id("op-001"), Decimal::from(500));
 
     // Simulate: In real scenario, API would fail, so we queue locally
     let result = app.product_service.search("SKU001", 10).unwrap();
@@ -359,7 +408,14 @@ fn test_queue_simulates_network_failure() {
 
     let cart = app.cart_service.get_cart();
     app.transaction_service
-        .create_from_cart(&cart, "LYD", &shift_id, "TERM-001", "op-001", "Operator")
+        .create_from_cart(
+            &cart,
+            "LYD",
+            &shift_id,
+            "TERM-001",
+            &op_id("op-001"),
+            &op_name("Operator"),
+        )
         .unwrap();
 
     let txn = app.transaction_service.get_current().unwrap();
@@ -410,7 +466,7 @@ fn test_queue_different_transaction_types() {
     let app = TestApp::new();
     app.seed_test_data();
 
-    let shift_id = app.create_shift("shift-009", "op-001", Decimal::from(500));
+    let shift_id = app.create_shift("shift-009", &op_id("op-001"), Decimal::from(500));
 
     // Queue a sale transaction
     let result = app.product_service.search("SKU001", 10).unwrap();
@@ -420,7 +476,14 @@ fn test_queue_different_transaction_types() {
 
     let cart = app.cart_service.get_cart();
     app.transaction_service
-        .create_from_cart(&cart, "LYD", &shift_id, "TERM-001", "op-001", "Operator")
+        .create_from_cart(
+            &cart,
+            "LYD",
+            &shift_id,
+            "TERM-001",
+            &op_id("op-001"),
+            &op_name("Operator"),
+        )
         .unwrap();
 
     let txn = app.transaction_service.get_current().unwrap();
@@ -447,7 +510,7 @@ fn test_pending_count_accuracy() {
     let app = TestApp::new();
     app.seed_test_data();
 
-    let shift_id = app.create_shift("shift-010", "op-001", Decimal::from(500));
+    let shift_id = app.create_shift("shift-010", &op_id("op-001"), Decimal::from(500));
 
     // Record initial count
     let initial = app.offline_service.pending_count().unwrap();
@@ -465,7 +528,14 @@ fn test_pending_count_accuracy() {
 
         let cart = app.cart_service.get_cart();
         app.transaction_service
-            .create_from_cart(&cart, "LYD", &shift_id, "TERM-001", "op-001", "Operator")
+            .create_from_cart(
+                &cart,
+                "LYD",
+                &shift_id,
+                "TERM-001",
+                &op_id("op-001"),
+                &op_name("Operator"),
+            )
             .unwrap();
 
         let txn = app.transaction_service.get_current().unwrap();

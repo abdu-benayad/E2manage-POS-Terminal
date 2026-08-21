@@ -5,6 +5,7 @@
 
 use anyhow::{anyhow, Result};
 use parking_lot::RwLock;
+use pos_models::{OperatorId, RecordedOperatorName};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -92,7 +93,7 @@ struct CreateTransactionRequest {
     customer_name: Option<String>,
     shift_id: String,
     terminal_id: String,
-    operator_id: String,
+    operator_id: OperatorId,
     note: Option<String>,
     created_at: String,
     completed_at: Option<String>,
@@ -162,8 +163,8 @@ impl TransactionService {
         currency: &str,
         shift_id: &str,
         terminal_id: &str,
-        operator_id: &str,
-        operator_name: &str,
+        operator_id: &OperatorId,
+        operator_name: &RecordedOperatorName,
     ) -> TransactionResult<Transaction> {
         if cart.is_empty() {
             return Err(TransactionError::EmptyTransaction);
@@ -174,8 +175,8 @@ impl TransactionService {
             currency,
             shift_id,
             terminal_id,
-            operator_id,
-            operator_name,
+            operator_id.clone(),
+            operator_name.clone(),
         );
 
         // Store as current transaction
@@ -677,6 +678,14 @@ mod tests {
     use pos_models::product::{Product, ProductUnit};
     use rust_decimal::Decimal;
 
+    fn op_id(id: &str) -> OperatorId {
+        OperatorId::new(id).expect("a fixture id is never blank")
+    }
+
+    fn op_name(name: &str) -> RecordedOperatorName {
+        RecordedOperatorName::new(name).expect("a fixture name is never blank")
+    }
+
     fn create_test_product() -> Product {
         Product {
             id: "prod-001".to_string(),
@@ -715,7 +724,14 @@ mod tests {
         let service = setup_test_service();
         let cart = create_test_cart();
 
-        let result = service.create_from_cart(&cart, "LYD", "shift-1", "TERM-001", "op-1", "Ahmed");
+        let result = service.create_from_cart(
+            &cart,
+            "LYD",
+            "shift-1",
+            "TERM-001",
+            &op_id("op-1"),
+            &op_name("Ahmed"),
+        );
 
         assert!(result.is_ok());
         let txn = result.unwrap();
@@ -729,7 +745,14 @@ mod tests {
         let service = setup_test_service();
         let cart = Cart::new();
 
-        let result = service.create_from_cart(&cart, "LYD", "shift-1", "TERM-001", "op-1", "Ahmed");
+        let result = service.create_from_cart(
+            &cart,
+            "LYD",
+            "shift-1",
+            "TERM-001",
+            &op_id("op-1"),
+            &op_name("Ahmed"),
+        );
 
         assert!(matches!(result, Err(TransactionError::EmptyTransaction)));
     }
@@ -744,7 +767,14 @@ mod tests {
 
         // Create transaction
         service
-            .create_from_cart(&cart, "LYD", "shift-1", "TERM-001", "op-1", "Ahmed")
+            .create_from_cart(
+                &cart,
+                "LYD",
+                "shift-1",
+                "TERM-001",
+                &op_id("op-1"),
+                &op_name("Ahmed"),
+            )
             .unwrap();
 
         // Now should have current transaction
@@ -761,7 +791,14 @@ mod tests {
         let cart = create_test_cart();
 
         service
-            .create_from_cart(&cart, "LYD", "shift-1", "TERM-001", "op-1", "Ahmed")
+            .create_from_cart(
+                &cart,
+                "LYD",
+                "shift-1",
+                "TERM-001",
+                &op_id("op-1"),
+                &op_name("Ahmed"),
+            )
             .unwrap();
 
         let result = service.add_cash_payment(Decimal::from(25));
@@ -777,7 +814,14 @@ mod tests {
         let cart = create_test_cart();
 
         service
-            .create_from_cart(&cart, "LYD", "shift-1", "TERM-001", "op-1", "Ahmed")
+            .create_from_cart(
+                &cart,
+                "LYD",
+                "shift-1",
+                "TERM-001",
+                &op_id("op-1"),
+                &op_name("Ahmed"),
+            )
             .unwrap();
 
         let result = service.add_card_payment(Decimal::from(23), "1234", "VISA", "AUTH123");
@@ -800,7 +844,14 @@ mod tests {
         let cart = create_test_cart();
 
         service
-            .create_from_cart(&cart, "LYD", "shift-1", "TERM-001", "op-1", "Ahmed")
+            .create_from_cart(
+                &cart,
+                "LYD",
+                "shift-1",
+                "TERM-001",
+                &op_id("op-1"),
+                &op_name("Ahmed"),
+            )
             .unwrap();
 
         let result = service.void("Customer changed mind");
@@ -824,7 +875,14 @@ mod tests {
         let cart = create_test_cart();
 
         service
-            .create_from_cart(&cart, "LYD", "shift-1", "TERM-001", "op-1", "Ahmed")
+            .create_from_cart(
+                &cart,
+                "LYD",
+                "shift-1",
+                "TERM-001",
+                &op_id("op-1"),
+                &op_name("Ahmed"),
+            )
             .unwrap();
 
         // Grand total is 23
@@ -848,7 +906,14 @@ mod tests {
         let cart = create_test_cart();
 
         service
-            .create_from_cart(&cart, "LYD", "shift-1", "TERM-001", "op-1", "Ahmed")
+            .create_from_cart(
+                &cart,
+                "LYD",
+                "shift-1",
+                "TERM-001",
+                &op_id("op-1"),
+                &op_name("Ahmed"),
+            )
             .unwrap();
 
         // Split between cash and card

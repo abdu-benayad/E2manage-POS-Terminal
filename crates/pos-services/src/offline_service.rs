@@ -37,6 +37,7 @@ use pos_api::ApiClient;
 use pos_db::transactions::{OfflineTransactionRow, SyncStatus};
 use pos_db::Database;
 use pos_models::transaction::Transaction;
+use pos_models::OperatorId;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -143,7 +144,7 @@ struct CreateTransactionRequest {
     customer_id: Option<String>,
     customer_name: Option<String>,
     shift_id: Option<String>,
-    operator_id: Option<String>,
+    operator_id: Option<OperatorId>,
     terminal_id: Option<String>,
     receipt_number: Option<String>,
     notes: Option<String>,
@@ -604,6 +605,14 @@ mod tests {
     use pos_models::product::{Product, ProductUnit};
     use rust_decimal::Decimal;
 
+    fn op_id(id: &str) -> OperatorId {
+        OperatorId::new(id).expect("a fixture id is never blank")
+    }
+
+    fn op_name(name: &str) -> pos_models::RecordedOperatorName {
+        pos_models::RecordedOperatorName::new(name).expect("a fixture name is never blank")
+    }
+
     /// Creates a database with required foreign key references
     fn setup() -> (Arc<ApiClient>, Arc<Database>) {
         let api = Arc::new(ApiClient::new("http://localhost:3000"));
@@ -623,7 +632,7 @@ mod tests {
         db.start_shift(
             "shift-1",
             "SHIFT-001",
-            "op-1",
+            &op_id("op-1"),
             Some("TERM-001"),
             Decimal::from(100),
         )
@@ -653,7 +662,14 @@ mod tests {
         cart.items.push(CartItem::new(&product, Decimal::from(2)));
         cart.recalculate();
 
-        Transaction::from_cart(&cart, "LYD", "shift-1", "TERM-001", "op-1", "Ahmed")
+        Transaction::from_cart(
+            &cart,
+            "LYD",
+            "shift-1",
+            "TERM-001",
+            op_id("op-1"),
+            op_name("Ahmed"),
+        )
     }
 
     #[test]

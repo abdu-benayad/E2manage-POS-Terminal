@@ -7,7 +7,7 @@ use anyhow::{anyhow, Result};
 use bcrypt::{hash, verify, DEFAULT_COST};
 use pos_api::{ApiClient, HeartbeatRequest, HeartbeatResponse, LoginTerminalResponse};
 use pos_db::Database;
-use pos_models::OperatorRole;
+use pos_models::{OperatorId, OperatorRole, RecordedOperatorName};
 use rusqlite::params;
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
@@ -46,8 +46,8 @@ pub struct TerminalSession {
 #[derive(Debug, Clone)]
 pub struct PinVerificationResult {
     pub valid: bool,
-    pub operator_id: String,
-    pub operator_name: String,
+    pub operator_id: OperatorId,
+    pub operator_name: Option<RecordedOperatorName>,
     pub operator_role: Option<OperatorRole>,
     pub message: Option<String>,
 }
@@ -263,7 +263,11 @@ impl AuthService {
     /// # Returns
     ///
     /// Verification result with operator info if valid
-    pub async fn verify_pin(&self, operator_id: &str, pin: &str) -> Result<PinVerificationResult> {
+    pub async fn verify_pin(
+        &self,
+        operator_id: &OperatorId,
+        pin: &str,
+    ) -> Result<PinVerificationResult> {
         debug!("Verifying PIN for operator: {}", operator_id);
 
         // Try online verification first
@@ -283,7 +287,7 @@ impl AuthService {
     /// Verifies PIN with the backend API
     async fn verify_pin_online(
         &self,
-        operator_id: &str,
+        operator_id: &OperatorId,
         pin: &str,
     ) -> Result<PinVerificationResult> {
         let response = self.api.verify_operator_pin(operator_id, pin).await?;
@@ -293,16 +297,16 @@ impl AuthService {
             let operator = self.get_operator_info(operator_id)?;
             Ok(PinVerificationResult {
                 valid: true,
-                operator_id: operator_id.to_string(),
-                operator_name: operator.0,
+                operator_id: operator_id.clone(),
+                operator_name: Some(operator.0),
                 operator_role: Some(operator.1),
                 message: None,
             })
         } else {
             Ok(PinVerificationResult {
                 valid: false,
-                operator_id: operator_id.to_string(),
-                operator_name: String::new(),
+                operator_id: operator_id.clone(),
+                operator_name: None,
                 operator_role: None,
                 message: response.message,
             })
@@ -312,7 +316,7 @@ impl AuthService {
     /// Verifies PIN using local database (offline mode)
     pub fn verify_pin_offline(
         &self,
-        operator_id: &str,
+        operator_id: &OperatorId,
         pin: &str,
     ) -> Result<PinVerificationResult> {
         let conn = self.db.connection();
@@ -320,7 +324,7 @@ impl AuthService {
 
         let result: Result<(String, String, String), rusqlite::Error> = conn.query_row(
             "SELECT pin_hash, name, role FROM operators WHERE id = ?1 AND is_active = 1",
-            [operator_id],
+            [operator_id.as_str()],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         );
 
@@ -330,11 +334,12 @@ impl AuthService {
                 // broken row, and refusing to authenticate against it is the fail-closed
                 // direction. Parsing before the PIN check keeps that true for a wrong PIN too.
                 let role: OperatorRole = role.parse()?;
+                let name = RecordedOperatorName::new(name)?;
                 let valid = verify(pin, &pin_hash).unwrap_or(false);
                 Ok(PinVerificationResult {
                     valid,
-                    operator_id: operator_id.to_string(),
-                    operator_name: if valid { name } else { String::new() },
+                    operator_id: operator_id.clone(),
+                    operator_name: valid.then_some(name),
                     operator_role: valid.then_some(role),
                     message: if valid {
                         None
@@ -347,8 +352,8 @@ impl AuthService {
                 error!("Operator not found: {}", operator_id);
                 Ok(PinVerificationResult {
                     valid: false,
-                    operator_id: operator_id.to_string(),
-                    operator_name: String::new(),
+                    operator_id: operator_id.clone(),
+                    operator_name: None,
                     operator_role: None,
                     message: Some("Operator not found".to_string()),
                 })
@@ -360,24 +365,31 @@ impl AuthService {
     /// Verifies PIN synchronously (for offline-only verification)
     ///
     /// Use this when you know you're offline or want to avoid async
-    pub fn verify_pin_sync(&self, operator_id: &str, pin: &str) -> Result<PinVerificationResult> {
+    pub fn verify_pin_sync(
+        &self,
+        operator_id: &OperatorId,
+        pin: &str,
+    ) -> Result<PinVerificationResult> {
         self.verify_pin_offline(operator_id, pin)
     }
 
     /// Gets operator info from local database
-    fn get_operator_info(&self, operator_id: &str) -> Result<(String, OperatorRole)> {
+    fn get_operator_info(
+        &self,
+        operator_id: &OperatorId,
+    ) -> Result<(RecordedOperatorName, OperatorRole)> {
         let conn = self.db.connection();
         let conn = conn.lock();
 
         let (name, role): (String, String) = conn
             .query_row(
                 "SELECT name, role FROM operators WHERE id = ?1",
-                [operator_id],
+                [operator_id.as_str()],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .map_err(|e| anyhow!("Operator not found: {}", e))?;
 
-        Ok((name, role.parse()?))
+        Ok((RecordedOperatorName::new(name)?, role.parse()?))
     }
 
     // ========================================================================
@@ -447,6 +459,10 @@ mod tests {
     use super::*;
     use pos_db::init_memory_database;
 
+    fn op_id(id: &str) -> OperatorId {
+        OperatorId::new(id).expect("a fixture id is never blank")
+    }
+
     fn create_test_service() -> AuthService {
         let db = init_memory_database().unwrap();
         let api = ApiClient::new("https://api.example.com");
@@ -489,7 +505,9 @@ mod tests {
     #[test]
     fn test_verify_pin_offline_operator_not_found() {
         let service = create_test_service();
-        let result = service.verify_pin_offline("nonexistent", "1234").unwrap();
+        let result = service
+            .verify_pin_offline(&op_id("nonexistent"), "1234")
+            .unwrap();
 
         assert!(!result.valid);
         assert_eq!(result.message, Some("Operator not found".to_string()));
@@ -515,13 +533,16 @@ mod tests {
         }
 
         // Test correct PIN
-        let result = service.verify_pin_offline("op1", "1234").unwrap();
+        let result = service.verify_pin_offline(&op_id("op1"), "1234").unwrap();
         assert!(result.valid);
-        assert_eq!(result.operator_name, "Ahmed");
+        assert_eq!(
+            result.operator_name,
+            Some(RecordedOperatorName::new("Ahmed").unwrap())
+        );
         assert_eq!(result.operator_role, Some(OperatorRole::Cashier));
 
         // Test wrong PIN
-        let result = service.verify_pin_offline("op1", "9999").unwrap();
+        let result = service.verify_pin_offline(&op_id("op1"), "9999").unwrap();
         assert!(!result.valid);
         assert_eq!(result.message, Some("Invalid PIN".to_string()));
     }

@@ -229,7 +229,7 @@ fn test_shift_start() {
         .start_shift(
             "shift-1",
             "SHIFT-001",
-            "op-1",
+            &op_id("op-1"),
             Some("TERM-01"),
             Decimal::from(100),
         )
@@ -237,7 +237,7 @@ fn test_shift_start() {
 
     assert_eq!(shift.id, "shift-1");
     assert_eq!(shift.shift_number, "SHIFT-001");
-    assert_eq!(shift.operator_id, "op-1");
+    assert_eq!(shift.operator_id, op_id("op-1"));
     assert_eq!(shift.opening_cash, Decimal::from(100));
     assert_eq!(shift.status, ShiftStatus::Active.as_str());
 }
@@ -250,7 +250,7 @@ fn test_shift_get_by_id() {
     db.start_shift(
         "shift-1",
         "SHIFT-001",
-        "op-1",
+        &op_id("op-1"),
         Some("TERM-01"),
         Decimal::from(100),
     )
@@ -269,7 +269,7 @@ fn test_shift_end() {
     db.start_shift(
         "shift-1",
         "SHIFT-001",
-        "op-1",
+        &op_id("op-1"),
         Some("TERM-01"),
         Decimal::from(100),
     )
@@ -300,13 +300,13 @@ fn test_shift_active() {
     db.start_shift(
         "shift-1",
         "SHIFT-001",
-        "op-1",
+        &op_id("op-1"),
         Some("TERM-01"),
         Decimal::from(100),
     )
     .unwrap();
 
-    let active = db.get_active_shift("op-1").unwrap();
+    let active = db.get_active_shift(&op_id("op-1")).unwrap();
     assert!(active.is_some());
     assert_eq!(active.unwrap().id, "shift-1");
 
@@ -314,7 +314,7 @@ fn test_shift_active() {
     db.end_shift("shift-1", Decimal::from(100), Decimal::from(100), None)
         .unwrap();
 
-    let active = db.get_active_shift("op-1").unwrap();
+    let active = db.get_active_shift(&op_id("op-1")).unwrap();
     assert!(active.is_none());
 }
 
@@ -332,7 +332,7 @@ fn test_draft_create() {
         .create_draft(
             "d1",
             cart_json,
-            Some("op-1"),
+            Some(&op_id("op-1")),
             Some("shift-1"),
             None,
             None,
@@ -354,7 +354,7 @@ fn test_draft_get() {
         .create_draft(
             "d1",
             cart_json,
-            Some("op-1"),
+            Some(&op_id("op-1")),
             Some("shift-1"),
             None,
             None,
@@ -375,7 +375,7 @@ fn test_draft_list_by_shift() {
     db.create_draft(
         "d1",
         r#"[]"#,
-        Some("op-1"),
+        Some(&op_id("op-1")),
         Some("shift-1"),
         None,
         None,
@@ -385,7 +385,7 @@ fn test_draft_list_by_shift() {
     db.create_draft(
         "d2",
         r#"[]"#,
-        Some("op-1"),
+        Some(&op_id("op-1")),
         Some("shift-1"),
         None,
         None,
@@ -395,7 +395,7 @@ fn test_draft_list_by_shift() {
     db.create_draft(
         "d3",
         r#"[]"#,
-        Some("op-1"),
+        Some(&op_id("op-1")),
         Some("shift-2"),
         None,
         None,
@@ -419,7 +419,7 @@ fn test_draft_delete() {
         .create_draft(
             "d1",
             r#"[]"#,
-            Some("op-1"),
+            Some(&op_id("op-1")),
             Some("shift-1"),
             None,
             None,
@@ -448,7 +448,7 @@ fn test_offline_transaction_save() {
     db.start_shift(
         "shift-001",
         "SHIFT-001",
-        "op-001",
+        &op_id("op-001"),
         Some("TERM-01"),
         Decimal::from(100),
     )
@@ -467,7 +467,7 @@ fn test_offline_transaction_save() {
         customer_id: None,
         customer_name: None,
         shift_id: Some("shift-001".to_string()),
-        operator_id: Some("op-001".to_string()),
+        operator_id: Some(op_id("op-001")),
         terminal_id: Some("TERM-01".to_string()),
         receipt_number: Some("REC-001".to_string()),
         notes: None,
@@ -665,7 +665,7 @@ fn test_offline_transaction_by_shift() {
     db.start_shift(
         "shift-1",
         "SHIFT-001",
-        "op-1",
+        &op_id("op-1"),
         Some("TERM-01"),
         Decimal::from(100),
     )
@@ -673,7 +673,7 @@ fn test_offline_transaction_by_shift() {
     db.start_shift(
         "shift-2",
         "SHIFT-002",
-        "op-1",
+        &op_id("op-1"),
         Some("TERM-01"),
         Decimal::from(100),
     )
@@ -778,7 +778,7 @@ fn test_full_database_workflow() {
         .start_shift(
             "s1",
             "SHIFT-001",
-            "op1",
+            &op_id("op1"),
             Some("TERM-01"),
             Decimal::from(100),
         )
@@ -790,7 +790,7 @@ fn test_full_database_workflow() {
         .create_draft(
             "d1",
             r#"[{"product_id":"p1","qty":2}]"#,
-            Some("op1"),
+            Some(&op_id("op1")),
             Some("s1"),
             None,
             None,

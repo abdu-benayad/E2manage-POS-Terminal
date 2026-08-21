@@ -13,7 +13,18 @@ use e2manage_pos_terminal::db::migrations::run_migrations;
 use e2manage_pos_terminal::db::{Database, OperatorRow, ProductRow, ShiftRow};
 use e2manage_pos_terminal::models::cart::{Cart, CartItem};
 use e2manage_pos_terminal::models::product::{Product, ProductUnit};
-use e2manage_pos_terminal::models::OperatorRole;
+use e2manage_pos_terminal::models::{OperatorId, OperatorRole, RecordedOperatorName};
+
+/// Builds an operator id for a fixture. The domain type is fallible; a test literal is not,
+/// so this keeps the call sites readable without letting a blank id back in.
+pub fn op_id(id: &str) -> OperatorId {
+    OperatorId::new(id).expect("a fixture id is never blank")
+}
+
+/// Builds a recorded operator name for a fixture.
+pub fn op_name(name: &str) -> RecordedOperatorName {
+    RecordedOperatorName::new(name).expect("a fixture name is never blank")
+}
 use e2manage_pos_terminal::services::auth_service::AuthService;
 use e2manage_pos_terminal::services::cart_service::CartService;
 use e2manage_pos_terminal::services::draft_service::DraftService;
@@ -178,7 +189,7 @@ pub fn create_cart_with_item(product: &Product, quantity: Decimal) -> Cart {
 }
 
 /// Creates a shift in the database.
-pub fn create_test_shift(db: &Database, shift_id: &str, operator_id: &str) -> ShiftRow {
+pub fn create_test_shift(db: &Database, shift_id: &str, operator_id: &OperatorId) -> ShiftRow {
     db.start_shift(
         shift_id,
         &format!("SHIFT-{}", shift_id),
@@ -346,7 +357,12 @@ impl TestApp {
     /// Creates a shift in the database and returns its ID.
     ///
     /// Uses the database directly to avoid async requirements in sync tests.
-    pub fn create_shift(&self, shift_id: &str, operator_id: &str, opening_cash: Decimal) -> String {
+    pub fn create_shift(
+        &self,
+        shift_id: &str,
+        operator_id: &OperatorId,
+        opening_cash: Decimal,
+    ) -> String {
         let shift_number = format!("SHIFT-{}", &shift_id[..6.min(shift_id.len())]);
         self.db
             .start_shift(

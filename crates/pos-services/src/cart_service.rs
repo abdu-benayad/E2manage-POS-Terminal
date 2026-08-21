@@ -32,6 +32,7 @@ use parking_lot::RwLock;
 use pos_db::Database;
 use pos_models::cart::{Cart, CartItem};
 use pos_models::product::Product;
+use pos_models::OperatorId;
 use rust_decimal::Decimal;
 use std::sync::Arc;
 use thiserror::Error;
@@ -74,7 +75,7 @@ pub struct CartService {
     /// Optional database for cart persistence (crash recovery)
     db: Option<Arc<Database>>,
     /// Current operator ID for persistence tracking
-    operator_id: Arc<RwLock<Option<String>>>,
+    operator_id: Arc<RwLock<Option<OperatorId>>>,
 }
 
 impl CartService {
@@ -110,7 +111,7 @@ impl CartService {
     }
 
     /// Sets the current operator ID for persistence tracking
-    pub fn set_operator(&self, operator_id: Option<String>) {
+    pub fn set_operator(&self, operator_id: Option<OperatorId>) {
         *self.operator_id.write() = operator_id;
     }
 
@@ -124,7 +125,7 @@ impl CartService {
             match serde_json::to_string(&*cart) {
                 Ok(json) => {
                     let op_id = self.operator_id.read();
-                    if let Err(e) = db.save_active_cart(op_id.as_deref(), &json) {
+                    if let Err(e) = db.save_active_cart(op_id.as_ref(), &json) {
                         warn!("Failed to persist cart: {}", e);
                     }
                 }

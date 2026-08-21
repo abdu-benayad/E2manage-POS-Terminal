@@ -28,7 +28,7 @@ pub use cart::{Cart, CartItem};
 pub use feature::{Feature, FeatureDto, FeatureScreen, FeatureScreenDto, FeaturesResponse};
 pub use operator::{
     DiscountAuthority, DiscountPercent, NameScript, OperatorError, OperatorId, OperatorName,
-    OperatorPermissions, OperatorRole, Permission, VerifiedOperator,
+    OperatorPermissions, OperatorRole, Permission, RecordedOperatorName, VerifiedOperator,
 };
 pub use parse::ParseError;
 pub use pin::{

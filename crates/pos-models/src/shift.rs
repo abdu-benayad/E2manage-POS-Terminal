@@ -7,6 +7,7 @@ use std::str::FromStr;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
+use crate::operator::{OperatorId, RecordedOperatorName};
 use crate::parse::ParseError;
 
 /// Variance status for cash reconciliation
@@ -87,10 +88,15 @@ pub struct ShiftSummary {
     pub id: String,
     /// Shift number (e.g., "POS-001-20241213-001")
     pub shift_number: String,
-    /// Operator ID
-    pub operator_id: String,
-    /// Operator name
-    pub operator_name: String,
+    /// Operator who owns the shift
+    pub operator_id: OperatorId,
+    /// The operator's name as recorded on this summary.
+    ///
+    /// Optional because the `shifts` table stores only `operator_id`; the name has to be looked
+    /// up, and two call sites currently do not (`shift_service.rs` and `z_report_service.rs`,
+    /// both marked `// Would need lookup`). `None` says the lookup did not happen, which is the
+    /// truth; an empty string said the operator had no name.
+    pub operator_name: Option<RecordedOperatorName>,
     /// Terminal ID
     pub terminal_id: String,
     /// Opening cash float
@@ -131,35 +137,13 @@ pub struct ShiftSummary {
     pub note: Option<String>,
 }
 
-impl Default for ShiftSummary {
-    fn default() -> Self {
-        Self {
-            id: String::new(),
-            shift_number: String::new(),
-            operator_id: String::new(),
-            operator_name: String::new(),
-            terminal_id: String::new(),
-            opening_cash: Decimal::ZERO,
-            expected_cash: Decimal::ZERO,
-            counted_cash: None,
-            variance: None,
-            variance_status: None,
-            started_at: String::new(),
-            ended_at: None,
-            status: ShiftStatus::Active,
-            transaction_count: 0,
-            cash_sales: Decimal::ZERO,
-            card_sales: Decimal::ZERO,
-            wallet_sales: Decimal::ZERO,
-            returns_total: Decimal::ZERO,
-            discounts_total: Decimal::ZERO,
-            gross_sales: Decimal::ZERO,
-            net_sales: Decimal::ZERO,
-            currency: "LYD".to_string(),
-            note: None,
-        }
-    }
-}
+// There is deliberately no `impl Default for ShiftSummary`.
+//
+// The one it replaces filled `operator_id` and `operator_name` with empty strings and set
+// `status: ShiftStatus::Active` — so `ShiftSummary::default()` was an *open shift belonging to
+// nobody*, and every `..Default::default()` inherited that. `shifts.operator_id` is `NOT NULL`,
+// so there is no shift without an operator to model; a caller that wants a summary states who it
+// belongs to.
 
 #[cfg(test)]
 mod tests {

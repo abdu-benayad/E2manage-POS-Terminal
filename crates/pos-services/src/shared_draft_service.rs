@@ -47,6 +47,7 @@ use pos_db::draft_sync_queue::{DraftSyncOperation, DraftSyncQueueItem};
 use pos_db::shared_drafts::{SharedDraftRow, SharedDraftSyncStatus};
 use pos_db::Database;
 use pos_models::cart::{Cart, CartItem};
+use pos_models::{OperatorId, RecordedOperatorName};
 
 // ============================================================================
 // Error Types
@@ -112,9 +113,9 @@ pub struct SharedDraft {
     /// Terminal device ID that created the draft
     pub device_id: Option<String>,
     /// Operator ID who created the draft
-    pub operator_id: Option<String>,
+    pub operator_id: Option<OperatorId>,
     /// Operator name
-    pub operator_name: Option<String>,
+    pub operator_name: Option<RecordedOperatorName>,
     /// When the draft was created
     pub created_at: String,
     /// When the draft expires
@@ -204,8 +205,8 @@ impl SharedDraftService {
         &self,
         cart: &Cart,
         name: Option<String>,
-        operator_id: &str,
-        operator_name: &str,
+        operator_id: &OperatorId,
+        operator_name: &RecordedOperatorName,
     ) -> SharedDraftResult<SharedDraft> {
         // Validate cart is not empty
         if cart.is_empty() {
@@ -246,8 +247,8 @@ impl SharedDraftService {
             warehouse_id: self.warehouse_id.clone(),
             source: "POS".to_string(),
             device_id: Some(self.device_id.clone()),
-            operator_id: Some(operator_id.to_string()),
-            operator_name: Some(operator_name.to_string()),
+            operator_id: Some(operator_id.clone()),
+            operator_name: Some(operator_name.clone()),
             customer_id: cart.customer_id.clone(),
             customer_name: cart.customer_name.clone(),
             currency: "LYD".to_string(), // TODO: Get from config
@@ -289,8 +290,8 @@ impl SharedDraftService {
         &self,
         cart: &Cart,
         name: Option<String>,
-        operator_id: &str,
-        operator_name: &str,
+        operator_id: &OperatorId,
+        operator_name: &RecordedOperatorName,
         request: &CreateCartRequest,
     ) -> SharedDraftResult<SharedDraft> {
         let local_id = Uuid::new_v4().to_string();
@@ -329,8 +330,8 @@ impl SharedDraftService {
             currency: "LYD".to_string(),
             warehouse_id: self.warehouse_id.clone(),
             device_id: Some(self.device_id.clone()),
-            operator_id: Some(operator_id.to_string()),
-            operator_name: Some(operator_name.to_string()),
+            operator_id: Some(operator_id.clone()),
+            operator_name: Some(operator_name.clone()),
             created_at: now.clone(),
             expires_at: None,
             fetched_at: now.clone(),
@@ -365,8 +366,8 @@ impl SharedDraftService {
             currency: "LYD".to_string(),
             warehouse_id: self.warehouse_id.clone(),
             device_id: Some(self.device_id.clone()),
-            operator_id: Some(operator_id.to_string()),
-            operator_name: Some(operator_name.to_string()),
+            operator_id: Some(operator_id.clone()),
+            operator_name: Some(operator_name.clone()),
             created_at: now,
             expires_at: None,
             is_local_only: true,
@@ -1011,8 +1012,8 @@ impl SharedDraftService {
         &self,
         cart: &Cart,
         display_name: Option<String>,
-        operator_id: &str,
-        operator_name: &str,
+        operator_id: &OperatorId,
+        operator_name: &RecordedOperatorName,
     ) -> SharedDraftResult<ParkedCartDetailResponse> {
         if cart.is_empty() {
             return Err(SharedDraftError::EmptyCart);
@@ -1052,8 +1053,8 @@ impl SharedDraftService {
         let request = CreateAndParkCartRequest {
             warehouse_id: self.warehouse_id.clone(),
             display_name,
-            operator_id: operator_id.to_string(),
-            operator_name: operator_name.to_string(),
+            operator_id: operator_id.clone(),
+            operator_name: operator_name.clone(),
             terminal_id: self.device_id.clone(),
             customer_id: cart.customer_id.clone(),
             customer_name: cart.customer_name.clone(),
@@ -1113,13 +1114,13 @@ impl SharedDraftService {
     pub async fn recall_parked_cart(
         &self,
         pos_token: &str,
-        operator_id: &str,
-        operator_name: &str,
+        operator_id: &OperatorId,
+        operator_name: &RecordedOperatorName,
         force: bool,
     ) -> SharedDraftResult<Cart> {
         let request = RecallCartRequest {
-            operator_id: operator_id.to_string(),
-            operator_name: operator_name.to_string(),
+            operator_id: operator_id.clone(),
+            operator_name: operator_name.clone(),
             terminal_id: self.device_id.clone(),
             force,
         };
@@ -1145,13 +1146,13 @@ impl SharedDraftService {
     pub async fn recall_parked_cart_by_id(
         &self,
         cart_id: &str,
-        operator_id: &str,
-        operator_name: &str,
+        operator_id: &OperatorId,
+        operator_name: &RecordedOperatorName,
         force: bool,
     ) -> SharedDraftResult<Cart> {
         let request = RecallCartRequest {
-            operator_id: operator_id.to_string(),
-            operator_name: operator_name.to_string(),
+            operator_id: operator_id.clone(),
+            operator_name: operator_name.clone(),
             terminal_id: self.device_id.clone(),
             force,
         };

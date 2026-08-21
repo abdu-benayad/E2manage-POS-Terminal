@@ -701,6 +701,7 @@ mod serialization_tests {
     use e2manage_pos_terminal::api::auth::{
         HeartbeatRequest, LoginTerminalRequest, VerifyPinRequest,
     };
+    use e2manage_pos_terminal::models::OperatorId;
 
     #[test]
     fn test_login_request_json_format() {
@@ -731,7 +732,7 @@ mod serialization_tests {
             offline_txn_count: 3,
             app_version: "1.0.0".to_string(),
             current_shift_id: None,
-            current_operator_id: Some("op-001".to_string()),
+            current_operator_id: Some(OperatorId::new("op-001").unwrap()),
         };
 
         let json = serde_json::to_string(&request).unwrap();
@@ -748,7 +749,7 @@ mod serialization_tests {
     #[test]
     fn test_verify_pin_request_json_format() {
         let request = VerifyPinRequest {
-            operator_id: "op-001".to_string(),
+            operator_id: OperatorId::new("op-001").unwrap(),
             pin: "1234".to_string(),
         };
 

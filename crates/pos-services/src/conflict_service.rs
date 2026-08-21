@@ -34,6 +34,7 @@
 use pos_api::ApiClient;
 use pos_db::transactions::OfflineTransactionRow;
 use pos_db::Database;
+use pos_models::OperatorId;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -91,7 +92,7 @@ pub struct ConflictSummary {
     /// Number of retry attempts
     pub retry_count: i32,
     /// Operator name (if available)
-    pub operator_id: Option<String>,
+    pub operator_id: Option<OperatorId>,
     /// Receipt number (if available)
     pub receipt_number: Option<String>,
 }
@@ -397,7 +398,7 @@ struct ForceTransactionRequest {
     customer_id: Option<String>,
     customer_name: Option<String>,
     shift_id: Option<String>,
-    operator_id: Option<String>,
+    operator_id: Option<OperatorId>,
     terminal_id: Option<String>,
     receipt_number: Option<String>,
     notes: Option<String>,
@@ -456,7 +457,7 @@ mod tests {
             customer_id: None,
             customer_name: None,
             shift_id: None,
-            operator_id: Some("op-1".to_string()),
+            operator_id: Some(OperatorId::new("op-1").unwrap()),
             terminal_id: Some("term-1".to_string()),
             receipt_number: Some("R001".to_string()),
             notes: None,
@@ -621,7 +622,7 @@ mod tests {
             customer_id: None,
             customer_name: None,
             shift_id: None,
-            operator_id: Some("op-1".to_string()),
+            operator_id: Some(OperatorId::new("op-1").unwrap()),
             terminal_id: None,
             receipt_number: Some("R-001".to_string()),
             notes: None,

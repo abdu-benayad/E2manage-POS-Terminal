@@ -8,7 +8,7 @@
 
 mod common;
 
-use common::TestApp;
+use common::{op_id, op_name, TestApp};
 use rust_decimal::Decimal;
 
 // ============================================================================
@@ -21,10 +21,15 @@ fn test_complete_shift_workflow_sync() {
     app.seed_test_data();
 
     // 1. LOGIN (verify PIN)
-    let pin_result = app.auth_service.verify_pin_sync("op-001", "1234").unwrap();
+    let pin_result = app
+        .auth_service
+        .verify_pin_sync(&op_id("op-001"), "1234")
+        .unwrap();
     assert!(pin_result.valid);
     let operator_id = pin_result.operator_id;
-    let operator_name = pin_result.operator_name;
+    let operator_name = pin_result
+        .operator_name
+        .expect("a verified PIN reports the operator's name");
 
     // 2. START SHIFT with opening float (direct DB for sync test)
     let opening_cash = Decimal::from(500);
@@ -131,7 +136,7 @@ fn test_shift_with_cash_variance() {
         .start_shift(
             "shift-002",
             "SHIFT-002",
-            "op-001",
+            &op_id("op-001"),
             Some("TERM-01"),
             opening_cash,
         )
@@ -180,7 +185,7 @@ fn test_multiple_sequential_shifts() {
         .start_shift(
             "shift-003a",
             "SHIFT-M001",
-            "op-001",
+            &op_id("op-001"),
             Some("TERM-01"),
             Decimal::from(500),
         )
@@ -201,7 +206,7 @@ fn test_multiple_sequential_shifts() {
         .start_shift(
             "shift-003b",
             "SHIFT-A001",
-            "op-001",
+            &op_id("op-001"),
             Some("TERM-01"),
             Decimal::from(600),
         )
@@ -246,7 +251,7 @@ fn test_get_current_active_shift() {
         .start_shift(
             "shift-004",
             "SHIFT-004",
-            "op-001",
+            &op_id("op-001"),
             Some("TERM-01"),
             Decimal::from(500),
         )
@@ -275,14 +280,14 @@ fn test_shift_requires_operator() {
     let result = app.db.start_shift(
         "shift-005",
         "SHIFT-005",
-        "op-001",
+        &op_id("op-001"),
         Some("TERM-01"),
         Decimal::from(500),
     );
     assert!(result.is_ok());
 
     let shift = result.unwrap();
-    assert_eq!(shift.operator_id, "op-001");
+    assert_eq!(shift.operator_id, op_id("op-001"));
 
     println!("✓ Shift requires operator passed");
 }
@@ -302,7 +307,7 @@ fn test_shift_with_zero_opening_cash() {
         .start_shift(
             "shift-006",
             "SHIFT-006",
-            "op-001",
+            &op_id("op-001"),
             Some("TERM-01"),
             Decimal::ZERO,
         )
@@ -328,7 +333,7 @@ fn test_shift_lookup_by_id() {
         .start_shift(
             "shift-007",
             "SHIFT-007",
-            "op-001",
+            &op_id("op-001"),
             Some("TERM-01"),
             Decimal::from(500),
         )
@@ -363,7 +368,7 @@ fn test_shift_timestamps() {
         .start_shift(
             "shift-008",
             "SHIFT-008",
-            "op-001",
+            &op_id("op-001"),
             Some("TERM-01"),
             Decimal::from(500),
         )
@@ -397,7 +402,7 @@ fn test_transactions_associated_with_shift() {
         .start_shift(
             "shift-009",
             "SHIFT-009",
-            "op-001",
+            &op_id("op-001"),
             Some("TERM-01"),
             Decimal::from(500),
         )
@@ -416,7 +421,14 @@ fn test_transactions_associated_with_shift() {
 
         let cart = app.cart_service.get_cart();
         app.transaction_service
-            .create_from_cart(&cart, "LYD", &shift.id, "TERM-001", "op-001", "Operator")
+            .create_from_cart(
+                &cart,
+                "LYD",
+                &shift.id,
+                "TERM-001",
+                &op_id("op-001"),
+                &op_name("Operator"),
+            )
             .unwrap();
 
         let txn = app.transaction_service.get_current().unwrap();
@@ -449,7 +461,7 @@ fn test_shift_status_transitions() {
         .start_shift(
             "shift-010",
             "SHIFT-010",
-            "op-001",
+            &op_id("op-001"),
             Some("TERM-01"),
             Decimal::from(500),
         )
@@ -482,7 +494,7 @@ fn test_shift_terminal_association() {
         .start_shift(
             "shift-011",
             "SHIFT-011",
-            "op-001",
+            &op_id("op-001"),
             Some(terminal_id),
             Decimal::from(500),
         )
@@ -507,7 +519,7 @@ fn test_shift_close_with_notes() {
         .start_shift(
             "shift-012",
             "SHIFT-012",
-            "op-001",
+            &op_id("op-001"),
             Some("TERM-01"),
             Decimal::from(500),
         )

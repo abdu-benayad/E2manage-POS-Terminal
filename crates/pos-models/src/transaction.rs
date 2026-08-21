@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::cart::{Cart, CartItem};
+use crate::operator::{OperatorId, RecordedOperatorName};
 use crate::parse::ParseError;
 
 /// Transaction status
@@ -343,10 +344,18 @@ pub struct Transaction {
     pub shift_id: String,
     /// Terminal ID where transaction occurred
     pub terminal_id: String,
-    /// Operator ID who processed the transaction
-    pub operator_id: String,
-    /// Operator name (for display/receipts)
-    pub operator_name: String,
+    /// Operator who processed the transaction
+    pub operator_id: OperatorId,
+    /// The operator's name as it stood when this transaction was rung, for display and receipts.
+    ///
+    /// A snapshot, not a lookup: a receipt reprinted after the operator is renamed must still say
+    /// what it said. See `RecordedOperatorName`.
+    ///
+    /// Optional because a transaction rebuilt out of the offline queue does not have one —
+    /// `offline_transactions` keeps `operator_id` and no name column, so the reconstruction can
+    /// only report the absence. `None` says the name was never recorded; it is not a stand-in
+    /// for an operator without a name.
+    pub operator_name: Option<RecordedOperatorName>,
     /// Current status
     pub status: TransactionStatus,
     /// When the transaction was created
@@ -372,8 +381,8 @@ impl Transaction {
         currency: &str,
         shift_id: &str,
         terminal_id: &str,
-        operator_id: &str,
-        operator_name: &str,
+        operator_id: OperatorId,
+        operator_name: RecordedOperatorName,
     ) -> Self {
         Self {
             id: Uuid::new_v4().to_string(),
@@ -390,8 +399,8 @@ impl Transaction {
             customer_name: None,
             shift_id: shift_id.to_string(),
             terminal_id: terminal_id.to_string(),
-            operator_id: operator_id.to_string(),
-            operator_name: operator_name.to_string(),
+            operator_id,
+            operator_name: Some(operator_name),
             status: TransactionStatus::Draft,
             created_at: Utc::now(),
             completed_at: None,
@@ -409,8 +418,8 @@ impl Transaction {
         currency: &str,
         shift_id: &str,
         terminal_id: &str,
-        operator_id: &str,
-        operator_name: &str,
+        operator_id: OperatorId,
+        operator_name: RecordedOperatorName,
     ) -> Self {
         let mut txn = Self::new(
             "sale",
@@ -621,6 +630,14 @@ pub fn generate_receipt_number(terminal_id: &str, sequence: u32) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn operator() -> OperatorId {
+        OperatorId::new("op-1").expect("a non-blank id")
+    }
+
+    fn recorded() -> RecordedOperatorName {
+        RecordedOperatorName::new("Ahmed").expect("a non-blank name")
+    }
     use crate::product::{Product, ProductUnit};
     use rust_decimal::Decimal;
 
@@ -765,14 +782,14 @@ mod tests {
 
     #[test]
     fn test_transaction_new() {
-        let txn = Transaction::new("sale", "LYD", "shift-1", "TERM-001", "op-1", "Ahmed");
+        let txn = Transaction::new("sale", "LYD", "shift-1", "TERM-001", operator(), recorded());
 
         assert_eq!(txn.transaction_type, "sale");
         assert_eq!(txn.currency, "LYD");
         assert_eq!(txn.shift_id, "shift-1");
         assert_eq!(txn.terminal_id, "TERM-001");
-        assert_eq!(txn.operator_id, "op-1");
-        assert_eq!(txn.operator_name, "Ahmed");
+        assert_eq!(txn.operator_id, operator());
+        assert_eq!(txn.operator_name, Some(recorded()));
         assert_eq!(txn.status, TransactionStatus::Draft);
         assert!(txn.transaction_number.starts_with("TXN"));
     }
@@ -780,7 +797,8 @@ mod tests {
     #[test]
     fn test_transaction_from_cart() {
         let cart = create_test_cart();
-        let txn = Transaction::from_cart(&cart, "LYD", "shift-1", "TERM-001", "op-1", "Ahmed");
+        let txn =
+            Transaction::from_cart(&cart, "LYD", "shift-1", "TERM-001", operator(), recorded());
 
         assert_eq!(txn.items.len(), 1);
         assert_eq!(txn.subtotal, Decimal::from(20));
@@ -791,7 +809,8 @@ mod tests {
     #[test]
     fn test_transaction_add_cash_payment() {
         let cart = create_test_cart();
-        let mut txn = Transaction::from_cart(&cart, "LYD", "shift-1", "TERM-001", "op-1", "Ahmed");
+        let mut txn =
+            Transaction::from_cart(&cart, "LYD", "shift-1", "TERM-001", operator(), recorded());
 
         txn.add_cash_payment(Decimal::from(30));
 
@@ -804,7 +823,8 @@ mod tests {
     #[test]
     fn test_transaction_add_card_payment() {
         let cart = create_test_cart();
-        let mut txn = Transaction::from_cart(&cart, "LYD", "shift-1", "TERM-001", "op-1", "Ahmed");
+        let mut txn =
+            Transaction::from_cart(&cart, "LYD", "shift-1", "TERM-001", operator(), recorded());
 
         txn.add_card_payment(Decimal::from(23), "1234", "VISA", "AUTH123");
 
@@ -816,7 +836,8 @@ mod tests {
     #[test]
     fn test_transaction_split_payment() {
         let cart = create_test_cart();
-        let mut txn = Transaction::from_cart(&cart, "LYD", "shift-1", "TERM-001", "op-1", "Ahmed");
+        let mut txn =
+            Transaction::from_cart(&cart, "LYD", "shift-1", "TERM-001", operator(), recorded());
 
         // Pay partially with cash, then card
         txn.add_cash_payment(Decimal::from(10));
@@ -831,7 +852,8 @@ mod tests {
     #[test]
     fn test_transaction_complete() {
         let cart = create_test_cart();
-        let mut txn = Transaction::from_cart(&cart, "LYD", "shift-1", "TERM-001", "op-1", "Ahmed");
+        let mut txn =
+            Transaction::from_cart(&cart, "LYD", "shift-1", "TERM-001", operator(), recorded());
 
         // Cannot complete without payment
         assert!(txn.complete().is_err());
@@ -849,7 +871,8 @@ mod tests {
     #[test]
     fn test_transaction_void() {
         let cart = create_test_cart();
-        let mut txn = Transaction::from_cart(&cart, "LYD", "shift-1", "TERM-001", "op-1", "Ahmed");
+        let mut txn =
+            Transaction::from_cart(&cart, "LYD", "shift-1", "TERM-001", operator(), recorded());
 
         assert!(txn.can_void());
         assert!(txn.void("Customer changed mind").is_ok());
@@ -865,7 +888,8 @@ mod tests {
     #[test]
     fn test_transaction_item_count() {
         let cart = create_test_cart();
-        let txn = Transaction::from_cart(&cart, "LYD", "shift-1", "TERM-001", "op-1", "Ahmed");
+        let txn =
+            Transaction::from_cart(&cart, "LYD", "shift-1", "TERM-001", operator(), recorded());
 
         assert_eq!(txn.item_count(), Decimal::from(2));
         assert_eq!(txn.line_count(), 1);
@@ -873,8 +897,8 @@ mod tests {
 
     #[test]
     fn test_transaction_is_sale_return() {
-        let sale = Transaction::new("sale", "LYD", "s1", "t1", "o1", "Op");
-        let ret = Transaction::new("return", "LYD", "s1", "t1", "o1", "Op");
+        let sale = Transaction::new("sale", "LYD", "s1", "t1", operator(), recorded());
+        let ret = Transaction::new("return", "LYD", "s1", "t1", operator(), recorded());
 
         assert!(sale.is_sale());
         assert!(!sale.is_return());
@@ -884,7 +908,7 @@ mod tests {
 
     #[test]
     fn test_transaction_has_customer() {
-        let mut txn = Transaction::new("sale", "LYD", "s1", "t1", "o1", "Op");
+        let mut txn = Transaction::new("sale", "LYD", "s1", "t1", operator(), recorded());
         assert!(!txn.has_customer());
 
         txn.customer_id = Some("cust-001".to_string());
@@ -911,7 +935,7 @@ mod tests {
 
     #[test]
     fn test_set_receipt_number() {
-        let mut txn = Transaction::new("sale", "LYD", "s1", "t1", "o1", "Op");
+        let mut txn = Transaction::new("sale", "LYD", "s1", "t1", operator(), recorded());
         assert!(txn.receipt_number.is_none());
 
         txn.set_receipt_number("RCP-001");

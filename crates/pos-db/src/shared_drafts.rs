@@ -10,7 +10,10 @@ use chrono::Utc;
 use rusqlite::{params, OptionalExtension, Result as SqliteResult};
 use serde::{Deserialize, Serialize};
 
+use pos_models::{OperatorId, RecordedOperatorName};
+
 use super::Database;
+use crate::column;
 use crate::parse::ParseError;
 
 /// Shared draft row from database
@@ -42,10 +45,10 @@ pub struct SharedDraftRow {
     pub warehouse_id: String,
     /// Terminal device ID
     pub device_id: Option<String>,
-    /// Operator ID who created the draft
-    pub operator_id: Option<String>,
-    /// Operator name
-    pub operator_name: Option<String>,
+    /// Operator who created the draft
+    pub operator_id: Option<OperatorId>,
+    /// The operator's name as recorded on the draft — one column, so one script.
+    pub operator_name: Option<RecordedOperatorName>,
     /// When the draft was created
     pub created_at: String,
     /// When the draft expires
@@ -139,8 +142,8 @@ impl Database {
                 &draft.currency,
                 &draft.warehouse_id,
                 &draft.device_id,
-                &draft.operator_id,
-                &draft.operator_name,
+                &draft.operator_id.as_ref().map(OperatorId::as_str),
+                &draft.operator_name.as_ref().map(RecordedOperatorName::as_str),
                 &draft.created_at,
                 &draft.expires_at,
                 &draft.fetched_at,
@@ -176,8 +179,8 @@ impl Database {
                     currency: row.get(10)?,
                     warehouse_id: row.get(11)?,
                     device_id: row.get(12)?,
-                    operator_id: row.get(13)?,
-                    operator_name: row.get(14)?,
+                    operator_id: column::optional_operator_id(row, 13)?,
+                    operator_name: column::optional_recorded_operator_name(row, 14)?,
                     created_at: row.get(15)?,
                     expires_at: row.get(16)?,
                     fetched_at: row.get(17)?,
@@ -214,8 +217,8 @@ impl Database {
                     currency: row.get(10)?,
                     warehouse_id: row.get(11)?,
                     device_id: row.get(12)?,
-                    operator_id: row.get(13)?,
-                    operator_name: row.get(14)?,
+                    operator_id: column::optional_operator_id(row, 13)?,
+                    operator_name: column::optional_recorded_operator_name(row, 14)?,
                     created_at: row.get(15)?,
                     expires_at: row.get(16)?,
                     fetched_at: row.get(17)?,
@@ -255,8 +258,8 @@ impl Database {
                 currency: row.get(10)?,
                 warehouse_id: row.get(11)?,
                 device_id: row.get(12)?,
-                operator_id: row.get(13)?,
-                operator_name: row.get(14)?,
+                operator_id: column::optional_operator_id(row, 13)?,
+                operator_name: column::optional_recorded_operator_name(row, 14)?,
                 created_at: row.get(15)?,
                 expires_at: row.get(16)?,
                 fetched_at: row.get(17)?,
@@ -354,8 +357,11 @@ impl Database {
                 draft.currency,
                 draft.warehouse_id,
                 draft.device_id,
-                draft.operator_id,
-                draft.operator_name,
+                draft.operator_id.as_ref().map(OperatorId::as_str),
+                draft
+                    .operator_name
+                    .as_ref()
+                    .map(RecordedOperatorName::as_str),
                 draft.created_at,
                 draft.expires_at,
                 draft.fetched_at,

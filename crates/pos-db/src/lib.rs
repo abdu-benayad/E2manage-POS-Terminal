@@ -26,6 +26,7 @@
 //! ```
 
 pub mod active_cart;
+pub mod column;
 pub mod connection;
 pub mod draft_sync_queue;
 pub mod drafts;
@@ -161,6 +162,10 @@ mod tests {
     use std::str::FromStr;
     use tempfile::TempDir;
 
+    fn op_id(id: &str) -> pos_models::OperatorId {
+        pos_models::OperatorId::new(id).expect("a non-blank id")
+    }
+
     #[test]
     fn test_init_database() {
         let temp_dir = TempDir::new().unwrap();
@@ -212,7 +217,7 @@ mod tests {
             .start_shift(
                 "s1",
                 "SHIFT-001",
-                "op1",
+                &op_id("op1"),
                 Some("TERM-01"),
                 Decimal::from(100),
             )
@@ -224,7 +229,7 @@ mod tests {
             .create_draft(
                 "d1",
                 r#"[{"product_id":"p1","qty":2}]"#,
-                Some("op1"),
+                Some(&op_id("op1")),
                 Some("s1"),
                 None,
                 None,

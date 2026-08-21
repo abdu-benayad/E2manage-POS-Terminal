@@ -22,6 +22,7 @@
 //! ```
 
 use crate::utils::formatting;
+use pos_models::OperatorId;
 use pos_services::ConflictService;
 use std::sync::Arc;
 
@@ -45,8 +46,13 @@ pub struct ConflictModel {
     pub error_message: String,
     /// Number of retry attempts
     pub retry_count: i32,
-    /// Operator ID (if available)
-    pub operator_id: String,
+    /// The operator who rang the conflicting transaction, when the queued row records one.
+    ///
+    /// `Option`, not an empty string. The row's `operator_id` column is nullable, and a conflict
+    /// with no operator is a different thing for a supervisor to look at than one belonging to a
+    /// cashier called "". The view layer decides how to render the absence; the model does not
+    /// decide it for them by flattening it away.
+    pub operator_id: Option<OperatorId>,
     /// Receipt number (if available)
     pub receipt_number: String,
 }
@@ -80,7 +86,7 @@ impl ConflictBridge {
                         created_at: format_date(&c.created_at),
                         error_message: c.error_message,
                         retry_count: c.retry_count,
-                        operator_id: c.operator_id.unwrap_or_default(),
+                        operator_id: c.operator_id,
                         receipt_number: c.receipt_number.unwrap_or_default(),
                     }
                 })

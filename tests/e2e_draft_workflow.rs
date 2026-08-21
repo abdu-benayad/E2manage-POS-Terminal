@@ -9,7 +9,7 @@
 
 mod common;
 
-use common::TestApp;
+use common::{op_id, TestApp};
 use rust_decimal::Decimal;
 
 // ============================================================================
@@ -22,7 +22,7 @@ fn test_hold_and_recall_workflow() {
     app.seed_test_data();
 
     // Create shift for operator
-    let shift_id = app.create_shift("shift-001", "op-001", Decimal::from(500));
+    let shift_id = app.create_shift("shift-001", &op_id("op-001"), Decimal::from(500));
 
     // Add items to cart
     let result1 = app.product_service.search("SKU001", 10).unwrap();
@@ -43,7 +43,7 @@ fn test_hold_and_recall_workflow() {
     let draft = app.draft_service.save_cart(
         &cart,
         Some("Customer Order #1".to_string()),
-        "op-001",
+        &op_id("op-001"),
         &shift_id,
     );
     assert!(draft.is_ok());
@@ -99,7 +99,7 @@ fn test_multiple_drafts_for_operator() {
     let app = TestApp::new();
     app.seed_test_data();
 
-    let shift_id = app.create_shift("shift-002", "op-001", Decimal::from(500));
+    let shift_id = app.create_shift("shift-002", &op_id("op-001"), Decimal::from(500));
 
     // Create multiple drafts
     let mut draft_ids = Vec::new();
@@ -117,13 +117,21 @@ fn test_multiple_drafts_for_operator() {
         let cart = app.cart_service.get_cart();
         let draft = app
             .draft_service
-            .save_cart(&cart, Some(format!("Draft {}", i)), "op-001", &shift_id)
+            .save_cart(
+                &cart,
+                Some(format!("Draft {}", i)),
+                &op_id("op-001"),
+                &shift_id,
+            )
             .unwrap();
         draft_ids.push(draft.id);
     }
 
     // List all drafts for operator
-    let drafts = app.draft_service.list_by_operator("op-001").unwrap();
+    let drafts = app
+        .draft_service
+        .list_by_operator(&op_id("op-001"))
+        .unwrap();
     assert_eq!(drafts.len(), 3);
 
     // Each draft should have unique ID
@@ -144,7 +152,7 @@ fn test_draft_without_name() {
     let app = TestApp::new();
     app.seed_test_data();
 
-    let shift_id = app.create_shift("shift-003", "op-001", Decimal::from(500));
+    let shift_id = app.create_shift("shift-003", &op_id("op-001"), Decimal::from(500));
 
     let result = app.product_service.search("SKU001", 10).unwrap();
     app.cart_service
@@ -156,7 +164,7 @@ fn test_draft_without_name() {
     // Save draft without name
     let draft = app
         .draft_service
-        .save_cart(&cart, None, "op-001", &shift_id)
+        .save_cart(&cart, None, &op_id("op-001"), &shift_id)
         .unwrap();
 
     assert!(draft.name.is_none());
@@ -174,16 +182,19 @@ fn test_empty_cart_cannot_be_saved() {
     let app = TestApp::new();
     app.seed_test_data();
 
-    let shift_id = app.create_shift("shift-004", "op-001", Decimal::from(500));
+    let shift_id = app.create_shift("shift-004", &op_id("op-001"), Decimal::from(500));
 
     // Cart is empty
     let cart = app.cart_service.get_cart();
     assert!(cart.is_empty());
 
     // Try to save empty cart
-    let result = app
-        .draft_service
-        .save_cart(&cart, Some("Empty".to_string()), "op-001", &shift_id);
+    let result = app.draft_service.save_cart(
+        &cart,
+        Some("Empty".to_string()),
+        &op_id("op-001"),
+        &shift_id,
+    );
 
     assert!(result.is_err());
 
@@ -199,7 +210,7 @@ fn test_draft_preserves_cart_state() {
     let app = TestApp::new();
     app.seed_test_data();
 
-    let shift_id = app.create_shift("shift-005", "op-001", Decimal::from(500));
+    let shift_id = app.create_shift("shift-005", &op_id("op-001"), Decimal::from(500));
 
     // Build a complex cart
     let result1 = app.product_service.search("SKU001", 10).unwrap();
@@ -236,7 +247,12 @@ fn test_draft_preserves_cart_state() {
     // Save as draft
     let draft = app
         .draft_service
-        .save_cart(&cart, Some("Complex Cart".to_string()), "op-001", &shift_id)
+        .save_cart(
+            &cart,
+            Some("Complex Cart".to_string()),
+            &op_id("op-001"),
+            &shift_id,
+        )
         .unwrap();
 
     // Clear and recall
@@ -262,7 +278,7 @@ fn test_list_all_active_drafts() {
     let app = TestApp::new();
     app.seed_test_data();
 
-    let shift_id = app.create_shift("shift-006", "op-001", Decimal::from(500));
+    let shift_id = app.create_shift("shift-006", &op_id("op-001"), Decimal::from(500));
 
     // Create drafts
     for i in 1..=3 {
@@ -280,7 +296,7 @@ fn test_list_all_active_drafts() {
             .save_cart(
                 &cart,
                 Some(format!("Active Draft {}", i)),
-                "op-001",
+                &op_id("op-001"),
                 &shift_id,
             )
             .unwrap();
@@ -302,7 +318,7 @@ fn test_delete_draft() {
     let app = TestApp::new();
     app.seed_test_data();
 
-    let shift_id = app.create_shift("shift-007", "op-001", Decimal::from(500));
+    let shift_id = app.create_shift("shift-007", &op_id("op-001"), Decimal::from(500));
 
     // Create a draft
     let result = app.product_service.search("SKU001", 10).unwrap();
@@ -313,7 +329,12 @@ fn test_delete_draft() {
     let cart = app.cart_service.get_cart();
     let draft = app
         .draft_service
-        .save_cart(&cart, Some("To Delete".to_string()), "op-001", &shift_id)
+        .save_cart(
+            &cart,
+            Some("To Delete".to_string()),
+            &op_id("op-001"),
+            &shift_id,
+        )
         .unwrap();
     let draft_id = draft.id.clone();
 
@@ -340,10 +361,13 @@ fn test_draft_count_statistics() {
     let app = TestApp::new();
     app.seed_test_data();
 
-    let shift_id = app.create_shift("shift-008", "op-001", Decimal::from(500));
+    let shift_id = app.create_shift("shift-008", &op_id("op-001"), Decimal::from(500));
 
     // Initial count
-    let initial_count = app.draft_service.count_by_operator("op-001").unwrap_or(0);
+    let initial_count = app
+        .draft_service
+        .count_by_operator(&op_id("op-001"))
+        .unwrap_or(0);
 
     // Create drafts
     for i in 1..=2 {
@@ -358,12 +382,15 @@ fn test_draft_count_statistics() {
 
         let cart = app.cart_service.get_cart();
         app.draft_service
-            .save_cart(&cart, None, "op-001", &shift_id)
+            .save_cart(&cart, None, &op_id("op-001"), &shift_id)
             .unwrap();
     }
 
     // Count should increase
-    let new_count = app.draft_service.count_by_operator("op-001").unwrap_or(0);
+    let new_count = app
+        .draft_service
+        .count_by_operator(&op_id("op-001"))
+        .unwrap_or(0);
     assert_eq!(new_count, initial_count + 2);
 
     println!("✓ Draft count statistics passed");
@@ -378,7 +405,7 @@ fn test_draft_with_item_discount() {
     let app = TestApp::new();
     app.seed_test_data();
 
-    let shift_id = app.create_shift("shift-009", "op-001", Decimal::from(500));
+    let shift_id = app.create_shift("shift-009", &op_id("op-001"), Decimal::from(500));
 
     // Add product and apply item discount
     let result = app.product_service.search("SKU001", 10).unwrap();
@@ -400,7 +427,7 @@ fn test_draft_with_item_discount() {
         .save_cart(
             &cart,
             Some("Item Discount Draft".to_string()),
-            "op-001",
+            &op_id("op-001"),
             &shift_id,
         )
         .unwrap();

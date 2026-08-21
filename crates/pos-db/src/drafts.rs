@@ -6,7 +6,10 @@ use chrono::Utc;
 use rusqlite::{params, OptionalExtension, Result as SqliteResult};
 use serde::{Deserialize, Serialize};
 
+use pos_models::OperatorId;
+
 use super::Database;
+use crate::column;
 
 /// Draft row from database
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -20,7 +23,7 @@ pub struct DraftRow {
     pub notes: Option<String>,
     pub created_at: String,
     pub expires_at: Option<String>,
-    pub operator_id: Option<String>,
+    pub operator_id: Option<OperatorId>,
     pub shift_id: Option<String>,
 }
 
@@ -60,7 +63,7 @@ impl Database {
                 &draft.notes,
                 &draft.created_at,
                 &draft.expires_at,
-                &draft.operator_id,
+                &draft.operator_id.as_ref().map(OperatorId::as_str),
                 &draft.shift_id,
             ],
         )?;
@@ -88,7 +91,7 @@ impl Database {
                     notes: row.get(6)?,
                     created_at: row.get(7)?,
                     expires_at: row.get(8)?,
-                    operator_id: row.get(9)?,
+                    operator_id: column::optional_operator_id(row, 9)?,
                     shift_id: row.get(10)?,
                 })
             },
@@ -122,7 +125,7 @@ impl Database {
                 notes: row.get(6)?,
                 created_at: row.get(7)?,
                 expires_at: row.get(8)?,
-                operator_id: row.get(9)?,
+                operator_id: column::optional_operator_id(row, 9)?,
                 shift_id: row.get(10)?,
             })
         })?;
@@ -131,7 +134,7 @@ impl Database {
     }
 
     /// Gets drafts for an operator
-    pub fn get_drafts_by_operator(&self, operator_id: &str) -> SqliteResult<Vec<DraftRow>> {
+    pub fn get_drafts_by_operator(&self, operator_id: &OperatorId) -> SqliteResult<Vec<DraftRow>> {
         let conn = self.connection();
         let conn = conn.lock();
 
@@ -146,7 +149,7 @@ impl Database {
                ORDER BY created_at DESC"#,
         )?;
 
-        let rows = stmt.query_map(params![operator_id, now], |row: &rusqlite::Row| {
+        let rows = stmt.query_map(params![operator_id.as_str(), now], |row: &rusqlite::Row| {
             Ok(DraftRow {
                 id: row.get(0)?,
                 name: row.get(1)?,
@@ -157,7 +160,7 @@ impl Database {
                 notes: row.get(6)?,
                 created_at: row.get(7)?,
                 expires_at: row.get(8)?,
-                operator_id: row.get(9)?,
+                operator_id: column::optional_operator_id(row, 9)?,
                 shift_id: row.get(10)?,
             })
         })?;
@@ -189,7 +192,7 @@ impl Database {
                 notes: row.get(6)?,
                 created_at: row.get(7)?,
                 expires_at: row.get(8)?,
-                operator_id: row.get(9)?,
+                operator_id: column::optional_operator_id(row, 9)?,
                 shift_id: row.get(10)?,
             })
         })?;
@@ -227,19 +230,22 @@ impl Database {
     }
 
     /// Creates a draft with auto-generated name
-    // The four adjacent `Option<&str>` parameters are freely swappable at the call site, which
-    // is the defect, not the count. `type-driven-domain-core` task 09 replaces `operator_id`
-    // with `OperatorId`; `#[expect]` fails once that lands, forcing this to be revisited then
-    // rather than half-fixed now.
+    // The adjacent `Option<&str>` parameters are freely swappable at the call site, which is the
+    // defect, not the count. Task 09 typed `operator_id` as `OperatorId`, so that one is no
+    // longer swappable with the other three; `shift_id`, `customer_id` and `customer_name` still
+    // are, and belong to later tiers of `type-driven-domain-core`. The arity is unchanged, so the
+    // `expect` below still holds.
     #[expect(
         clippy::too_many_arguments,
-        reason = "signature is rewritten by type-driven-domain-core task 09 (adopt OperatorId)"
+        reason = "eight parameters, and `OperatorId` (task 09) typed two of them without \
+                  reducing the count; the remaining primitives belong to later tiers of \
+                  type-driven-domain-core"
     )]
     pub fn create_draft(
         &self,
         id: &str,
         items_json: &str,
-        operator_id: Option<&str>,
+        operator_id: Option<&OperatorId>,
         shift_id: Option<&str>,
         customer_id: Option<&str>,
         customer_name: Option<&str>,
@@ -265,7 +271,7 @@ impl Database {
             notes: None,
             created_at,
             expires_at,
-            operator_id: operator_id.map(String::from),
+            operator_id: operator_id.cloned(),
             shift_id: shift_id.map(String::from),
         };
 
@@ -279,6 +285,10 @@ mod tests {
     use super::*;
     use crate::migrations::run_migrations;
     use crate::operators::OperatorRow;
+
+    fn op_id(id: &str) -> OperatorId {
+        OperatorId::new(id).expect("a non-blank id")
+    }
 
     fn setup_db() -> Database {
         let db = Database::in_memory().unwrap();
@@ -310,7 +320,7 @@ mod tests {
             .create_draft(
                 "draft-1",
                 r#"[{"id":"prod-1","qty":2}]"#,
-                Some("op-1"),
+                Some(&op_id("op-1")),
                 None, // Don't use shift foreign key in tests
                 None,
                 None,
@@ -335,7 +345,7 @@ mod tests {
             db.create_draft(
                 &format!("draft-{}", i),
                 "[]",
-                Some("op-1"),
+                Some(&op_id("op-1")),
                 None,
                 None,
                 None,
@@ -371,17 +381,17 @@ mod tests {
         create_test_operator(&db, "op-1");
         create_test_operator(&db, "op-2");
 
-        db.create_draft("d1", "[]", Some("op-1"), None, None, None, None)
+        db.create_draft("d1", "[]", Some(&op_id("op-1")), None, None, None, None)
             .unwrap();
-        db.create_draft("d2", "[]", Some("op-1"), None, None, None, None)
+        db.create_draft("d2", "[]", Some(&op_id("op-1")), None, None, None, None)
             .unwrap();
-        db.create_draft("d3", "[]", Some("op-2"), None, None, None, None)
+        db.create_draft("d3", "[]", Some(&op_id("op-2")), None, None, None, None)
             .unwrap();
 
-        let op1_drafts = db.get_drafts_by_operator("op-1").unwrap();
+        let op1_drafts = db.get_drafts_by_operator(&op_id("op-1")).unwrap();
         assert_eq!(op1_drafts.len(), 2);
 
-        let op2_drafts = db.get_drafts_by_operator("op-2").unwrap();
+        let op2_drafts = db.get_drafts_by_operator(&op_id("op-2")).unwrap();
         assert_eq!(op2_drafts.len(), 1);
     }
 }

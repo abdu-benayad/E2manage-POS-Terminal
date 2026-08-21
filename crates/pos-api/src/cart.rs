@@ -38,6 +38,8 @@ use anyhow::Result;
 use pos_models::product::ProductType;
 use serde::{Deserialize, Serialize};
 
+use pos_models::{OperatorId, RecordedOperatorName};
+
 use super::ApiClient;
 
 // ============================================================================
@@ -57,10 +59,10 @@ pub struct CreateCartRequest {
     pub device_id: Option<String>,
     /// Operator/cashier ID
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub operator_id: Option<String>,
+    pub operator_id: Option<OperatorId>,
     /// Operator name for display
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub operator_name: Option<String>,
+    pub operator_name: Option<RecordedOperatorName>,
     /// Customer ID (optional)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub customer_id: Option<String>,
@@ -151,9 +153,9 @@ pub struct CreateAndParkCartRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub display_name: Option<String>,
     /// Operator ID
-    pub operator_id: String,
+    pub operator_id: OperatorId,
     /// Operator name
-    pub operator_name: String,
+    pub operator_name: RecordedOperatorName,
     /// Terminal ID
     pub terminal_id: String,
     /// Customer ID (optional)
@@ -209,9 +211,9 @@ pub struct ParkCartRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub display_name: Option<String>,
     /// Operator ID
-    pub operator_id: String,
+    pub operator_id: OperatorId,
     /// Operator name
-    pub operator_name: String,
+    pub operator_name: RecordedOperatorName,
     /// Terminal ID
     pub terminal_id: String,
     /// Expiry in minutes
@@ -224,9 +226,9 @@ pub struct ParkCartRequest {
 #[serde(rename_all = "camelCase")]
 pub struct RecallCartRequest {
     /// Operator ID
-    pub operator_id: String,
+    pub operator_id: OperatorId,
     /// Operator name
-    pub operator_name: String,
+    pub operator_name: RecordedOperatorName,
     /// Terminal ID
     pub terminal_id: String,
     /// Force recall even if locked by another terminal
@@ -258,13 +260,13 @@ pub struct ParkedCartResponse {
     pub is_recalled: bool,
     pub is_expired: bool,
     #[serde(default)]
-    pub parked_by_operator_name: Option<String>,
+    pub parked_by_operator_name: Option<RecordedOperatorName>,
     #[serde(default)]
     pub parked_by_terminal_id: Option<String>,
     #[serde(default)]
     pub parked_at: Option<String>,
     #[serde(default)]
-    pub recalled_by_operator_name: Option<String>,
+    pub recalled_by_operator_name: Option<RecordedOperatorName>,
     #[serde(default)]
     pub recalled_by_terminal_id: Option<String>,
     #[serde(default)]
@@ -324,13 +326,13 @@ pub struct ParkedCartDetailResponse {
     pub is_recalled: bool,
     pub is_expired: bool,
     #[serde(default)]
-    pub parked_by_operator_name: Option<String>,
+    pub parked_by_operator_name: Option<RecordedOperatorName>,
     #[serde(default)]
     pub parked_by_terminal_id: Option<String>,
     #[serde(default)]
     pub parked_at: Option<String>,
     #[serde(default)]
-    pub recalled_by_operator_name: Option<String>,
+    pub recalled_by_operator_name: Option<RecordedOperatorName>,
     #[serde(default)]
     pub recalled_by_terminal_id: Option<String>,
     #[serde(default)]
@@ -382,10 +384,10 @@ pub struct CartResponse {
     pub device_id: Option<String>,
     /// Operator ID
     #[serde(default)]
-    pub operator_id: Option<String>,
+    pub operator_id: Option<OperatorId>,
     /// Operator name
     #[serde(default)]
-    pub operator_name: Option<String>,
+    pub operator_name: Option<RecordedOperatorName>,
     /// Customer ID
     #[serde(default)]
     pub customer_id: Option<String>,
@@ -735,8 +737,8 @@ mod tests {
             warehouse_id: "wh-001".to_string(),
             source: "POS".to_string(),
             device_id: Some("TERM-001".to_string()),
-            operator_id: Some("op-001".to_string()),
-            operator_name: Some("Ahmed".to_string()),
+            operator_id: Some(OperatorId::new("op-001").unwrap()),
+            operator_name: Some(RecordedOperatorName::new("Ahmed").unwrap()),
             customer_id: None,
             customer_name: None,
             currency: "LYD".to_string(),

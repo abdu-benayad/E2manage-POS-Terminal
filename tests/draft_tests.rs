@@ -43,7 +43,12 @@ fn test_save_cart_creates_draft() {
     let product = sample_product();
     let cart = create_cart_with_item(&product, Decimal::from(2));
 
-    let result = service.save_cart(&cart, Some("Customer Order".to_string()), "op-1", "shift-1");
+    let result = service.save_cart(
+        &cart,
+        Some("Customer Order".to_string()),
+        &op_id("op-1"),
+        "shift-1",
+    );
     assert!(result.is_ok());
 
     let draft = result.unwrap();
@@ -60,7 +65,9 @@ fn test_save_cart_without_name() {
     let product = sample_product();
     let cart = create_cart_with_item(&product, Decimal::ONE);
 
-    let draft = service.save_cart(&cart, None, "op-1", "shift-1").unwrap();
+    let draft = service
+        .save_cart(&cart, None, &op_id("op-1"), "shift-1")
+        .unwrap();
 
     assert!(draft.name.is_none());
     assert_eq!(draft.display_name(), "Unnamed Draft");
@@ -71,7 +78,7 @@ fn test_save_empty_cart_fails() {
     let (service, _db) = setup_draft_service();
     let cart = e2manage_pos_terminal::models::Cart::new();
 
-    let result = service.save_cart(&cart, None, "op-1", "shift-1");
+    let result = service.save_cart(&cart, None, &op_id("op-1"), "shift-1");
     assert!(matches!(result, Err(DraftError::EmptyCart)));
 }
 
@@ -80,7 +87,9 @@ fn test_save_cart_with_customer() {
     let (service, _db) = setup_draft_service();
     let cart = sample_cart();
 
-    let draft = service.save_cart(&cart, None, "op-1", "shift-1").unwrap();
+    let draft = service
+        .save_cart(&cart, None, &op_id("op-1"), "shift-1")
+        .unwrap();
 
     assert!(draft.has_customer());
     assert_eq!(draft.customer_id, Some("cust-001".to_string()));
@@ -93,9 +102,11 @@ fn test_save_cart_preserves_operator_and_shift() {
     let product = sample_product();
     let cart = create_cart_with_item(&product, Decimal::ONE);
 
-    let draft = service.save_cart(&cart, None, "op-1", "shift-1").unwrap();
+    let draft = service
+        .save_cart(&cart, None, &op_id("op-1"), "shift-1")
+        .unwrap();
 
-    assert_eq!(draft.operator_id, Some("op-1".to_string()));
+    assert_eq!(draft.operator_id, Some(op_id("op-1")));
     assert_eq!(draft.shift_id, Some("shift-1".to_string()));
 }
 
@@ -107,7 +118,7 @@ fn test_save_cart_with_custom_expiry() {
 
     // Save with 48 hour expiry
     let draft = service
-        .save_cart_with_expiry(&cart, None, "op-1", "shift-1", Some(48))
+        .save_cart_with_expiry(&cart, None, &op_id("op-1"), "shift-1", Some(48))
         .unwrap();
 
     assert!(draft.expires_at.is_some());
@@ -124,7 +135,7 @@ fn test_save_cart_without_expiry() {
 
     // Save with no expiry
     let draft = service
-        .save_cart_with_expiry(&cart, None, "op-1", "shift-1", None)
+        .save_cart_with_expiry(&cart, None, &op_id("op-1"), "shift-1", None)
         .unwrap();
 
     assert!(draft.expires_at.is_none());
@@ -141,7 +152,9 @@ fn test_recall_draft() {
     let product = create_product("p1", "Test Product", Decimal::from(100), Decimal::from(15));
     let cart = create_cart_with_item(&product, Decimal::from(3));
 
-    let draft = service.save_cart(&cart, None, "op-1", "shift-1").unwrap();
+    let draft = service
+        .save_cart(&cart, None, &op_id("op-1"), "shift-1")
+        .unwrap();
     let recalled_cart = service.recall(&draft.id).unwrap();
 
     assert_eq!(recalled_cart.line_count(), 1);
@@ -153,7 +166,9 @@ fn test_recall_preserves_customer() {
     let (service, _db) = setup_draft_service();
     let cart = sample_cart();
 
-    let draft = service.save_cart(&cart, None, "op-1", "shift-1").unwrap();
+    let draft = service
+        .save_cart(&cart, None, &op_id("op-1"), "shift-1")
+        .unwrap();
     let recalled_cart = service.recall(&draft.id).unwrap();
 
     assert_eq!(recalled_cart.customer_id, Some("cust-001".to_string()));
@@ -177,7 +192,9 @@ fn test_recall_and_delete() {
     let product = sample_product();
     let cart = create_cart_with_item(&product, Decimal::ONE);
 
-    let draft = service.save_cart(&cart, None, "op-1", "shift-1").unwrap();
+    let draft = service
+        .save_cart(&cart, None, &op_id("op-1"), "shift-1")
+        .unwrap();
     let draft_id = draft.id.clone();
 
     // Recall and delete atomically
@@ -200,7 +217,12 @@ fn test_get_draft() {
     let cart = create_cart_with_item(&product, Decimal::from(2));
 
     let saved_draft = service
-        .save_cart(&cart, Some("My Draft".to_string()), "op-1", "shift-1")
+        .save_cart(
+            &cart,
+            Some("My Draft".to_string()),
+            &op_id("op-1"),
+            "shift-1",
+        )
         .unwrap();
     let fetched_draft = service.get(&saved_draft.id).unwrap();
 
@@ -229,17 +251,32 @@ fn test_list_by_operator() {
 
     // Create drafts for different operators
     service
-        .save_cart(&cart, Some("Op1 Draft 1".to_string()), "op-1", "shift-1")
+        .save_cart(
+            &cart,
+            Some("Op1 Draft 1".to_string()),
+            &op_id("op-1"),
+            "shift-1",
+        )
         .unwrap();
     service
-        .save_cart(&cart, Some("Op1 Draft 2".to_string()), "op-1", "shift-1")
+        .save_cart(
+            &cart,
+            Some("Op1 Draft 2".to_string()),
+            &op_id("op-1"),
+            "shift-1",
+        )
         .unwrap();
     service
-        .save_cart(&cart, Some("Op2 Draft 1".to_string()), "op-2", "shift-1")
+        .save_cart(
+            &cart,
+            Some("Op2 Draft 1".to_string()),
+            &op_id("op-2"),
+            "shift-1",
+        )
         .unwrap();
 
-    let op1_drafts = service.list_by_operator("op-1").unwrap();
-    let op2_drafts = service.list_by_operator("op-2").unwrap();
+    let op1_drafts = service.list_by_operator(&op_id("op-1")).unwrap();
+    let op2_drafts = service.list_by_operator(&op_id("op-2")).unwrap();
 
     assert_eq!(op1_drafts.len(), 2);
     assert_eq!(op2_drafts.len(), 1);
@@ -252,9 +289,15 @@ fn test_list_by_shift() {
     let cart = create_cart_with_item(&product, Decimal::ONE);
 
     // Create drafts for different shifts
-    service.save_cart(&cart, None, "op-1", "shift-1").unwrap();
-    service.save_cart(&cart, None, "op-1", "shift-1").unwrap();
-    service.save_cart(&cart, None, "op-1", "shift-2").unwrap();
+    service
+        .save_cart(&cart, None, &op_id("op-1"), "shift-1")
+        .unwrap();
+    service
+        .save_cart(&cart, None, &op_id("op-1"), "shift-1")
+        .unwrap();
+    service
+        .save_cart(&cart, None, &op_id("op-1"), "shift-2")
+        .unwrap();
 
     let shift1_drafts = service.list_by_shift("shift-1").unwrap();
     let shift2_drafts = service.list_by_shift("shift-2").unwrap();
@@ -274,8 +317,12 @@ fn test_list_active_drafts() {
     assert_eq!(drafts.len(), 0);
 
     // Add some drafts
-    service.save_cart(&cart, None, "op-1", "shift-1").unwrap();
-    service.save_cart(&cart, None, "op-1", "shift-2").unwrap();
+    service
+        .save_cart(&cart, None, &op_id("op-1"), "shift-1")
+        .unwrap();
+    service
+        .save_cart(&cart, None, &op_id("op-1"), "shift-2")
+        .unwrap();
 
     let drafts = service.list_active().unwrap();
     assert_eq!(drafts.len(), 2);
@@ -285,7 +332,7 @@ fn test_list_active_drafts() {
 fn test_list_by_operator_empty() {
     let (service, _db) = setup_draft_service();
 
-    let drafts = service.list_by_operator("op-1").unwrap();
+    let drafts = service.list_by_operator(&op_id("op-1")).unwrap();
     assert!(drafts.is_empty());
 }
 
@@ -301,10 +348,14 @@ fn test_count_active() {
 
     assert_eq!(service.count_active().unwrap(), 0);
 
-    service.save_cart(&cart, None, "op-1", "shift-1").unwrap();
+    service
+        .save_cart(&cart, None, &op_id("op-1"), "shift-1")
+        .unwrap();
     assert_eq!(service.count_active().unwrap(), 1);
 
-    service.save_cart(&cart, None, "op-1", "shift-1").unwrap();
+    service
+        .save_cart(&cart, None, &op_id("op-1"), "shift-1")
+        .unwrap();
     assert_eq!(service.count_active().unwrap(), 2);
 }
 
@@ -314,15 +365,21 @@ fn test_count_by_operator() {
     let product = sample_product();
     let cart = create_cart_with_item(&product, Decimal::ONE);
 
-    assert_eq!(service.count_by_operator("op-1").unwrap(), 0);
-    assert_eq!(service.count_by_operator("op-2").unwrap(), 0);
+    assert_eq!(service.count_by_operator(&op_id("op-1")).unwrap(), 0);
+    assert_eq!(service.count_by_operator(&op_id("op-2")).unwrap(), 0);
 
-    service.save_cart(&cart, None, "op-1", "shift-1").unwrap();
-    service.save_cart(&cart, None, "op-1", "shift-1").unwrap();
-    service.save_cart(&cart, None, "op-2", "shift-1").unwrap();
+    service
+        .save_cart(&cart, None, &op_id("op-1"), "shift-1")
+        .unwrap();
+    service
+        .save_cart(&cart, None, &op_id("op-1"), "shift-1")
+        .unwrap();
+    service
+        .save_cart(&cart, None, &op_id("op-2"), "shift-1")
+        .unwrap();
 
-    assert_eq!(service.count_by_operator("op-1").unwrap(), 2);
-    assert_eq!(service.count_by_operator("op-2").unwrap(), 1);
+    assert_eq!(service.count_by_operator(&op_id("op-1")).unwrap(), 2);
+    assert_eq!(service.count_by_operator(&op_id("op-2")).unwrap(), 1);
 }
 
 // ============================================================================
@@ -335,7 +392,9 @@ fn test_delete_draft() {
     let product = sample_product();
     let cart = create_cart_with_item(&product, Decimal::ONE);
 
-    let draft = service.save_cart(&cart, None, "op-1", "shift-1").unwrap();
+    let draft = service
+        .save_cart(&cart, None, &op_id("op-1"), "shift-1")
+        .unwrap();
 
     let deleted = service.delete(&draft.id).unwrap();
     assert!(deleted);
@@ -360,7 +419,9 @@ fn test_delete_updates_count() {
     let product = sample_product();
     let cart = create_cart_with_item(&product, Decimal::ONE);
 
-    let draft = service.save_cart(&cart, None, "op-1", "shift-1").unwrap();
+    let draft = service
+        .save_cart(&cart, None, &op_id("op-1"), "shift-1")
+        .unwrap();
     assert_eq!(service.count_active().unwrap(), 1);
 
     service.delete(&draft.id).unwrap();
@@ -378,7 +439,12 @@ fn test_rename_draft() {
     let cart = create_cart_with_item(&product, Decimal::ONE);
 
     let draft = service
-        .save_cart(&cart, Some("Original Name".to_string()), "op-1", "shift-1")
+        .save_cart(
+            &cart,
+            Some("Original Name".to_string()),
+            &op_id("op-1"),
+            "shift-1",
+        )
         .unwrap();
 
     let renamed = service
@@ -398,7 +464,12 @@ fn test_rename_to_none() {
     let cart = create_cart_with_item(&product, Decimal::ONE);
 
     let draft = service
-        .save_cart(&cart, Some("Has Name".to_string()), "op-1", "shift-1")
+        .save_cart(
+            &cart,
+            Some("Has Name".to_string()),
+            &op_id("op-1"),
+            "shift-1",
+        )
         .unwrap();
 
     let renamed = service.rename(&draft.id, None).unwrap();
@@ -427,12 +498,22 @@ fn test_draft_limit_per_operator() {
     // Create maximum allowed drafts
     for i in 0..MAX_DRAFTS_PER_OPERATOR {
         service
-            .save_cart(&cart, Some(format!("Draft {}", i)), "op-1", "shift-1")
+            .save_cart(
+                &cart,
+                Some(format!("Draft {}", i)),
+                &op_id("op-1"),
+                "shift-1",
+            )
             .unwrap();
     }
 
     // Try to create one more
-    let result = service.save_cart(&cart, Some("Extra Draft".to_string()), "op-1", "shift-1");
+    let result = service.save_cart(
+        &cart,
+        Some("Extra Draft".to_string()),
+        &op_id("op-1"),
+        "shift-1",
+    );
     assert!(matches!(result, Err(DraftError::LimitExceeded(_))));
 }
 
@@ -445,12 +526,22 @@ fn test_draft_limit_independent_per_operator() {
     // Fill up op-1's limit
     for i in 0..MAX_DRAFTS_PER_OPERATOR {
         service
-            .save_cart(&cart, Some(format!("Draft {}", i)), "op-1", "shift-1")
+            .save_cart(
+                &cart,
+                Some(format!("Draft {}", i)),
+                &op_id("op-1"),
+                "shift-1",
+            )
             .unwrap();
     }
 
     // op-2 should still be able to create drafts
-    let result = service.save_cart(&cart, Some("Op2 Draft".to_string()), "op-2", "shift-1");
+    let result = service.save_cart(
+        &cart,
+        Some("Op2 Draft".to_string()),
+        &op_id("op-2"),
+        "shift-1",
+    );
     assert!(result.is_ok());
 }
 
@@ -464,7 +555,12 @@ fn test_draft_limit_freed_after_delete() {
     let mut draft_ids = Vec::new();
     for i in 0..MAX_DRAFTS_PER_OPERATOR {
         let draft = service
-            .save_cart(&cart, Some(format!("Draft {}", i)), "op-1", "shift-1")
+            .save_cart(
+                &cart,
+                Some(format!("Draft {}", i)),
+                &op_id("op-1"),
+                "shift-1",
+            )
             .unwrap();
         draft_ids.push(draft.id);
     }
@@ -473,7 +569,12 @@ fn test_draft_limit_freed_after_delete() {
     service.delete(&draft_ids[0]).unwrap();
 
     // Should be able to create one more
-    let result = service.save_cart(&cart, Some("New Draft".to_string()), "op-1", "shift-1");
+    let result = service.save_cart(
+        &cart,
+        Some("New Draft".to_string()),
+        &op_id("op-1"),
+        "shift-1",
+    );
     assert!(result.is_ok());
 }
 

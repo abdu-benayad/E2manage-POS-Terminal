@@ -13,6 +13,7 @@ use tracing::{info, warn};
 use pos_api::ApiClient;
 use pos_db::shifts::{ShiftRow, ShiftStatus};
 use pos_db::Database;
+use pos_models::{OperatorId, RecordedOperatorName};
 
 /// Error types for shift operations
 #[derive(Debug, Clone)]
@@ -185,10 +186,14 @@ pub struct ShiftSummary {
     pub id: String,
     /// Shift number (e.g., "POS-001-20241213-001")
     pub shift_number: String,
-    /// Operator ID
-    pub operator_id: String,
-    /// Operator name
-    pub operator_name: String,
+    /// Operator who owns the shift
+    pub operator_id: OperatorId,
+    /// The operator's name as recorded on this shift, when it is known.
+    ///
+    /// Optional because the `shifts` table stores only `operator_id`; `row_to_summary` cannot
+    /// name the operator without a lookup that does not exist yet. `None` says the lookup did
+    /// not happen — the empty string it replaces said the operator had no name.
+    pub operator_name: Option<RecordedOperatorName>,
     /// Terminal ID
     pub terminal_id: String,
     /// Opening cash float
@@ -229,35 +234,14 @@ pub struct ShiftSummary {
     pub note: Option<String>,
 }
 
-impl Default for ShiftSummary {
-    fn default() -> Self {
-        Self {
-            id: String::new(),
-            shift_number: String::new(),
-            operator_id: String::new(),
-            operator_name: String::new(),
-            terminal_id: String::new(),
-            opening_cash: Decimal::ZERO,
-            expected_cash: Decimal::ZERO,
-            counted_cash: None,
-            variance: None,
-            variance_status: None,
-            started_at: String::new(),
-            ended_at: None,
-            status: ShiftStatus::Active,
-            transaction_count: 0,
-            cash_sales: Decimal::ZERO,
-            card_sales: Decimal::ZERO,
-            wallet_sales: Decimal::ZERO,
-            returns_total: Decimal::ZERO,
-            discounts_total: Decimal::ZERO,
-            gross_sales: Decimal::ZERO,
-            net_sales: Decimal::ZERO,
-            currency: "LYD".to_string(),
-            note: None,
-        }
-    }
-}
+// There is deliberately no `impl Default for ShiftSummary`.
+//
+// The one it replaces gave a summary an empty `operator_id`, an empty `operator_name` and
+// `status: ShiftStatus::Active`, so `ShiftSummary::default()` was an *open shift belonging to
+// nobody* and every `..Default::default()` inherited it. Typing the id made the problem
+// unignorable rather than solving it: an `OperatorId::new("unassigned")` would be the same
+// sentinel wearing the newtype, which is the one outcome this migration must not produce.
+// `shifts.operator_id` is `NOT NULL`; there is no such shift to model.
 
 /// Result of starting a shift
 #[derive(Debug, Clone)]
@@ -293,7 +277,7 @@ pub struct CloseShiftResult {
 #[serde(rename_all = "camelCase")]
 struct StartShiftRequest {
     shift_number: String,
-    operator_id: String,
+    operator_id: OperatorId,
     terminal_id: String,
     opening_cash: Decimal,
     currency: String,
@@ -379,8 +363,8 @@ impl ShiftService {
     /// Starts a new shift
     pub async fn start_shift(
         &self,
-        operator_id: &str,
-        operator_name: &str,
+        operator_id: &OperatorId,
+        operator_name: &RecordedOperatorName,
         terminal_id: &str,
         opening_cash: Decimal,
         currency: &str,
@@ -422,15 +406,27 @@ impl ShiftService {
         let summary = ShiftSummary {
             id: shift_id.clone(),
             shift_number: shift_number.clone(),
-            operator_id: operator_id.to_string(),
-            operator_name: operator_name.to_string(),
+            operator_id: operator_id.clone(),
+            operator_name: Some(operator_name.clone()),
             terminal_id: terminal_id.to_string(),
             opening_cash,
             expected_cash: opening_cash, // Initially just opening float
             started_at: shift_row.started_at,
             status: ShiftStatus::Active,
             currency: currency.to_string(),
-            ..Default::default()
+            counted_cash: None,
+            variance: None,
+            variance_status: None,
+            ended_at: None,
+            transaction_count: 0,
+            cash_sales: Decimal::ZERO,
+            card_sales: Decimal::ZERO,
+            wallet_sales: Decimal::ZERO,
+            returns_total: Decimal::ZERO,
+            discounts_total: Decimal::ZERO,
+            gross_sales: Decimal::ZERO,
+            net_sales: Decimal::ZERO,
+            note: None,
         };
 
         *self.current_shift.write() = Some(summary);
@@ -628,7 +624,11 @@ impl ShiftService {
             id: row.id.clone(),
             shift_number: row.shift_number.clone(),
             operator_id: row.operator_id.clone(),
-            operator_name: String::new(), // Would need to lookup
+            // The `shifts` table keeps no name column, so this summary genuinely does not know
+            // it. `None` reports that; the `String::new()` it replaces claimed the operator was
+            // called "". The lookup this needs is `operators.name` by id, and adding it is a
+            // behavioural change that belongs with whoever owns the shift screen.
+            operator_name: None,
             terminal_id: row.terminal_id.clone().unwrap_or_default(),
             opening_cash: row.opening_cash,
             expected_cash: row.expected_cash.unwrap_or(row.opening_cash),
@@ -651,18 +651,19 @@ impl ShiftService {
         })
     }
 
-    // Four adjacent `&str` parameters are freely swappable at the call site; that is the
-    // defect, not the count. `type-driven-domain-core` task 09 replaces `operator_id` with
-    // `OperatorId`, at which point `#[expect]` fails and forces this to be revisited.
+    // Task 09 typed `operator_id`, so it is no longer swappable with its neighbours.
+    // `_shift_id`, `shift_number`, `terminal_id`, `currency` and `started_at` still are, and
+    // belong to later tiers of `type-driven-domain-core`. The arity is unchanged.
     #[expect(
         clippy::too_many_arguments,
-        reason = "signature is rewritten by type-driven-domain-core task 09 (adopt OperatorId)"
+        reason = "eight parameters; `operator_id` is typed, the rest belong to later tiers of \
+                  type-driven-domain-core"
     )]
     async fn sync_shift_start(
         &self,
         _shift_id: &str,
         shift_number: &str,
-        operator_id: &str,
+        operator_id: &OperatorId,
         terminal_id: &str,
         opening_cash: Decimal,
         currency: &str,
@@ -670,7 +671,7 @@ impl ShiftService {
     ) -> Result<String> {
         let request = StartShiftRequest {
             shift_number: shift_number.to_string(),
-            operator_id: operator_id.to_string(),
+            operator_id: operator_id.clone(),
             terminal_id: terminal_id.to_string(),
             opening_cash,
             currency: currency.to_string(),
@@ -809,13 +810,5 @@ mod tests {
         assert_eq!(VarianceStatus::Balanced.as_str(), "balanced");
         assert_eq!(VarianceStatus::Short.as_str(), "short");
         assert_eq!(VarianceStatus::Over.as_str(), "over");
-    }
-
-    #[test]
-    fn test_shift_summary_default() {
-        let summary = ShiftSummary::default();
-        assert_eq!(summary.opening_cash, Decimal::ZERO);
-        assert_eq!(summary.currency, "LYD");
-        assert!(matches!(summary.status, ShiftStatus::Active));
     }
 }

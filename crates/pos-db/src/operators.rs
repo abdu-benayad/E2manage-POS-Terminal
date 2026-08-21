@@ -3,31 +3,12 @@
 //! Handles operator (cashier) data storage and retrieval.
 
 use pos_models::OperatorRole;
+
+use crate::column::operator_role;
 use rusqlite::{params, OptionalExtension, Result as SqliteResult};
 use serde::{Deserialize, Serialize};
 
 use super::Database;
-
-/// Reads an operator's role from a text column, refusing a value the server's enum does not
-/// admit.
-///
-/// A free function rather than `impl FromSql for OperatorRole`, which would be `E0117`: `FromSql`
-/// belongs to `rusqlite` and `OperatorRole` to `pos-models`, and neither is local to this crate —
-/// the same coherence wall that shaped `pos_models::StoreFailure`.
-///
-/// The parse failure is returned, never defaulted. A role this till does not recognise means the
-/// contract moved, or the row was written by something other than the sync; reading it as
-/// `Cashier` would be a privilege decision made by a fallback.
-fn operator_role(row: &rusqlite::Row<'_>, index: usize) -> SqliteResult<OperatorRole> {
-    let raw: String = row.get(index)?;
-    raw.parse().map_err(|error| {
-        rusqlite::Error::FromSqlConversionFailure(
-            index,
-            rusqlite::types::Type::Text,
-            Box::new(error),
-        )
-    })
-}
 
 /// Operator row from database (HR Employee integrated)
 #[derive(Debug, Clone, Serialize, Deserialize)]
