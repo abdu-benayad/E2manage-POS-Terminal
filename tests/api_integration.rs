@@ -47,12 +47,21 @@ pub struct ApiResponse<T> {
 }
 
 /// Error response from the backend
+///
+/// The machine code is nested under `error.code`; a top-level `errorCode` is a field the platform
+/// has never sent.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ApiError {
     pub message: String,
     #[serde(default)]
-    pub error_code: Option<String>,
+    pub error: Option<ApiErrorDetail>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ApiErrorDetail {
+    pub code: String,
+    pub message: String,
 }
 
 // ============================================================================

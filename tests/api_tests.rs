@@ -214,12 +214,21 @@ pub struct ApiResponse<T> {
     pub data: Option<T>,
 }
 
+/// The server nests the machine code under `error.code`; a top-level `errorCode` is a field the
+/// platform has never sent. A mirror that documents the wrong shape is worse than no mirror,
+/// which is what the file-level `expect` above is claiming these earn their keep by being.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ApiErrorResponse {
     pub message: String,
     #[serde(default)]
-    pub error_code: Option<String>,
+    pub error: Option<ApiErrorDetail>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ApiErrorDetail {
+    pub code: String,
+    pub message: String,
 }
 
 /// User login response from /api/auth/login

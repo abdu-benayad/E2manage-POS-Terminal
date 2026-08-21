@@ -9,6 +9,8 @@ use reqwest::{
     Client, Response, StatusCode,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
+
+use crate::failure::ServerErrorCode;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
@@ -39,14 +41,33 @@ pub const HEADER_TERMINAL_TOKEN: &str = "X-Terminal-Token";
 pub const HEADER_TERMINAL_ID: &str = "X-Terminal-ID";
 
 /// API error response from server
+///
+/// Mirrors the envelope `respondWithApiError` writes
+/// (`wadi-dms-api/src/shared/types/api-error.type.ts:100-112`):
+/// `{ success, message, error: { code, message }, errors? }`.
+///
+/// Both optional fields were previously declared at the wrong path — `error_code` at the top
+/// level where the server nests it under `error.code`, and `details` under a name the server
+/// never emits — so with `#[serde(default)]` on each, **both had always deserialized to `None`**.
+/// A till-side bug against a correct server; nothing read either field, which is why it survived.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ApiErrorResponse {
     pub message: String,
     #[serde(default)]
-    pub error_code: Option<String>,
+    pub error: Option<ApiErrorDetail>,
+    /// Per-field validation failures, sent by the 400 and 422 paths only (`ApiError.errors?:
+    /// any[]`).
     #[serde(default)]
-    pub details: Option<serde_json::Value>,
+    pub errors: Option<Vec<serde_json::Value>>,
+}
+
+/// The machine-readable half of the error envelope.
+#[derive(Debug, Deserialize)]
+pub struct ApiErrorDetail {
+    /// See [`ServerErrorCode`] for how much this is currently worth.
+    pub code: ServerErrorCode,
+    pub message: String,
 }
 
 /// API response envelope from backend

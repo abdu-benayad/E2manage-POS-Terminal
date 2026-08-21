@@ -7,6 +7,8 @@
 //! - **client**: HTTP client wrapper with authentication headers
 //! - **auth**: Terminal authentication, login, and heartbeat
 //! - **sync**: Sync DTOs for catalog, operators, and screens
+//! - **failure**: How a call to the platform failed — refused, unreachable, or unreadable
+//! - **session**: The terminal's session token and what happened when it was renewed
 //!
 //! ## Usage
 //!
@@ -26,12 +28,16 @@
 pub mod auth;
 pub mod cart;
 pub mod client;
+pub mod failure;
 pub mod features;
 pub mod platform;
+pub mod session;
 pub mod sync;
 
 // Re-export main types
-pub use client::{ApiClient, ApiErrorResponse, GetResult, OnlineStatus};
+pub use client::{ApiClient, ApiErrorDetail, ApiErrorResponse, GetResult, OnlineStatus};
+pub use failure::{ApiFailure, ServerErrorCode};
+pub use session::{BlankSessionToken, ReauthOutcome, SessionToken};
 
 pub use auth::{
     // Pairing types
