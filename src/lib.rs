@@ -12,7 +12,7 @@
 //!
 //! Additional modules in this crate:
 //! - **hardware**: Hardware abstraction (printers, scanners)
-//! - **ui**: Slint UI bridges and helpers
+//! - **ui**: view-model bridges and helpers
 //! - **utils**: Utility functions
 //!
 //! ## Example

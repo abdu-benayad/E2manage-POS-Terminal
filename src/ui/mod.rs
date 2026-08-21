@@ -1,11 +1,13 @@
-//! UI Module - Slint Integration
+//! UI Module - view-model bridges
 //!
-//! This module provides bridges between Rust services and the Slint UI.
+//! This module converts service types into flat, render-ready shapes. It holds no
+//! dependency on any UI toolkit, and must not acquire one: the view layer imports
+//! these, never the reverse.
 //!
 //! ## Available Bridges
 //!
-//! - **cart_bridge**: Converts cart data to Slint-compatible types
-//! - **conflict_bridge**: Converts conflict data to Slint-compatible types
+//! - **cart_bridge**: flattens cart data into per-row view models
+//! - **conflict_bridge**: flattens sync conflicts into per-row view models
 //! - **navigation**: Feature-aware navigation with screen validation
 
 pub mod cart_bridge;

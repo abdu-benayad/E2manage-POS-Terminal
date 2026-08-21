@@ -1,7 +1,7 @@
-//! Conflict Bridge - Slint UI Integration
+//! Conflict Bridge - view-model conversion
 //!
 //! Provides types and utilities for bridging the Rust ConflictService
-//! with the Slint UI layer. Converts conflict data to Slint-compatible
+//! with the view layer. Converts conflict data to render-ready
 //! types that can be displayed in the conflicts screen.
 //!
 //! ## Example
@@ -25,10 +25,10 @@ use crate::utils::formatting;
 use pos_services::ConflictService;
 use std::sync::Arc;
 
-/// Conflict transaction model for Slint UI
+/// Conflict transaction view model
 ///
 /// This struct contains all the data needed to display a conflict
-/// in the Slint UI. Matches the ConflictTransaction struct in Slint.
+/// by the view layer.
 #[derive(Clone, Debug, Default)]
 pub struct ConflictModel {
     /// Offline transaction ID
@@ -51,9 +51,9 @@ pub struct ConflictModel {
     pub receipt_number: String,
 }
 
-/// Bridge between Rust ConflictService and Slint UI
+/// Bridge between ConflictService and the view layer
 ///
-/// Provides methods to convert conflict data to Slint-compatible types.
+/// Provides methods to convert conflict data into render-ready types.
 /// The bridge holds an Arc reference to the conflict service.
 pub struct ConflictBridge {
     service: Arc<ConflictService>,
@@ -65,7 +65,7 @@ impl ConflictBridge {
         Self { service }
     }
 
-    /// Gets all conflict transactions formatted for Slint display
+    /// Gets all conflict transactions formatted for display
     pub fn get_conflicts_model(&self, currency: &str, _locale: &str) -> Vec<ConflictModel> {
         match self.service.get_conflicts() {
             Ok(conflicts) => conflicts

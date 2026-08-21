@@ -1,6 +1,6 @@
 # E2Manage POS Terminal
 
-Open-source Point of Sale terminal built with **Rust** and **Slint UI**.
+Open-source Point of Sale terminal built with **Rust**.
 
 Works with [E2Manage ERP](https://jooher.app) backend via HTTP APIs.
 
@@ -18,7 +18,7 @@ Works with [E2Manage ERP](https://jooher.app) backend via HTTP APIs.
 ```
 ┌─────────────────────────────────────┐
 │  E2Manage POS Terminal (this app)   │
-│  - Rust + Slint UI                  │
+│  - Rust                             │
 │  - Local SQLite cache               │
 │  - HTTP polling (10 min interval)   │
 └──────────────┬──────────────────────┘

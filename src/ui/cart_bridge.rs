@@ -1,7 +1,7 @@
-//! Cart Bridge - Slint UI Integration
+//! Cart Bridge - view-model conversion
 //!
 //! Provides types and utilities for bridging the Rust CartService
-//! with the Slint UI layer. Converts cart data to Slint-compatible
+//! with the view layer. Converts cart data to render-ready
 //! types that can be displayed in the UI.
 //!
 //! ## Example
@@ -31,10 +31,10 @@ use rust_decimal::prelude::*;
 use rust_decimal::Decimal;
 use std::sync::Arc;
 
-/// Cart item model for Slint UI
+/// Cart item view model
 ///
 /// This struct contains all the data needed to display a cart item
-/// in the Slint UI. All monetary values are pre-formatted as strings.
+/// by the view layer. All monetary values are pre-formatted as strings.
 #[derive(Clone, Debug, Default)]
 pub struct CartItemModel {
     /// Unique cart item ID
@@ -49,7 +49,7 @@ pub struct CartItemModel {
     pub sku: String,
     /// Current quantity
     pub quantity: i32,
-    /// Decimal quantity (for weighable items, Slint needs f64)
+    /// Decimal quantity (for weighable items, the view layer needs f64)
     pub quantity_decimal: f64,
     /// Unit of measure label
     pub unit: String,
@@ -71,7 +71,7 @@ pub struct CartItemModel {
     pub has_note: bool,
 }
 
-/// Cart totals for Slint UI
+/// Cart totals view model
 ///
 /// Contains all the cart-level totals needed for display.
 #[derive(Clone, Debug, Default)]
@@ -96,13 +96,13 @@ pub struct CartTotals {
     pub customer_balance: String,
     /// Whether a customer is associated
     pub has_customer: bool,
-    /// Cart-level discount percent (Slint needs f64)
+    /// Cart-level discount percent (the view layer needs f64)
     pub cart_discount_percent: f64,
     /// Cart-level discount amount
     pub cart_discount_amount: String,
 }
 
-/// Customer model for Slint UI
+/// Customer view model
 #[derive(Clone, Debug, Default)]
 pub struct CustomerModel {
     /// Customer ID
@@ -113,9 +113,9 @@ pub struct CustomerModel {
     pub balance: String,
 }
 
-/// Bridge between Rust CartService and Slint UI
+/// Bridge between CartService and the view layer
 ///
-/// Provides methods to convert cart data to Slint-compatible types.
+/// Provides methods to convert cart data into render-ready types.
 /// The bridge holds an Arc reference to the cart service, allowing
 /// it to be shared across threads.
 pub struct CartBridge {
@@ -128,7 +128,7 @@ impl CartBridge {
         Self { service }
     }
 
-    /// Gets the cart items formatted for Slint display
+    /// Gets the cart items formatted for display
     ///
     /// # Arguments
     /// * `locale` - The locale code for name localization ("ar" or "en")
@@ -144,7 +144,7 @@ impl CartBridge {
                 name_ar: item.product_name_ar.clone().unwrap_or_default(),
                 sku: item.sku.clone(),
                 quantity: item.quantity.to_i32().unwrap_or(0),
-                // Slint UI needs f64 for decimal quantities (weighable items)
+                // The view layer needs f64 for decimal quantities (weighable items)
                 quantity_decimal: item.quantity.to_f64().unwrap_or(0.0),
                 unit: item.unit.label(locale).to_string(),
                 unit_price: formatting::format_currency(item.unit_price, currency, locale),
@@ -170,7 +170,7 @@ impl CartBridge {
         self.get_items_model("ar", currency)
     }
 
-    /// Gets the cart totals formatted for Slint display
+    /// Gets the cart totals formatted for display
     ///
     /// # Arguments
     /// * `currency` - Currency code to use (e.g., "LYD", "USD")
@@ -188,7 +188,7 @@ impl CartBridge {
             customer_name: cart.customer_name.clone().unwrap_or_default(),
             customer_balance: formatting::format_currency(cart.customer_balance, currency, locale),
             has_customer: cart.has_customer(),
-            // Slint UI needs f64 for numeric display
+            // The view layer needs f64 for numeric display
             cart_discount_percent: cart.cart_discount_percent.to_f64().unwrap_or(0.0),
             cart_discount_amount: formatting::format_currency(
                 cart.cart_discount_amount,

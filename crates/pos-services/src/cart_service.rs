@@ -2,7 +2,7 @@
 //!
 //! This service manages the shopping cart state and provides operations
 //! for adding, updating, and removing items. The cart is thread-safe
-//! and can be accessed from both Rust backend and Slint UI.
+//! and can be accessed from both the service layer and the view layer.
 //!
 //! ## Example
 //!

@@ -46,6 +46,3 @@ debug = false
 opt-level = 0
 debug = true
 
-# Slint compiler runs during build - optimize it
-[profile.dev.build-override]
-opt-level = 0

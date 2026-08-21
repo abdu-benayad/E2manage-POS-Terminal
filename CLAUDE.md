@@ -1,6 +1,8 @@
 # CLAUDE.md
 
-E2Manage POS Terminal — offline-first Point of Sale built with **Rust 1.92** (edition 2021) and **Slint 1.8**.
+E2Manage POS Terminal — offline-first Point of Sale built with **Rust 1.92** (edition 2021).
+The Slint view layer has been removed; the package currently ships no binary, and the
+replacement UI is tracked by the `egui-auth-screen` issue.
 Connects to E2Manage ERP backend via REST APIs, stores data locally in SQLite, supports Arabic/RTL.
 
 ---
@@ -11,7 +13,7 @@ Connects to E2Manage ERP backend via REST APIs, stores data locally in SQLite, s
 cargo build                              # Dev build (mold linker)
 cargo build --release                    # Release (~5 min, thin LTO)
 cargo build --profile release-prod       # Production (~40+ min, full LTO)
-cargo run                                # Run app
+# (no `cargo run`: the package has no binary target until `egui-auth-screen` lands)
 cargo check                              # Type check only
 cargo test                               # All tests
 cargo test --test cart_tests             # Specific test file
@@ -80,21 +82,18 @@ The codebase uses a Cargo workspace with these crates in `crates/`:
 | `pos-printing` | Receipt and report printing logic |
 | `pos-services` | Business logic: auth, cart, sync, payments, shifts, returns |
 
-### Main Binary (`src/`)
+### Root package (`src/`)
 
-- `main.rs` - Entry point, initializes Slint UI, handles startup sequence
 - `lib.rs` - Re-exports from workspace crates for convenience
-- `ui/` - Slint UI bridges and helpers
+- `ui/` - view-model bridges: flatten service types into render-ready shapes.
+  These hold no toolkit dependency and must not acquire one — the view layer
+  imports them, never the reverse.
 - `hardware/` - Hardware abstraction (printers, scanners)
 - `utils/` - Utility functions
 
-### UI Layer (`ui/`)
-
-Uses Slint declarative UI framework:
-- `main.slint` - Root window, imports all screens
-- `theme.slint` - Colors, typography, spacing, RTL support
-- `components/` - Reusable UI components (buttons, inputs, dialogs, etc.)
-- `screens/` - Application screens organized by feature (auth, checkout, payment, receipt, etc.)
+There is no `[[bin]]` target. `src/main.rs`, `build.rs` and the whole `ui/` Slint
+tree were deleted; recover them from git history if ever needed. Do not add a new
+UI dependency here without the `egui-auth-screen` issue.
 
 ### Key Services (in `pos-services`)
 
@@ -168,8 +167,8 @@ Test files are in `tests/`:
 ## Debugging
 
 ```bash
-RUST_LOG=debug cargo run                 # Verbose logging
-RUST_LOG=pos_services=trace cargo run    # Trace a specific crate
+RUST_LOG=debug cargo test                # Verbose logging
+RUST_LOG=pos_services=trace cargo test   # Trace a specific crate
 RUST_BACKTRACE=1 cargo test              # Full backtraces on panic
 RUST_BACKTRACE=full cargo test           # Even more detail
 ```
