@@ -58,6 +58,10 @@ rust_decimal = { version = "1", features = ["serde", "serde-with-float"] }
 # Synchronization
 parking_lot = "0.12"
 
+# Secret material — zeroizing PIN buffers on drop.
+# `zeroize_derive` is deliberately absent: it is not vendored, so `Drop` is written by hand.
+zeroize = "1"
+
 # Internal crates
 pos-models = { path = "crates/pos-models" }
 pos-escpos = { path = "crates/pos-escpos" }

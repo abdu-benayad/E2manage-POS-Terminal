@@ -9,11 +9,13 @@
 //! - `Feature`, `FeatureScreen` - feature library models
 //! - `OperatorId`, `OperatorName`, `OperatorRole`, `OperatorPermissions`, `VerifiedOperator` -
 //!   operator identity models
+//! - `Pin`, `PinPolicy`, `PinLength` - PIN entry and the policy that governs it
 
 pub mod cart;
 pub mod feature;
 pub mod operator;
 pub mod parse;
+pub mod pin;
 pub mod product;
 pub mod shift;
 pub mod transaction;
@@ -27,6 +29,9 @@ pub use operator::{
     OperatorPermissions, OperatorRole, Permission, VerifiedOperator,
 };
 pub use parse::ParseError;
+pub use pin::{
+    MaxAttempts, OfflineWindow, Pin, PinFormatError, PinLength, PinPolicy, PinPolicyError,
+};
 pub use product::{
     Category, Product, ProductNature, ProductSearchResult, ProductType, ProductUnit,
 };
