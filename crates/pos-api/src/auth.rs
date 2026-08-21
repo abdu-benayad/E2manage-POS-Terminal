@@ -4,8 +4,8 @@
 
 use super::client::ApiClient;
 use anyhow::Result;
-use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 
 // ============================================================================
 // REQUEST TYPES
@@ -371,8 +371,9 @@ impl ApiClient {
         };
 
         // Use post_envelope to unwrap { success, data } response
-        let response: LoginTerminalResponse =
-            self.post_envelope("/api/pos/terminals/login", &request).await?;
+        let response: LoginTerminalResponse = self
+            .post_envelope("/api/pos/terminals/login", &request)
+            .await?;
 
         // Store session token and terminal ID
         self.set_token(response.session_token.clone()).await;
@@ -420,7 +421,8 @@ impl ApiClient {
             pin: pin.to_string(),
         };
 
-        self.post("/api/pos/sync/operators/verify-pin", &request).await
+        self.post("/api/pos/sync/operators/verify-pin", &request)
+            .await
     }
 
     /// Refreshes the session token
@@ -480,7 +482,8 @@ impl ApiClient {
             device_info,
         };
 
-        self.post_envelope("/api/pos/terminals/pairing/request", &request).await
+        self.post_envelope("/api/pos/terminals/pairing/request", &request)
+            .await
     }
 
     /// Checks the status of a pairing request
@@ -495,10 +498,7 @@ impl ApiClient {
     /// # Returns
     ///
     /// Current status and terminal info if completed
-    pub async fn check_pairing_status(
-        &self,
-        pairing_code: &str,
-    ) -> Result<PairingStatusResponse> {
+    pub async fn check_pairing_status(&self, pairing_code: &str) -> Result<PairingStatusResponse> {
         let path = format!("/api/pos/terminals/pairing/status/{}", pairing_code);
         self.get_envelope(&path).await
     }
@@ -515,16 +515,14 @@ impl ApiClient {
     /// # Returns
     ///
     /// Terminal credentials for re-registration
-    pub async fn recover_registration(
-        &self,
-        hardware_id: &str,
-    ) -> Result<PairedTerminalInfo> {
+    pub async fn recover_registration(&self, hardware_id: &str) -> Result<PairedTerminalInfo> {
         let request = RequestPairingRequest {
             hardware_id: hardware_id.to_string(),
             device_info: None,
         };
 
-        self.post_envelope("/api/pos/terminals/pairing/recover", &request).await
+        self.post_envelope("/api/pos/terminals/pairing/recover", &request)
+            .await
     }
 }
 

@@ -277,7 +277,11 @@ impl Database {
     }
 
     /// Updates the sync status of a shared draft
-    pub fn update_shared_draft_status(&self, id: &str, status: SharedDraftSyncStatus) -> SqliteResult<bool> {
+    pub fn update_shared_draft_status(
+        &self,
+        id: &str,
+        status: SharedDraftSyncStatus,
+    ) -> SqliteResult<bool> {
         let updated = self.execute(
             "UPDATE shared_drafts SET sync_status = ?1 WHERE id = ?2",
             &[&status.as_str().to_string(), &id.to_string()],
@@ -415,9 +419,12 @@ mod tests {
         let db = setup_db();
 
         // Add drafts to same warehouse
-        db.save_shared_draft(&create_test_draft("d1", "TOK1", "wh-1")).unwrap();
-        db.save_shared_draft(&create_test_draft("d2", "TOK2", "wh-1")).unwrap();
-        db.save_shared_draft(&create_test_draft("d3", "TOK3", "wh-2")).unwrap();
+        db.save_shared_draft(&create_test_draft("d1", "TOK1", "wh-1"))
+            .unwrap();
+        db.save_shared_draft(&create_test_draft("d2", "TOK2", "wh-1"))
+            .unwrap();
+        db.save_shared_draft(&create_test_draft("d3", "TOK3", "wh-2"))
+            .unwrap();
 
         let wh1_drafts = db.list_shared_drafts("wh-1").unwrap();
         let wh2_drafts = db.list_shared_drafts("wh-2").unwrap();
@@ -456,8 +463,10 @@ mod tests {
     fn test_count_shared_drafts() {
         let db = setup_db();
 
-        db.save_shared_draft(&create_test_draft("d1", "TOK1", "wh-1")).unwrap();
-        db.save_shared_draft(&create_test_draft("d2", "TOK2", "wh-1")).unwrap();
+        db.save_shared_draft(&create_test_draft("d1", "TOK1", "wh-1"))
+            .unwrap();
+        db.save_shared_draft(&create_test_draft("d2", "TOK2", "wh-1"))
+            .unwrap();
 
         let count = db.count_shared_drafts("wh-1").unwrap();
         assert_eq!(count, 2);
@@ -469,7 +478,8 @@ mod tests {
         let draft = create_test_draft("draft-1", "ABC123", "wh-1");
 
         db.save_shared_draft(&draft).unwrap();
-        db.update_shared_draft_status("draft-1", SharedDraftSyncStatus::PendingConvert).unwrap();
+        db.update_shared_draft_status("draft-1", SharedDraftSyncStatus::PendingConvert)
+            .unwrap();
 
         let found = db.get_shared_draft_by_id("draft-1").unwrap().unwrap();
         assert_eq!(found.sync_status, "PENDING_CONVERT");
@@ -479,8 +489,10 @@ mod tests {
     fn test_clear_shared_drafts_cache() {
         let db = setup_db();
 
-        db.save_shared_draft(&create_test_draft("d1", "TOK1", "wh-1")).unwrap();
-        db.save_shared_draft(&create_test_draft("d2", "TOK2", "wh-1")).unwrap();
+        db.save_shared_draft(&create_test_draft("d1", "TOK1", "wh-1"))
+            .unwrap();
+        db.save_shared_draft(&create_test_draft("d2", "TOK2", "wh-1"))
+            .unwrap();
 
         let cleared = db.clear_shared_drafts_cache().unwrap();
         assert_eq!(cleared, 2);
@@ -494,8 +506,10 @@ mod tests {
         let db = setup_db();
 
         // Add initial drafts
-        db.save_shared_draft(&create_test_draft("d1", "TOK1", "wh-1")).unwrap();
-        db.save_shared_draft(&create_test_draft("d2", "TOK2", "wh-1")).unwrap();
+        db.save_shared_draft(&create_test_draft("d1", "TOK1", "wh-1"))
+            .unwrap();
+        db.save_shared_draft(&create_test_draft("d2", "TOK2", "wh-1"))
+            .unwrap();
 
         // Replace with new drafts
         let new_drafts = vec![
@@ -518,11 +532,26 @@ mod tests {
     #[test]
     fn test_shared_draft_sync_status() {
         assert_eq!(SharedDraftSyncStatus::Synced.as_str(), "SYNCED");
-        assert_eq!(SharedDraftSyncStatus::PendingConvert.as_str(), "PENDING_CONVERT");
-        assert_eq!(SharedDraftSyncStatus::PendingDelete.as_str(), "PENDING_DELETE");
+        assert_eq!(
+            SharedDraftSyncStatus::PendingConvert.as_str(),
+            "PENDING_CONVERT"
+        );
+        assert_eq!(
+            SharedDraftSyncStatus::PendingDelete.as_str(),
+            "PENDING_DELETE"
+        );
 
-        assert_eq!(SharedDraftSyncStatus::from_str("SYNCED"), SharedDraftSyncStatus::Synced);
-        assert_eq!(SharedDraftSyncStatus::from_str("PENDING_CONVERT"), SharedDraftSyncStatus::PendingConvert);
-        assert_eq!(SharedDraftSyncStatus::from_str("unknown"), SharedDraftSyncStatus::Synced);
+        assert_eq!(
+            SharedDraftSyncStatus::from_str("SYNCED"),
+            SharedDraftSyncStatus::Synced
+        );
+        assert_eq!(
+            SharedDraftSyncStatus::from_str("PENDING_CONVERT"),
+            SharedDraftSyncStatus::PendingConvert
+        );
+        assert_eq!(
+            SharedDraftSyncStatus::from_str("unknown"),
+            SharedDraftSyncStatus::Synced
+        );
     }
 }

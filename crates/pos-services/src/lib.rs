@@ -112,50 +112,48 @@ pub use pos_printing::{PrintService, PrinterConfig, ShiftReport};
 // Re-export main types
 pub use auth_service::{AuthService, PinVerificationResult, TerminalSession};
 pub use cart_service::{CartError, CartResult, CartService};
+pub use conflict_service::{
+    ConflictError, ConflictResult, ConflictService, ConflictSummary, ResolutionResult,
+};
 pub use draft_service::{
     Draft, DraftError, DraftResult, DraftService, DEFAULT_DRAFT_EXPIRY_HOURS,
     MAX_DRAFTS_PER_OPERATOR,
 };
 pub use emv_service::{CardPaymentResult, EmvEvent, EmvService, TerminalStatus};
 pub use feature_service::{FeatureError, FeatureResult, FeatureService};
-pub use product_service::{ProductError, ProductService};
-pub use qr_service::{QrError, QrEvent, QrPaymentResult, QrService};
-pub use sync_service::{SyncEvent, SyncService, SyncStatus, DEFAULT_SYNC_INTERVAL_MINUTES};
-pub use transaction_service::{
-    CompleteResult, ShiftTotals, TransactionError, TransactionResult, TransactionService,
-};
-pub use return_service::{
-    RefundMethod, ReturnEligibility, ReturnError, ReturnItem, ReturnReason,
-    ReturnResult, ReturnService, ReturnServiceResult, DEFAULT_RETURN_WINDOW_DAYS,
-};
-pub use shift_service::{
-    CashCount, CloseShiftResult, Denomination, ShiftError, ShiftResult, ShiftService,
-    StartShiftResult, default_denominations_lyd,
-};
-pub use z_report_service::{
-    CloseDayResult, ZReportError, ZReportResult, ZReportService,
-};
+pub use log_service::{LogEntry, LogError, LogLevel, LogResult, LogService};
 pub use offline_service::{
     OfflineService, QueueStats, SyncFailureType, SyncResult, BATCH_SIZE, MAX_RETRY_COUNT,
 };
-pub use conflict_service::{
-    ConflictError, ConflictResult, ConflictService, ConflictSummary, ResolutionResult,
-};
 pub use pairing_service::{PairingService, PairingState, TerminalRegistration};
-pub use log_service::{LogEntry, LogError, LogLevel, LogResult, LogService};
-pub use support_service::{SupportContact, SupportService};
-pub use update_service::{ReleaseNotes, UpdateError, UpdateResult, UpdateService, VersionInfo};
-pub use system_service::SystemService;
 pub use platform_heartbeat_service::{
-    PlatformHeartbeatService, HeartbeatEvent, HeartbeatError, SystemMetrics,
+    HeartbeatError, HeartbeatEvent, PlatformHeartbeatService, SystemMetrics,
     DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
 };
 pub use policy_service::{
-    PolicyService, PolicyResult, PolicyError, PolicyServiceResult, RangeValue,
+    PolicyError, PolicyResult, PolicyService, PolicyServiceResult, RangeValue,
+};
+pub use product_service::{ProductError, ProductService};
+pub use qr_service::{QrError, QrEvent, QrPaymentResult, QrService};
+pub use return_service::{
+    RefundMethod, ReturnEligibility, ReturnError, ReturnItem, ReturnReason, ReturnResult,
+    ReturnService, ReturnServiceResult, DEFAULT_RETURN_WINDOW_DAYS,
 };
 pub use shared_draft_service::{
     SharedDraft, SharedDraftError, SharedDraftResult, SharedDraftService, SyncQueueResult,
 };
+pub use shift_service::{
+    default_denominations_lyd, CashCount, CloseShiftResult, Denomination, ShiftError, ShiftResult,
+    ShiftService, StartShiftResult,
+};
+pub use support_service::{SupportContact, SupportService};
+pub use sync_service::{SyncEvent, SyncService, SyncStatus, DEFAULT_SYNC_INTERVAL_MINUTES};
+pub use system_service::SystemService;
+pub use transaction_service::{
+    CompleteResult, ShiftTotals, TransactionError, TransactionResult, TransactionService,
+};
+pub use update_service::{ReleaseNotes, UpdateError, UpdateResult, UpdateService, VersionInfo};
+pub use z_report_service::{CloseDayResult, ZReportError, ZReportResult, ZReportService};
 
 // Re-export model types that were previously defined in services
 pub use pos_models::{ShiftStatus, ShiftSummary, VarianceStatus, ZReport};

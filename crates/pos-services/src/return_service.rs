@@ -42,6 +42,7 @@
 //! }
 //! ```
 
+use chrono::{DateTime, Utc};
 use pos_api::ApiClient;
 use pos_db::decimal_from_sqlite;
 use pos_db::transactions::OfflineTransactionRow;
@@ -50,7 +51,6 @@ use pos_models::transaction::{
     Payment, PaymentMethod, Transaction, TransactionItem, TransactionStatus,
 };
 use rust_decimal::Decimal;
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
@@ -80,9 +80,8 @@ impl ReturnEligibility {
     pub fn reason(&self) -> Option<&str> {
         match self {
             ReturnEligibility::Eligible => None,
-            ReturnEligibility::RequiresApproval(reason) | ReturnEligibility::NotEligible(reason) => {
-                Some(reason)
-            }
+            ReturnEligibility::RequiresApproval(reason)
+            | ReturnEligibility::NotEligible(reason) => Some(reason),
         }
     }
 }
@@ -116,7 +115,11 @@ pub struct ReturnItem {
 
 impl ReturnItem {
     /// Creates a return item from an original transaction item
-    pub fn from_transaction_item(item: &TransactionItem, quantity: Decimal, reason: ReturnReason) -> Self {
+    pub fn from_transaction_item(
+        item: &TransactionItem,
+        quantity: Decimal,
+        reason: ReturnReason,
+    ) -> Self {
         // Calculate refund for partial quantity
         let line_ratio = quantity / item.quantity;
         let refund_amount = item.line_total * line_ratio;
@@ -139,7 +142,9 @@ impl ReturnItem {
     /// Returns the display name based on locale
     pub fn display_name(&self, locale: &str) -> &str {
         if locale == "ar" {
-            self.product_name_ar.as_deref().unwrap_or(&self.product_name)
+            self.product_name_ar
+                .as_deref()
+                .unwrap_or(&self.product_name)
         } else {
             &self.product_name
         }
@@ -390,7 +395,10 @@ impl ReturnService {
     /// Finds a transaction by receipt number
     ///
     /// First checks local database, then queries server if online
-    pub async fn find_transaction(&self, receipt_number: &str) -> ReturnServiceResult<Option<TransactionLookupResult>> {
+    pub async fn find_transaction(
+        &self,
+        receipt_number: &str,
+    ) -> ReturnServiceResult<Option<TransactionLookupResult>> {
         debug!("Looking up transaction by receipt: {}", receipt_number);
 
         // First check local database
@@ -434,7 +442,10 @@ impl ReturnService {
     }
 
     /// Finds a transaction in the local database
-    fn find_local_transaction(&self, receipt_number: &str) -> ReturnServiceResult<Option<Transaction>> {
+    fn find_local_transaction(
+        &self,
+        receipt_number: &str,
+    ) -> ReturnServiceResult<Option<Transaction>> {
         // Search offline transactions table by receipt number
         let conn = self.db.connection();
         let conn = conn.lock();
@@ -489,7 +500,10 @@ impl ReturnService {
     }
 
     /// Finds a transaction from the server API
-    async fn find_server_transaction(&self, receipt_number: &str) -> ReturnServiceResult<Option<Transaction>> {
+    async fn find_server_transaction(
+        &self,
+        receipt_number: &str,
+    ) -> ReturnServiceResult<Option<Transaction>> {
         if !self.api.is_online().await.is_online() {
             debug!("Offline - skipping server lookup for {}", receipt_number);
             return Ok(None);
@@ -604,7 +618,8 @@ impl ReturnService {
 
                             Payment {
                                 id: p.id.clone(),
-                                method: PaymentMethod::from_str(&p.method).unwrap_or(PaymentMethod::Cash),
+                                method: PaymentMethod::from_str(&p.method)
+                                    .unwrap_or(PaymentMethod::Cash),
                                 amount: p.amount,
                                 currency: p.currency.clone(),
                                 reference: p.reference.clone(),
@@ -669,8 +684,8 @@ impl ReturnService {
             .map(|dt| dt.with_timezone(&Utc))
             .unwrap_or_else(|_| Utc::now());
 
-        let status = TransactionStatus::from_str(&row.sync_status)
-            .unwrap_or(TransactionStatus::Completed);
+        let status =
+            TransactionStatus::from_str(&row.sync_status).unwrap_or(TransactionStatus::Completed);
 
         Ok(Transaction {
             id: row.offline_id.clone(),
@@ -709,12 +724,16 @@ impl ReturnService {
 
         // Check if already returned
         if txn.status == TransactionStatus::Returned {
-            return ReturnEligibility::NotEligible("Transaction has already been returned".to_string());
+            return ReturnEligibility::NotEligible(
+                "Transaction has already been returned".to_string(),
+            );
         }
 
         // Check if it's a return transaction (can't return a return)
         if txn.is_return() {
-            return ReturnEligibility::NotEligible("Cannot return a return transaction".to_string());
+            return ReturnEligibility::NotEligible(
+                "Cannot return a return transaction".to_string(),
+            );
         }
 
         // Check return window
@@ -815,7 +834,10 @@ impl ReturnService {
 
         info!(
             "Processing return for txn {}: {} items, {} LYD refund via {:?}",
-            original_txn.receipt_number.as_deref().unwrap_or(&original_txn.transaction_number),
+            original_txn
+                .receipt_number
+                .as_deref()
+                .unwrap_or(&original_txn.transaction_number),
             items.len(),
             refund_total,
             refund_method
@@ -839,7 +861,8 @@ impl ReturnService {
                 unit: "pc".to_string(),
                 unit_price: item.unit_price,
                 tax_rate: item.tax_rate,
-                tax_amount: -(item.refund_amount * item.tax_rate / (Decimal::from(100) + item.tax_rate)),
+                tax_amount: -(item.refund_amount * item.tax_rate
+                    / (Decimal::from(100) + item.tax_rate)),
                 discount_amount: Decimal::ZERO,
                 line_total: -item.refund_amount, // Negative for returns
                 product_type: String::new(),
@@ -889,7 +912,10 @@ impl ReturnService {
             void_reason: None,
             note: Some(format!(
                 "Return for transaction {}",
-                original_txn.receipt_number.as_deref().unwrap_or(&original_txn.transaction_number)
+                original_txn
+                    .receipt_number
+                    .as_deref()
+                    .unwrap_or(&original_txn.transaction_number)
             )),
             receipt_number: Some(return_number.clone()),
             server_id: None,
@@ -938,8 +964,9 @@ impl ReturnService {
         let items_json = serde_json::to_string(&return_txn.items)
             .map_err(|e| ReturnError::DatabaseError(format!("Failed to serialize items: {}", e)))?;
 
-        let payments_json = serde_json::to_string(&return_txn.payments)
-            .map_err(|e| ReturnError::DatabaseError(format!("Failed to serialize payments: {}", e)))?;
+        let payments_json = serde_json::to_string(&return_txn.payments).map_err(|e| {
+            ReturnError::DatabaseError(format!("Failed to serialize payments: {}", e))
+        })?;
 
         // Build notes with return reasons
         let reasons: Vec<String> = items
@@ -978,12 +1005,19 @@ impl ReturnService {
             .save_offline_transaction(&row)
             .map_err(|e| ReturnError::DatabaseError(e.to_string()))?;
 
-        info!("Saved return transaction {} to local database", return_txn.id);
+        info!(
+            "Saved return transaction {} to local database",
+            return_txn.id
+        );
         Ok(())
     }
 
     /// Syncs return transaction to server
-    async fn sync_return_to_server(&self, return_txn: &Transaction, original_txn: &Transaction) -> bool {
+    async fn sync_return_to_server(
+        &self,
+        return_txn: &Transaction,
+        original_txn: &Transaction,
+    ) -> bool {
         if !self.api.is_online().await.is_online() {
             debug!("Offline - return will be synced later");
             return false;
@@ -1044,12 +1078,16 @@ impl ReturnService {
             Ok(response) => {
                 info!("Return synced to server: {}", response.id);
                 // Update sync status
-                let _ = self.db.mark_transaction_synced(&return_txn.id, &response.id);
+                let _ = self
+                    .db
+                    .mark_transaction_synced(&return_txn.id, &response.id);
                 true
             }
             Err(e) => {
                 error!("Failed to sync return to server: {}", e);
-                let _ = self.db.mark_transaction_failed(&return_txn.id, &e.to_string());
+                let _ = self
+                    .db
+                    .mark_transaction_failed(&return_txn.id, &e.to_string());
                 false
             }
         }
@@ -1059,8 +1097,8 @@ impl ReturnService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pos_models::product::{Product, ProductUnit};
     use pos_models::cart::CartItem;
+    use pos_models::product::{Product, ProductUnit};
     use rust_decimal::Decimal;
 
     fn create_test_product() -> Product {
@@ -1139,7 +1177,10 @@ mod tests {
         let service = ReturnService::new(api, db);
 
         let eligibility = service.check_eligibility(&txn);
-        assert!(matches!(eligibility, ReturnEligibility::RequiresApproval(_)));
+        assert!(matches!(
+            eligibility,
+            ReturnEligibility::RequiresApproval(_)
+        ));
     }
 
     #[test]
@@ -1148,24 +1189,34 @@ mod tests {
         let cart_item = CartItem::new(&product, Decimal::from(2));
         let txn_item = TransactionItem::from_cart_item(&cart_item);
 
-        let return_item = ReturnItem::from_transaction_item(&txn_item, Decimal::ONE, ReturnReason::Defective);
+        let return_item =
+            ReturnItem::from_transaction_item(&txn_item, Decimal::ONE, ReturnReason::Defective);
 
         assert_eq!(return_item.quantity, Decimal::ONE);
         assert_eq!(return_item.reason, ReturnReason::Defective);
         // Refund should be half since we're returning 1 of 2
-        assert_eq!(return_item.refund_amount, txn_item.line_total / Decimal::from(2));
+        assert_eq!(
+            return_item.refund_amount,
+            txn_item.line_total / Decimal::from(2)
+        );
     }
 
     #[test]
     fn test_return_reason_conversion() {
         assert_eq!(ReturnReason::Defective.as_str(), "DEFECTIVE");
-        assert_eq!(ReturnReason::from_str("DEFECTIVE"), Some(ReturnReason::Defective));
+        assert_eq!(
+            ReturnReason::from_str("DEFECTIVE"),
+            Some(ReturnReason::Defective)
+        );
         assert_eq!(ReturnReason::from_str("invalid"), None);
     }
 
     #[test]
     fn test_return_reason_display_name() {
-        assert_eq!(ReturnReason::Defective.display_name("en"), "Defective/Damaged");
+        assert_eq!(
+            ReturnReason::Defective.display_name("en"),
+            "Defective/Damaged"
+        );
         assert_eq!(ReturnReason::Defective.display_name("ar"), "معيب أو تالف");
     }
 

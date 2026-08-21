@@ -6,9 +6,11 @@
 mod common;
 
 use common::*;
-use e2manage_pos_terminal::services::cart_service::CartService;
-use e2manage_pos_terminal::services::transaction_service::{TransactionService, TransactionError, ShiftTotals};
 use e2manage_pos_terminal::models::transaction::TransactionStatus;
+use e2manage_pos_terminal::services::cart_service::CartService;
+use e2manage_pos_terminal::services::transaction_service::{
+    ShiftTotals, TransactionError, TransactionService,
+};
 use rust_decimal::Decimal;
 
 // ============================================================================
@@ -68,7 +70,16 @@ fn test_clear_current() {
     let product = sample_product();
 
     cart_service.add_item(&product, Decimal::ONE).unwrap();
-    service.create_from_cart(&cart_service.get_cart(), "LYD", "shift-1", "TERM-001", "op-1", "Ahmed").unwrap();
+    service
+        .create_from_cart(
+            &cart_service.get_cart(),
+            "LYD",
+            "shift-1",
+            "TERM-001",
+            "op-1",
+            "Ahmed",
+        )
+        .unwrap();
 
     assert!(service.get_current().is_some());
 
@@ -87,7 +98,16 @@ fn test_add_cash_payment() {
     let product = create_product("p1", "Test", Decimal::from(100), Decimal::from(15));
 
     cart_service.add_item(&product, Decimal::ONE).unwrap();
-    service.create_from_cart(&cart_service.get_cart(), "LYD", "shift-1", "TERM-001", "op-1", "Ahmed").unwrap();
+    service
+        .create_from_cart(
+            &cart_service.get_cart(),
+            "LYD",
+            "shift-1",
+            "TERM-001",
+            "op-1",
+            "Ahmed",
+        )
+        .unwrap();
 
     // Grand total should be 115 (100 + 15% tax)
     let result = service.add_cash_payment(Decimal::from(115));
@@ -102,7 +122,16 @@ fn test_add_card_payment() {
     let product = create_product("p1", "Test", Decimal::from(100), Decimal::from(15));
 
     cart_service.add_item(&product, Decimal::ONE).unwrap();
-    service.create_from_cart(&cart_service.get_cart(), "LYD", "shift-1", "TERM-001", "op-1", "Ahmed").unwrap();
+    service
+        .create_from_cart(
+            &cart_service.get_cart(),
+            "LYD",
+            "shift-1",
+            "TERM-001",
+            "op-1",
+            "Ahmed",
+        )
+        .unwrap();
 
     let result = service.add_card_payment(Decimal::from(115), "1234", "VISA", "AUTH123");
     assert!(result.is_ok());
@@ -116,14 +145,25 @@ fn test_split_payment() {
     let product = create_product("p1", "Test", Decimal::from(100), Decimal::ZERO); // No tax for simplicity
 
     cart_service.add_item(&product, Decimal::ONE).unwrap();
-    service.create_from_cart(&cart_service.get_cart(), "LYD", "shift-1", "TERM-001", "op-1", "Ahmed").unwrap();
+    service
+        .create_from_cart(
+            &cart_service.get_cart(),
+            "LYD",
+            "shift-1",
+            "TERM-001",
+            "op-1",
+            "Ahmed",
+        )
+        .unwrap();
 
     // Split: 60 cash + 40 card = 100 total
     service.add_cash_payment(Decimal::from(60)).unwrap();
     assert!(!service.is_fully_paid());
     assert_eq!(service.remaining(), Decimal::from(40));
 
-    service.add_card_payment(Decimal::from(40), "5678", "MASTERCARD", "AUTH456").unwrap();
+    service
+        .add_card_payment(Decimal::from(40), "5678", "MASTERCARD", "AUTH456")
+        .unwrap();
     assert!(service.is_fully_paid());
     assert_eq!(service.remaining(), Decimal::ZERO);
 }
@@ -135,7 +175,16 @@ fn test_change_calculation() {
     let product = create_product("p1", "Test", Decimal::from(45), Decimal::ZERO); // No tax
 
     cart_service.add_item(&product, Decimal::ONE).unwrap();
-    service.create_from_cart(&cart_service.get_cart(), "LYD", "shift-1", "TERM-001", "op-1", "Ahmed").unwrap();
+    service
+        .create_from_cart(
+            &cart_service.get_cart(),
+            "LYD",
+            "shift-1",
+            "TERM-001",
+            "op-1",
+            "Ahmed",
+        )
+        .unwrap();
 
     // Pay 50 for 45 total
     service.add_cash_payment(Decimal::from(50)).unwrap();
@@ -159,7 +208,16 @@ fn test_remaining_and_change() {
     let product = create_product("p1", "Test", Decimal::from(100), Decimal::ZERO);
 
     cart_service.add_item(&product, Decimal::ONE).unwrap();
-    service.create_from_cart(&cart_service.get_cart(), "LYD", "shift-1", "TERM-001", "op-1", "Ahmed").unwrap();
+    service
+        .create_from_cart(
+            &cart_service.get_cart(),
+            "LYD",
+            "shift-1",
+            "TERM-001",
+            "op-1",
+            "Ahmed",
+        )
+        .unwrap();
 
     // Initially, remaining = grand total
     assert_eq!(service.remaining(), Decimal::from(100));
@@ -187,7 +245,16 @@ fn test_void_transaction() {
     let product = sample_product();
 
     cart_service.add_item(&product, Decimal::ONE).unwrap();
-    service.create_from_cart(&cart_service.get_cart(), "LYD", "shift-1", "TERM-001", "op-1", "Ahmed").unwrap();
+    service
+        .create_from_cart(
+            &cart_service.get_cart(),
+            "LYD",
+            "shift-1",
+            "TERM-001",
+            "op-1",
+            "Ahmed",
+        )
+        .unwrap();
 
     let result = service.void("Customer changed mind");
     assert!(result.is_ok());
@@ -213,7 +280,16 @@ fn test_is_fully_paid_initial() {
     let product = sample_product();
 
     cart_service.add_item(&product, Decimal::ONE).unwrap();
-    service.create_from_cart(&cart_service.get_cart(), "LYD", "shift-1", "TERM-001", "op-1", "Ahmed").unwrap();
+    service
+        .create_from_cart(
+            &cart_service.get_cart(),
+            "LYD",
+            "shift-1",
+            "TERM-001",
+            "op-1",
+            "Ahmed",
+        )
+        .unwrap();
 
     assert!(!service.is_fully_paid());
 }

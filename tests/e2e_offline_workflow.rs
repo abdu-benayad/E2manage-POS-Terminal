@@ -24,7 +24,9 @@ fn test_offline_transaction_queuing() {
 
     // Create a transaction
     let result = app.product_service.search("SKU001", 10).unwrap();
-    app.cart_service.add_item(&result.products[0], Decimal::ONE).unwrap();
+    app.cart_service
+        .add_item(&result.products[0], Decimal::ONE)
+        .unwrap();
 
     let cart = app.cart_service.get_cart();
     app.transaction_service
@@ -32,7 +34,9 @@ fn test_offline_transaction_queuing() {
         .unwrap();
 
     let txn = app.transaction_service.get_current().unwrap();
-    app.transaction_service.add_cash_payment(txn.grand_total).unwrap();
+    app.transaction_service
+        .add_cash_payment(txn.grand_total)
+        .unwrap();
 
     let txn = app.transaction_service.get_current().unwrap();
 
@@ -65,9 +69,14 @@ fn test_multiple_offline_transactions() {
 
     // Queue multiple transactions
     for i in 1..=3 {
-        let result = app.product_service.search(&format!("SKU{:03}", i), 10).unwrap();
+        let result = app
+            .product_service
+            .search(&format!("SKU{:03}", i), 10)
+            .unwrap();
         app.cart_service.clear();
-        app.cart_service.add_item(&result.products[0], Decimal::from(i)).unwrap();
+        app.cart_service
+            .add_item(&result.products[0], Decimal::from(i))
+            .unwrap();
 
         let cart = app.cart_service.get_cart();
         app.transaction_service
@@ -75,7 +84,9 @@ fn test_multiple_offline_transactions() {
             .unwrap();
 
         let txn = app.transaction_service.get_current().unwrap();
-        app.transaction_service.add_cash_payment(txn.grand_total).unwrap();
+        app.transaction_service
+            .add_cash_payment(txn.grand_total)
+            .unwrap();
 
         let txn = app.transaction_service.get_current().unwrap();
         app.offline_service.queue_transaction(&txn).unwrap();
@@ -107,7 +118,9 @@ fn test_has_pending_transactions() {
     if !initial_has_pending {
         // Queue a transaction to ensure we have pending
         let result = app.product_service.search("SKU001", 10).unwrap();
-        app.cart_service.add_item(&result.products[0], Decimal::ONE).unwrap();
+        app.cart_service
+            .add_item(&result.products[0], Decimal::ONE)
+            .unwrap();
 
         let cart = app.cart_service.get_cart();
         app.transaction_service
@@ -115,7 +128,9 @@ fn test_has_pending_transactions() {
             .unwrap();
 
         let txn = app.transaction_service.get_current().unwrap();
-        app.transaction_service.add_cash_payment(txn.grand_total).unwrap();
+        app.transaction_service
+            .add_cash_payment(txn.grand_total)
+            .unwrap();
 
         let txn = app.transaction_service.get_current().unwrap();
         app.offline_service.queue_transaction(&txn).unwrap();
@@ -143,9 +158,14 @@ fn test_offline_id_is_unique() {
 
     // Queue multiple transactions and collect IDs
     for i in 1..=5 {
-        let result = app.product_service.search(&format!("SKU{:03}", i), 10).unwrap();
+        let result = app
+            .product_service
+            .search(&format!("SKU{:03}", i), 10)
+            .unwrap();
         app.cart_service.clear();
-        app.cart_service.add_item(&result.products[0], Decimal::ONE).unwrap();
+        app.cart_service
+            .add_item(&result.products[0], Decimal::ONE)
+            .unwrap();
 
         let cart = app.cart_service.get_cart();
         app.transaction_service
@@ -153,7 +173,9 @@ fn test_offline_id_is_unique() {
             .unwrap();
 
         let txn = app.transaction_service.get_current().unwrap();
-        app.transaction_service.add_cash_payment(txn.grand_total).unwrap();
+        app.transaction_service
+            .add_cash_payment(txn.grand_total)
+            .unwrap();
 
         let txn = app.transaction_service.get_current().unwrap();
         let offline_id = app.offline_service.queue_transaction(&txn).unwrap();
@@ -186,8 +208,12 @@ fn test_transaction_data_integrity_in_queue() {
     let result1 = app.product_service.search("SKU001", 10).unwrap();
     let result2 = app.product_service.search("SKU002", 10).unwrap();
 
-    app.cart_service.add_item(&result1.products[0], Decimal::from(2)).unwrap();
-    app.cart_service.add_item(&result2.products[0], Decimal::from(3)).unwrap();
+    app.cart_service
+        .add_item(&result1.products[0], Decimal::from(2))
+        .unwrap();
+    app.cart_service
+        .add_item(&result2.products[0], Decimal::from(3))
+        .unwrap();
 
     let cart = app.cart_service.get_cart();
     let expected_items = cart.items.len();
@@ -198,7 +224,9 @@ fn test_transaction_data_integrity_in_queue() {
         .unwrap();
 
     let txn = app.transaction_service.get_current().unwrap();
-    app.transaction_service.add_cash_payment(txn.grand_total).unwrap();
+    app.transaction_service
+        .add_cash_payment(txn.grand_total)
+        .unwrap();
 
     let txn = app.transaction_service.get_current().unwrap();
 
@@ -234,9 +262,14 @@ fn test_queue_statistics() {
     // Add some transactions to queue
     let to_add = 2u32;
     for i in 1..=to_add {
-        let result = app.product_service.search(&format!("SKU{:03}", i), 10).unwrap();
+        let result = app
+            .product_service
+            .search(&format!("SKU{:03}", i), 10)
+            .unwrap();
         app.cart_service.clear();
-        app.cart_service.add_item(&result.products[0], Decimal::ONE).unwrap();
+        app.cart_service
+            .add_item(&result.products[0], Decimal::ONE)
+            .unwrap();
 
         let cart = app.cart_service.get_cart();
         app.transaction_service
@@ -244,7 +277,9 @@ fn test_queue_statistics() {
             .unwrap();
 
         let txn = app.transaction_service.get_current().unwrap();
-        app.transaction_service.add_cash_payment(txn.grand_total).unwrap();
+        app.transaction_service
+            .add_cash_payment(txn.grand_total)
+            .unwrap();
 
         let txn = app.transaction_service.get_current().unwrap();
         app.offline_service.queue_transaction(&txn).unwrap();
@@ -271,7 +306,9 @@ fn test_transaction_with_payments_in_queue() {
 
     // Create transaction with split payment
     let result = app.product_service.search("SKU010", 10).unwrap();
-    app.cart_service.add_item(&result.products[0], Decimal::ONE).unwrap();
+    app.cart_service
+        .add_item(&result.products[0], Decimal::ONE)
+        .unwrap();
 
     let cart = app.cart_service.get_cart();
     app.transaction_service
@@ -285,7 +322,9 @@ fn test_transaction_with_payments_in_queue() {
     let cash_amount = (total * Decimal::new(5, 1)).round();
     let card_amount = total - cash_amount;
 
-    app.transaction_service.add_cash_payment(cash_amount).unwrap();
+    app.transaction_service
+        .add_cash_payment(cash_amount)
+        .unwrap();
     app.transaction_service
         .add_card_payment(card_amount, "9999", "Visa", "AUTH789")
         .unwrap();
@@ -314,7 +353,9 @@ fn test_queue_simulates_network_failure() {
 
     // Simulate: In real scenario, API would fail, so we queue locally
     let result = app.product_service.search("SKU001", 10).unwrap();
-    app.cart_service.add_item(&result.products[0], Decimal::ONE).unwrap();
+    app.cart_service
+        .add_item(&result.products[0], Decimal::ONE)
+        .unwrap();
 
     let cart = app.cart_service.get_cart();
     app.transaction_service
@@ -322,7 +363,9 @@ fn test_queue_simulates_network_failure() {
         .unwrap();
 
     let txn = app.transaction_service.get_current().unwrap();
-    app.transaction_service.add_cash_payment(txn.grand_total).unwrap();
+    app.transaction_service
+        .add_cash_payment(txn.grand_total)
+        .unwrap();
 
     let txn = app.transaction_service.get_current().unwrap();
 
@@ -371,7 +414,9 @@ fn test_queue_different_transaction_types() {
 
     // Queue a sale transaction
     let result = app.product_service.search("SKU001", 10).unwrap();
-    app.cart_service.add_item(&result.products[0], Decimal::ONE).unwrap();
+    app.cart_service
+        .add_item(&result.products[0], Decimal::ONE)
+        .unwrap();
 
     let cart = app.cart_service.get_cart();
     app.transaction_service
@@ -379,7 +424,9 @@ fn test_queue_different_transaction_types() {
         .unwrap();
 
     let txn = app.transaction_service.get_current().unwrap();
-    app.transaction_service.add_cash_payment(txn.grand_total).unwrap();
+    app.transaction_service
+        .add_cash_payment(txn.grand_total)
+        .unwrap();
 
     let txn = app.transaction_service.get_current().unwrap();
     // Transaction type may be stored as lowercase or uppercase
@@ -407,9 +454,14 @@ fn test_pending_count_accuracy() {
 
     // Add 3 transactions
     for i in 1..=3 {
-        let result = app.product_service.search(&format!("SKU{:03}", i), 10).unwrap();
+        let result = app
+            .product_service
+            .search(&format!("SKU{:03}", i), 10)
+            .unwrap();
         app.cart_service.clear();
-        app.cart_service.add_item(&result.products[0], Decimal::ONE).unwrap();
+        app.cart_service
+            .add_item(&result.products[0], Decimal::ONE)
+            .unwrap();
 
         let cart = app.cart_service.get_cart();
         app.transaction_service
@@ -417,7 +469,9 @@ fn test_pending_count_accuracy() {
             .unwrap();
 
         let txn = app.transaction_service.get_current().unwrap();
-        app.transaction_service.add_cash_payment(txn.grand_total).unwrap();
+        app.transaction_service
+            .add_cash_payment(txn.grand_total)
+            .unwrap();
 
         let txn = app.transaction_service.get_current().unwrap();
         app.offline_service.queue_transaction(&txn).unwrap();

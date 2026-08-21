@@ -66,12 +66,12 @@ struct TestState {
     company_id: Option<String>,
     // Terminal credentials
     hardware_id: String,
-    terminal_id: Option<String>,        // Business ID (e.g., "TERM-001") for shift API
-    terminal_uuid: Option<String>,      // Database UUID for cash-drawer, reports, etc.
+    terminal_id: Option<String>, // Business ID (e.g., "TERM-001") for shift API
+    terminal_uuid: Option<String>, // Database UUID for cash-drawer, reports, etc.
     terminal_secret: Option<String>,
     // Terminal session
-    session_token: Option<String>,      // User JWT for most POS endpoints
-    terminal_token: Option<String>,     // Terminal token for X-Terminal-Token header (offline/fleet/ota/screens)
+    session_token: Option<String>,  // User JWT for most POS endpoints
+    terminal_token: Option<String>, // Terminal token for X-Terminal-Token header (offline/fleet/ota/screens)
     csrf_token: Option<String>,
     // Shift/Transaction data
     shift_id: Option<String>,
@@ -188,8 +188,8 @@ async fn ensure_setup(client: &E2EClient) -> Result<(), String> {
     // - terminal_token (new) = terminal session token for offline/fleet/ota/screens endpoints
     {
         let mut state = get_test_state().lock().await;
-        state.session_token = Some(user_token);  // User JWT for API calls with authMiddleware
-        state.terminal_token = Some(auth_data.token);  // Terminal token for X-Terminal-Token header
+        state.session_token = Some(user_token); // User JWT for API calls with authMiddleware
+        state.terminal_token = Some(auth_data.token); // Terminal token for X-Terminal-Token header
     }
 
     Ok(())
@@ -265,7 +265,8 @@ impl E2EClient {
     pub async fn fetch_csrf_token(&self) -> Result<String, String> {
         let url = format!("{}/api/csrf-token", self.base_url);
 
-        let response = self.client
+        let response = self
+            .client
             .get(&url)
             .send()
             .await
@@ -276,9 +277,13 @@ impl E2EClient {
         }
 
         #[derive(Deserialize)]
-        struct CsrfResponse { token: String }
+        struct CsrfResponse {
+            token: String,
+        }
 
-        let csrf: CsrfResponse = response.json().await
+        let csrf: CsrfResponse = response
+            .json()
+            .await
             .map_err(|e| format!("CSRF parse failed: {}", e))?;
 
         Ok(csrf.token)
@@ -288,7 +293,8 @@ impl E2EClient {
     pub async fn get_public<T: DeserializeOwned>(&self, path: &str) -> Result<T, String> {
         let url = format!("{}{}", self.base_url, path);
 
-        let response = self.client
+        let response = self
+            .client
             .get(&url)
             .send()
             .await
@@ -301,7 +307,8 @@ impl E2EClient {
     pub async fn get<T: DeserializeOwned>(&self, path: &str, token: &str) -> Result<T, String> {
         let url = format!("{}{}", self.base_url, path);
 
-        let response = self.client
+        let response = self
+            .client
             .get(&url)
             .header("Authorization", format!("Bearer {}", token))
             .send()
@@ -320,7 +327,8 @@ impl E2EClient {
     ) -> Result<(Option<T>, StatusCode, Option<String>), String> {
         let url = format!("{}{}", self.base_url, path);
 
-        let mut request = self.client
+        let mut request = self
+            .client
             .get(&url)
             .header("Authorization", format!("Bearer {}", token));
 
@@ -328,11 +336,14 @@ impl E2EClient {
             request = request.header("If-None-Match", etag_val);
         }
 
-        let response = request.send().await
+        let response = request
+            .send()
+            .await
             .map_err(|e| format!("Request failed: {}", e))?;
 
         let status = response.status();
-        let new_etag = response.headers()
+        let new_etag = response
+            .headers()
             .get("etag")
             .and_then(|v| v.to_str().ok())
             .map(|s| s.to_string());
@@ -346,7 +357,9 @@ impl E2EClient {
             return Err(format!("HTTP {}: {}", status, text));
         }
 
-        let data: T = response.json().await
+        let data: T = response
+            .json()
+            .await
             .map_err(|e| format!("Parse failed: {}", e))?;
 
         Ok((Some(data), status, new_etag))
@@ -361,15 +374,15 @@ impl E2EClient {
     ) -> Result<T, String> {
         let url = format!("{}{}", self.base_url, path);
 
-        let mut request = self.client
-            .post(&url)
-            .json(body);
+        let mut request = self.client.post(&url).json(body);
 
         if let Some(csrf) = csrf_token {
             request = request.header("x-csrf-token", csrf);
         }
 
-        let response = request.send().await
+        let response = request
+            .send()
+            .await
             .map_err(|e| format!("Request failed: {}", e))?;
 
         self.parse_response(response).await
@@ -385,7 +398,8 @@ impl E2EClient {
     ) -> Result<T, String> {
         let url = format!("{}{}", self.base_url, path);
 
-        let mut request = self.client
+        let mut request = self
+            .client
             .post(&url)
             .header("Authorization", format!("Bearer {}", token))
             .json(body);
@@ -394,7 +408,9 @@ impl E2EClient {
             request = request.header("x-csrf-token", csrf);
         }
 
-        let response = request.send().await
+        let response = request
+            .send()
+            .await
             .map_err(|e| format!("Request failed: {}", e))?;
 
         self.parse_response(response).await
@@ -419,7 +435,9 @@ impl E2EClient {
             request = request.header("x-csrf-token", csrf);
         }
 
-        let response = request.send().await
+        let response = request
+            .send()
+            .await
             .map_err(|e| format!("Request failed: {}", e))?;
 
         let status = response.status();
@@ -442,7 +460,8 @@ impl E2EClient {
     ) -> Result<T, String> {
         let url = format!("{}{}", self.base_url, path);
 
-        let response = self.client
+        let response = self
+            .client
             .post(&url)
             .header("x-terminal-token", terminal_token)
             .json(body)
@@ -461,7 +480,8 @@ impl E2EClient {
     ) -> Result<T, String> {
         let url = format!("{}{}", self.base_url, path);
 
-        let response = self.client
+        let response = self
+            .client
             .get(&url)
             .header("x-terminal-token", terminal_token)
             .send()
@@ -475,7 +495,8 @@ impl E2EClient {
     pub async fn is_online(&self) -> bool {
         let url = format!("{}/api/health", self.base_url);
 
-        match self.client
+        match self
+            .client
             .get(&url)
             .timeout(Duration::from_secs(5))
             .send()
@@ -487,7 +508,11 @@ impl E2EClient {
     }
 
     /// Login as user and get JWT token
-    pub async fn login_user(&self, username: &str, password: &str) -> Result<UserLoginResponse, String> {
+    pub async fn login_user(
+        &self,
+        username: &str,
+        password: &str,
+    ) -> Result<UserLoginResponse, String> {
         let url = format!("{}/api/auth/login", self.base_url);
 
         #[derive(Serialize)]
@@ -498,7 +523,8 @@ impl E2EClient {
 
         let request = LoginRequest { username, password };
 
-        let response = self.client
+        let response = self
+            .client
             .post(&url)
             .json(&request)
             .send()
@@ -517,13 +543,18 @@ impl E2EClient {
             data: UserLoginResponse,
         }
 
-        let result: LoginApiResponse = response.json().await
+        let result: LoginApiResponse = response
+            .json()
+            .await
             .map_err(|e| format!("Parse login response failed: {}", e))?;
 
         Ok(result.data)
     }
 
-    async fn parse_response<T: DeserializeOwned>(&self, response: reqwest::Response) -> Result<T, String> {
+    async fn parse_response<T: DeserializeOwned>(
+        &self,
+        response: reqwest::Response,
+    ) -> Result<T, String> {
         let status = response.status();
 
         if !status.is_success() {
@@ -531,7 +562,9 @@ impl E2EClient {
             return Err(format!("HTTP {}: {}", status, text));
         }
 
-        response.json().await
+        response
+            .json()
+            .await
             .map_err(|e| format!("Parse failed: {}", e))
     }
 }
@@ -550,8 +583,8 @@ mod p1_terminal_management {
     pub struct RegisterTerminalRequest {
         pub hardware_id: String,
         pub terminal_name: String,
-        pub terminal_type: String,  // STANDARD, SELF_SERVICE, MOBILE, KIOSK
-        pub secret: String,         // Client-provided secret (16-256 chars)
+        pub terminal_type: String, // STANDARD, SELF_SERVICE, MOBILE, KIOSK
+        pub secret: String,        // Client-provided secret (16-256 chars)
         #[serde(skip_serializing_if = "Option::is_none")]
         pub location_id: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -601,15 +634,27 @@ mod p1_terminal_management {
         let client = E2EClient::new();
 
         // Ensure backend is online
-        assert!(client.is_online().await, "Backend must be online at {}", get_backend_url());
+        assert!(
+            client.is_online().await,
+            "Backend must be online at {}",
+            get_backend_url()
+        );
 
         // Login as test user
-        let login_result = client.login_user(TEST_USERNAME, TEST_PASSWORD).await
+        let login_result = client
+            .login_user(TEST_USERNAME, TEST_PASSWORD)
+            .await
             .expect("User login should succeed");
 
-        assert!(!login_result.access_token.is_empty(), "Should have JWT token");
+        assert!(
+            !login_result.access_token.is_empty(),
+            "Should have JWT token"
+        );
         assert!(!login_result.user.id.is_empty(), "Should have user ID");
-        assert_eq!(login_result.user.username, TEST_USERNAME, "Username should match");
+        assert_eq!(
+            login_result.user.username, TEST_USERNAME,
+            "Username should match"
+        );
 
         // Store in test state
         {
@@ -619,7 +664,10 @@ mod p1_terminal_management {
             state.company_id = Some(login_result.user.company_id.clone());
         }
 
-        println!("✓ User logged in: {} ({})", login_result.user.username, login_result.user.id);
+        println!(
+            "✓ User logged in: {} ({})",
+            login_result.user.username, login_result.user.id
+        );
         println!("  Company: {}", login_result.user.company_id);
         println!("  Permissions: {:?}", login_result.user.permissions);
     }
@@ -634,7 +682,10 @@ mod p1_terminal_management {
 
         // Get tokens and state
         let state = get_test_state().lock().await;
-        let user_token = state.session_token.clone().expect("Should have session token");
+        let user_token = state
+            .session_token
+            .clone()
+            .expect("Should have session token");
         let hardware_id = state.hardware_id.clone();
         let terminal_id = state.terminal_id.clone();
         drop(state);
@@ -643,7 +694,10 @@ mod p1_terminal_management {
         assert!(!hardware_id.is_empty(), "Should have hardware ID");
         assert!(terminal_id.is_some(), "Should have terminal ID");
 
-        println!("✓ Terminal registered via ensure_setup: {}", terminal_id.unwrap());
+        println!(
+            "✓ Terminal registered via ensure_setup: {}",
+            terminal_id.unwrap()
+        );
         println!("  Hardware ID: {}", hardware_id);
 
         // Also test registering another terminal to verify the API works
@@ -690,7 +744,10 @@ mod p1_terminal_management {
 
         let state = get_test_state().lock().await;
         let hardware_id = state.hardware_id.clone();
-        let user_token = state.session_token.clone().expect("Should have session token");
+        let user_token = state
+            .session_token
+            .clone()
+            .expect("Should have session token");
         let secret = state.terminal_secret.clone().expect("Should have secret");
 
         drop(state);
@@ -708,7 +765,12 @@ mod p1_terminal_management {
 
         // Duplicate registration may return 409 Conflict or the existing terminal
         let (status, body) = client
-            .post_raw("/api/pos/terminals/register", &request, Some(&user_token), None)
+            .post_raw(
+                "/api/pos/terminals/register",
+                &request,
+                Some(&user_token),
+                None,
+            )
             .await
             .expect("Request should complete");
 
@@ -716,7 +778,8 @@ mod p1_terminal_management {
         assert!(
             status == StatusCode::CREATED || status == StatusCode::CONFLICT,
             "Duplicate should return 201 or 409, got {}: {}",
-            status, body
+            status,
+            body
         );
 
         println!("✓ Duplicate registration handled (status: {})", status);
@@ -731,7 +794,10 @@ mod p1_terminal_management {
         ensure_setup(&client).await.expect("Setup should succeed");
 
         let state = get_test_state().lock().await;
-        let user_token = state.session_token.clone().expect("Should have session token");
+        let user_token = state
+            .session_token
+            .clone()
+            .expect("Should have session token");
         drop(state);
 
         let request = RegisterTerminalRequest {
@@ -746,11 +812,20 @@ mod p1_terminal_management {
         };
 
         let (status, _) = client
-            .post_raw("/api/pos/terminals/register", &request, Some(&user_token), None)
+            .post_raw(
+                "/api/pos/terminals/register",
+                &request,
+                Some(&user_token),
+                None,
+            )
             .await
             .expect("Request should complete");
 
-        assert_eq!(status, StatusCode::BAD_REQUEST, "Invalid terminal type should return 400");
+        assert_eq!(
+            status,
+            StatusCode::BAD_REQUEST,
+            "Invalid terminal type should return 400"
+        );
 
         println!("✓ Invalid terminal type returns 400");
     }
@@ -765,18 +840,33 @@ mod p1_terminal_management {
 
         // Verify we have both tokens
         let state = get_test_state().lock().await;
-        let terminal_token = state.terminal_token.clone().expect("Should have terminal token");
-        let session_token = state.session_token.clone().expect("Should have session token");
+        let terminal_token = state
+            .terminal_token
+            .clone()
+            .expect("Should have terminal token");
+        let session_token = state
+            .session_token
+            .clone()
+            .expect("Should have session token");
         let terminal_id = state.terminal_id.clone().expect("Should have terminal ID");
         drop(state);
 
-        assert!(!terminal_token.is_empty(), "Terminal token should not be empty");
-        assert!(!session_token.is_empty(), "Session token should not be empty");
+        assert!(
+            !terminal_token.is_empty(),
+            "Terminal token should not be empty"
+        );
+        assert!(
+            !session_token.is_empty(),
+            "Session token should not be empty"
+        );
         assert!(!terminal_id.is_empty(), "Terminal ID should not be empty");
 
         println!("✓ Terminal authenticated: {}", terminal_id);
         println!("  Has terminal token: {}", !terminal_token.is_empty());
-        println!("  Has session token (user JWT): {}", !session_token.is_empty());
+        println!(
+            "  Has session token (user JWT): {}",
+            !session_token.is_empty()
+        );
     }
 
     #[tokio::test]
@@ -803,7 +893,11 @@ mod p1_terminal_management {
             .expect("Request should complete");
 
         // API returns 401 (Unauthorized) for wrong secret
-        assert_eq!(status, StatusCode::UNAUTHORIZED, "Invalid secret should return 401");
+        assert_eq!(
+            status,
+            StatusCode::UNAUTHORIZED,
+            "Invalid secret should return 401"
+        );
 
         println!("✓ Invalid secret returns 401");
     }
@@ -844,17 +938,16 @@ mod p1_terminal_management {
         };
 
         let (status, _) = client
-            .post_raw(
-                "/api/pos/terminals/authenticate",
-                &request,
-                None,
-                None,
-            )
+            .post_raw("/api/pos/terminals/authenticate", &request, None, None)
             .await
             .expect("Request should complete");
 
         // API returns 404 for non-existent terminal
-        assert_eq!(status, StatusCode::NOT_FOUND, "Non-existent terminal should return 404");
+        assert_eq!(
+            status,
+            StatusCode::NOT_FOUND,
+            "Non-existent terminal should return 404"
+        );
 
         println!("✓ Invalid credentials returns 404 (not found)");
     }
@@ -997,11 +1090,16 @@ mod p2_sync_apis {
         let client = E2EClient::new();
 
         // GET without auth should fail
-        let result = client.get_public::<ApiResponse<CatalogResponse>>("/api/pos/sync/catalog").await;
+        let result = client
+            .get_public::<ApiResponse<CatalogResponse>>("/api/pos/sync/catalog")
+            .await;
 
         assert!(result.is_err(), "Sync without auth should fail");
         let error = result.unwrap_err();
-        assert!(error.contains("401") || error.contains("403"), "Should return 401 or 403");
+        assert!(
+            error.contains("401") || error.contains("403"),
+            "Should return 401 or 403"
+        );
 
         println!("✓ Sync endpoints require authentication");
     }
@@ -1052,11 +1150,7 @@ mod p2_sync_apis {
 
         // First request - get catalog and ETag
         let (data1, status1, etag) = client
-            .get_with_etag::<ApiResponse<CatalogResponse>>(
-                "/api/pos/sync/catalog",
-                &token,
-                None,
-            )
+            .get_with_etag::<ApiResponse<CatalogResponse>>("/api/pos/sync/catalog", &token, None)
             .await
             .expect("First request should succeed");
 
@@ -1076,7 +1170,11 @@ mod p2_sync_apis {
                 .await
                 .expect("Second request should succeed");
 
-            assert_eq!(status2, StatusCode::NOT_MODIFIED, "Second request should return 304");
+            assert_eq!(
+                status2,
+                StatusCode::NOT_MODIFIED,
+                "Second request should return 304"
+            );
             assert!(data2.is_none(), "304 should have no data");
 
             println!("✓ ETag caching works: 200 → 304");
@@ -1105,7 +1203,10 @@ mod p2_sync_apis {
         assert!(result.success, "Response should indicate success");
         let data = result.data.expect("Should have data");
 
-        assert_eq!(data.sync_type, "FULL", "Should be full sync without lastSync");
+        assert_eq!(
+            data.sync_type, "FULL",
+            "Should be full sync without lastSync"
+        );
 
         println!("✓ Products full sync:");
         println!("  - Sync type: {}", data.sync_type);
@@ -1130,7 +1231,10 @@ mod p2_sync_apis {
         let last_sync_str = to_iso_string(last_sync);
 
         let result: ApiResponse<ProductsSyncResponse> = client
-            .get(&format!("/api/pos/sync/products?lastSync={}", last_sync_str), &token)
+            .get(
+                &format!("/api/pos/sync/products?lastSync={}", last_sync_str),
+                &token,
+            )
             .await
             .expect("Incremental sync should succeed");
 
@@ -1183,7 +1287,9 @@ mod p2_sync_apis {
         drop(state);
 
         // Try to get operators - endpoint may not be implemented yet
-        let result = client.get::<ApiResponse<OperatorsResponse>>("/api/pos/sync/operators", &token).await;
+        let result = client
+            .get::<ApiResponse<OperatorsResponse>>("/api/pos/sync/operators", &token)
+            .await;
 
         match result {
             Ok(response) => {
@@ -1206,7 +1312,10 @@ mod p2_sync_apis {
                 if !data.operators.is_empty() {
                     let mut state = get_test_state().lock().await;
                     state.operator_id = Some(data.operators[0].id.clone());
-                    println!("  - Using operator: {} ({})", data.operators[0].name, data.operators[0].code);
+                    println!(
+                        "  - Using operator: {} ({})",
+                        data.operators[0].name, data.operators[0].code
+                    );
                 }
             }
             Err(e) if e.contains("404") => {
@@ -1267,7 +1376,10 @@ mod p2_sync_apis {
 
         println!("✓ Tenant config synced:");
         if let Some(tax) = &data.tax_config {
-            println!("  - Tax rate: {}%, inclusive: {}", tax.default_rate, tax.tax_inclusive);
+            println!(
+                "  - Tax rate: {}%, inclusive: {}",
+                tax.default_rate, tax.tax_inclusive
+            );
         }
         println!("  - Features: {:?}", data.features);
     }
@@ -1359,7 +1471,10 @@ mod p3_shift_management {
         let state = get_test_state().lock().await;
         let token = state.session_token.clone().expect("Should have token");
         let terminal_id = state.terminal_id.clone().expect("Should have terminal ID");
-        let operator_id = state.operator_id.clone().unwrap_or_else(|| "default-op".to_string());
+        let operator_id = state
+            .operator_id
+            .clone()
+            .unwrap_or_else(|| "default-op".to_string());
         let csrf = state.csrf_token.clone();
         drop(state);
 
@@ -1430,7 +1545,10 @@ mod p3_shift_management {
             assert!(shift_result.success, "Response should indicate success");
             let shift_data = shift_result.data.expect("Should have shift data");
 
-            println!("✓ Retrieved shift: {} - Status: {}", shift_data.shift_number, shift_data.status);
+            println!(
+                "✓ Retrieved shift: {} - Status: {}",
+                shift_data.shift_number, shift_data.status
+            );
         }
     }
 
@@ -1445,7 +1563,10 @@ mod p3_shift_management {
         let state = get_test_state().lock().await;
         let token = state.session_token.clone().expect("Should have token");
         let terminal_id = state.terminal_id.clone().expect("Should have terminal ID");
-        let operator_id = state.operator_id.clone().unwrap_or_else(|| "default-op".to_string());
+        let operator_id = state
+            .operator_id
+            .clone()
+            .unwrap_or_else(|| "default-op".to_string());
         let csrf = state.csrf_token.clone();
         drop(state);
 
@@ -1456,7 +1577,12 @@ mod p3_shift_management {
         };
 
         let (status, _) = client
-            .post_raw("/api/pos/shifts/start", &request, Some(&token), csrf.as_deref())
+            .post_raw(
+                "/api/pos/shifts/start",
+                &request,
+                Some(&token),
+                csrf.as_deref(),
+            )
             .await
             .expect("Request should complete");
 
@@ -1580,14 +1706,19 @@ mod p4_transaction_management {
 
         let state = get_test_state().lock().await;
         let token = state.session_token.clone().expect("Should have token");
-        let terminal_uuid = state.terminal_uuid.clone().expect("Should have terminal UUID");
+        let terminal_uuid = state
+            .terminal_uuid
+            .clone()
+            .expect("Should have terminal UUID");
         let shift_id = state.shift_id.clone();
         let product_ids = state.product_ids.clone();
         let csrf = state.csrf_token.clone();
         drop(state);
 
         // Use first product or generate a random UUID for testing
-        let product_id = product_ids.first().cloned()
+        let product_id = product_ids
+            .first()
+            .cloned()
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
         let request = CreateTransactionRequest {
@@ -1618,7 +1749,10 @@ mod p4_transaction_management {
         let data = result.data.expect("Should have data");
 
         assert!(!data.id.is_empty(), "Should have transaction ID");
-        assert!(!data.transaction_no.is_empty(), "Should have transaction number");
+        assert!(
+            !data.transaction_no.is_empty(),
+            "Should have transaction number"
+        );
         assert_eq!(data.transaction_type, "SALE", "Should be SALE type");
 
         // Store transaction info
@@ -1642,13 +1776,18 @@ mod p4_transaction_management {
 
         let state = get_test_state().lock().await;
         let token = state.session_token.clone().expect("Should have token");
-        let terminal_uuid = state.terminal_uuid.clone().expect("Should have terminal UUID");
+        let terminal_uuid = state
+            .terminal_uuid
+            .clone()
+            .expect("Should have terminal UUID");
         let shift_id = state.shift_id.clone();
         let product_ids = state.product_ids.clone();
         let csrf = state.csrf_token.clone();
         drop(state);
 
-        let product_id = product_ids.get(1).cloned()
+        let product_id = product_ids
+            .get(1)
+            .cloned()
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
         let request = CreateTransactionRequest {
@@ -1691,17 +1830,22 @@ mod p4_transaction_management {
 
         let state = get_test_state().lock().await;
         let token = state.session_token.clone().expect("Should have token");
-        let terminal_uuid = state.terminal_uuid.clone().expect("Should have terminal UUID");
+        let terminal_uuid = state
+            .terminal_uuid
+            .clone()
+            .expect("Should have terminal UUID");
         let shift_id = state.shift_id.clone();
         let product_ids = state.product_ids.clone();
         let csrf = state.csrf_token.clone();
         drop(state);
 
-        let product_id = product_ids.get(2).cloned()
+        let product_id = product_ids
+            .get(2)
+            .cloned()
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
         let request = CreateTransactionRequest {
-            terminal_id: terminal_uuid,  // Must use UUID, not business ID
+            terminal_id: terminal_uuid, // Must use UUID, not business ID
             shift_id,
             customer_id: None,
             customer_name: None,
@@ -1740,17 +1884,22 @@ mod p4_transaction_management {
 
         let state = get_test_state().lock().await;
         let token = state.session_token.clone().expect("Should have token");
-        let terminal_uuid = state.terminal_uuid.clone().expect("Should have terminal UUID");
+        let terminal_uuid = state
+            .terminal_uuid
+            .clone()
+            .expect("Should have terminal UUID");
         let shift_id = state.shift_id.clone();
         let product_ids = state.product_ids.clone();
         let csrf = state.csrf_token.clone();
         drop(state);
 
-        let product_id = product_ids.get(3).cloned()
+        let product_id = product_ids
+            .get(3)
+            .cloned()
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
         let request = CreateTransactionRequest {
-            terminal_id: terminal_uuid,  // Must use UUID, not business ID
+            terminal_id: terminal_uuid, // Must use UUID, not business ID
             shift_id,
             customer_id: None,
             customer_name: None,
@@ -1789,7 +1938,10 @@ mod p4_transaction_management {
 
         let state = get_test_state().lock().await;
         let token = state.session_token.clone().expect("Should have token");
-        let transaction_id = state.transaction_id.clone().expect("Should have transaction ID");
+        let transaction_id = state
+            .transaction_id
+            .clone()
+            .expect("Should have transaction ID");
         drop(state);
 
         // Use flexible JSON value to handle different response formats
@@ -1800,7 +1952,10 @@ mod p4_transaction_management {
 
         assert_eq!(result["success"], true, "Response should indicate success");
         let data = &result["data"];
-        assert!(!data["id"].as_str().unwrap_or("").is_empty(), "Should have transaction ID");
+        assert!(
+            !data["id"].as_str().unwrap_or("").is_empty(),
+            "Should have transaction ID"
+        );
 
         println!("✓ Transaction retrieved: {}", data["transactionNo"]);
         println!("  - Status: {}", data["status"]);
@@ -1816,12 +1971,18 @@ mod p4_transaction_management {
 
         let state = get_test_state().lock().await;
         let token = state.session_token.clone().expect("Should have token");
-        let receipt_number = state.receipt_number.clone().expect("Should have receipt number");
+        let receipt_number = state
+            .receipt_number
+            .clone()
+            .expect("Should have receipt number");
         drop(state);
 
         // This endpoint may not exist - use list with query filter instead
         let result: serde_json::Value = client
-            .get(&format!("/api/pos/transactions?transactionNo={}", receipt_number), &token)
+            .get(
+                &format!("/api/pos/transactions?transactionNo={}", receipt_number),
+                &token,
+            )
             .await
             .expect("List transactions should succeed");
 
@@ -1840,7 +2001,10 @@ mod p4_transaction_management {
 
         let state = get_test_state().lock().await;
         let token = state.session_token.clone().expect("Should have token");
-        let transaction_id = state.transaction_id.clone().expect("Should have transaction ID");
+        let transaction_id = state
+            .transaction_id
+            .clone()
+            .expect("Should have transaction ID");
         let csrf = state.csrf_token.clone();
         drop(state);
 
@@ -1875,7 +2039,10 @@ mod p4_transaction_management {
 
         let state = get_test_state().lock().await;
         let token = state.session_token.clone().expect("Should have token");
-        let transaction_id = state.transaction_id.clone().expect("Should have transaction ID");
+        let transaction_id = state
+            .transaction_id
+            .clone()
+            .expect("Should have transaction ID");
         let csrf = state.csrf_token.clone();
         drop(state);
 
@@ -1925,14 +2092,17 @@ mod p4_transaction_management {
 
         let state = get_test_state().lock().await;
         let token = state.session_token.clone().expect("Should have token");
-        let terminal_uuid = state.terminal_uuid.clone().expect("Should have terminal UUID");
+        let terminal_uuid = state
+            .terminal_uuid
+            .clone()
+            .expect("Should have terminal UUID");
         let shift_id = state.shift_id.clone();
         let csrf = state.csrf_token.clone();
         drop(state);
 
         // Use invalid product ID (not a UUID)
         let request = CreateTransactionRequest {
-            terminal_id: terminal_uuid,  // Must use UUID
+            terminal_id: terminal_uuid, // Must use UUID
             shift_id,
             customer_id: None,
             customer_name: None,
@@ -1940,7 +2110,7 @@ mod p4_transaction_management {
             tax_rate: Some(0.15),
             tax_inclusive: Some(false),
             items: vec![TransactionItem {
-                product_id: "invalid-product-id".to_string(),  // Invalid: not a UUID
+                product_id: "invalid-product-id".to_string(), // Invalid: not a UUID
                 product_sku: "TEST-SKU".to_string(),
                 product_name: "Test".to_string(),
                 quantity: 1.0,
@@ -1951,11 +2121,20 @@ mod p4_transaction_management {
         };
 
         let (status, _) = client
-            .post_raw("/api/pos/transactions", &request, Some(&token), csrf.as_deref())
+            .post_raw(
+                "/api/pos/transactions",
+                &request,
+                Some(&token),
+                csrf.as_deref(),
+            )
             .await
             .expect("Request should complete");
 
-        assert_eq!(status, StatusCode::BAD_REQUEST, "Invalid product ID should fail");
+        assert_eq!(
+            status,
+            StatusCode::BAD_REQUEST,
+            "Invalid product ID should fail"
+        );
 
         println!("✓ Invalid product ID rejected");
     }
@@ -2012,19 +2191,24 @@ mod p5_return_management {
 
         let state = get_test_state().lock().await;
         let token = state.session_token.clone().expect("Should have token");
-        let terminal_uuid = state.terminal_uuid.clone().expect("Should have terminal UUID");
+        let terminal_uuid = state
+            .terminal_uuid
+            .clone()
+            .expect("Should have terminal UUID");
         let shift_id = state.shift_id.clone();
         let product_ids = state.product_ids.clone();
         let csrf = state.csrf_token.clone();
         drop(state);
 
         // Use a valid product ID from the catalog
-        let product_id = product_ids.first().cloned()
+        let product_id = product_ids
+            .first()
+            .cloned()
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
         // Create a transaction to return
         let create_request = super::p4_transaction_management::CreateTransactionRequest {
-            terminal_id: terminal_uuid.clone(),  // Must use UUID
+            terminal_id: terminal_uuid.clone(), // Must use UUID
             shift_id: shift_id.clone(),
             customer_id: None,
             customer_name: None,
@@ -2047,7 +2231,7 @@ mod p5_return_management {
                 "/api/pos/transactions",
                 &create_request,
                 &token,
-                csrf.as_deref()
+                csrf.as_deref(),
             )
             .await;
 
@@ -2077,7 +2261,7 @@ mod p5_return_management {
                         "/api/pos/returns",
                         &return_request,
                         &token,
-                        csrf.as_deref()
+                        csrf.as_deref(),
                     )
                     .await;
 
@@ -2089,7 +2273,10 @@ mod p5_return_management {
                     }
                     Ok(_) | Err(_) => {
                         // Return API may have different schema or not fully implemented
-                        println!("✓ Return test: Transaction created ({}), return API may need updates", txn.transaction_no);
+                        println!(
+                            "✓ Return test: Transaction created ({}), return API may need updates",
+                            txn.transaction_no
+                        );
                     }
                 }
             }
@@ -2109,7 +2296,10 @@ mod p5_return_management {
 
         let state = get_test_state().lock().await;
         let token = state.session_token.clone().expect("Should have token");
-        let terminal_uuid = state.terminal_uuid.clone().expect("Should have terminal UUID");
+        let terminal_uuid = state
+            .terminal_uuid
+            .clone()
+            .expect("Should have terminal UUID");
         let shift_id = state.shift_id.clone();
         let csrf = state.csrf_token.clone();
         drop(state);
@@ -2131,15 +2321,20 @@ mod p5_return_management {
         });
 
         let (status, _) = client
-            .post_raw("/api/pos/returns", &return_request, Some(&token), csrf.as_deref())
+            .post_raw(
+                "/api/pos/returns",
+                &return_request,
+                Some(&token),
+                csrf.as_deref(),
+            )
             .await
             .expect("Request should complete");
 
         // Should fail due to non-existent transaction or over-quantity
         assert!(
-            status == StatusCode::BAD_REQUEST ||
-            status == StatusCode::NOT_FOUND ||
-            status == StatusCode::UNPROCESSABLE_ENTITY,
+            status == StatusCode::BAD_REQUEST
+                || status == StatusCode::NOT_FOUND
+                || status == StatusCode::UNPROCESSABLE_ENTITY,
             "Invalid return should fail with appropriate error"
         );
 
@@ -2167,7 +2362,7 @@ mod p6_offline_queue {
     pub struct OfflineTransaction {
         pub local_id: String,
         #[serde(skip_serializing_if = "Option::is_none")]
-        pub terminal_id: Option<String>,  // Optional - will be from terminal context
+        pub terminal_id: Option<String>, // Optional - will be from terminal context
         #[serde(rename = "type")]
         pub transaction_type: String,
         pub items: Vec<OfflineItem>,
@@ -2185,10 +2380,10 @@ mod p6_offline_queue {
     #[derive(Debug, Serialize)]
     #[serde(rename_all = "camelCase")]
     pub struct OfflineItem {
-        pub product_id: String,  // Must be UUID
+        pub product_id: String, // Must be UUID
         #[serde(skip_serializing_if = "Option::is_none")]
         pub sku: Option<String>,
-        pub name: String,  // Required field name
+        pub name: String, // Required field name
         pub quantity: f64,
         pub unit_price: f64,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -2200,7 +2395,7 @@ mod p6_offline_queue {
     #[derive(Debug, Serialize)]
     #[serde(rename_all = "camelCase")]
     pub struct OfflinePayment {
-        pub method: String,  // Must be CASH, CARD, MOBILE, etc.
+        pub method: String, // Must be CASH, CARD, MOBILE, etc.
         pub amount: f64,
         #[serde(skip_serializing_if = "Option::is_none")]
         pub reference: Option<String>,
@@ -2256,7 +2451,10 @@ mod p6_offline_queue {
         ensure_setup(&client).await.expect("Setup should succeed");
 
         let state = get_test_state().lock().await;
-        let terminal_token = state.terminal_token.clone().expect("Should have terminal token");
+        let terminal_token = state
+            .terminal_token
+            .clone()
+            .expect("Should have terminal token");
         drop(state);
 
         let local_id = uuid::Uuid::new_v4().to_string();
@@ -2265,7 +2463,7 @@ mod p6_offline_queue {
         let request = UploadRequest {
             transactions: vec![OfflineTransaction {
                 local_id: local_id.clone(),
-                terminal_id: None,  // Will be from terminal context
+                terminal_id: None, // Will be from terminal context
                 transaction_type: "SALE".to_string(),
                 items: vec![OfflineItem {
                     product_id,
@@ -2311,8 +2509,14 @@ mod p6_offline_queue {
 
         println!("✓ Offline transaction uploaded");
         println!("  - Local ID: {}", local_id);
-        println!("  - Uploaded: received={}, queued={}", uploaded.received, uploaded.queued);
-        println!("  - Processed: processed={}, failed={}", data.processed.processed, data.processed.failed);
+        println!(
+            "  - Uploaded: received={}, queued={}",
+            uploaded.received, uploaded.queued
+        );
+        println!(
+            "  - Processed: processed={}, failed={}",
+            data.processed.processed, data.processed.failed
+        );
     }
 
     #[tokio::test]
@@ -2324,36 +2528,41 @@ mod p6_offline_queue {
         ensure_setup(&client).await.expect("Setup should succeed");
 
         let state = get_test_state().lock().await;
-        let terminal_token = state.terminal_token.clone().expect("Should have terminal token");
+        let terminal_token = state
+            .terminal_token
+            .clone()
+            .expect("Should have terminal token");
         drop(state);
 
-        let transactions: Vec<OfflineTransaction> = (0..3).map(|i| {
-            OfflineTransaction {
-                local_id: uuid::Uuid::new_v4().to_string(),
-                terminal_id: None,  // Will be from terminal context
-                transaction_type: "SALE".to_string(),
-                items: vec![OfflineItem {
-                    product_id: uuid::Uuid::new_v4().to_string(),
-                    sku: Some(format!("BATCH-SKU-{}", i)),
-                    name: format!("Batch Product {}", i),
-                    quantity: 1.0,
-                    unit_price: 10.00,
-                    discount: None,
-                    tax_amount: Some(1.50),
-                }],
-                payments: vec![OfflinePayment {
-                    method: "CASH".to_string(),
-                    amount: 11.50,
-                    reference: None,
-                }],
-                subtotal: 10.00,
-                tax_total: 1.50,
-                discount_total: None,
-                grand_total: 11.50,
-                currency: "LYD".to_string(),
-                created_at: Some(to_iso_string(chrono::Utc::now())),
-            }
-        }).collect();
+        let transactions: Vec<OfflineTransaction> = (0..3)
+            .map(|i| {
+                OfflineTransaction {
+                    local_id: uuid::Uuid::new_v4().to_string(),
+                    terminal_id: None, // Will be from terminal context
+                    transaction_type: "SALE".to_string(),
+                    items: vec![OfflineItem {
+                        product_id: uuid::Uuid::new_v4().to_string(),
+                        sku: Some(format!("BATCH-SKU-{}", i)),
+                        name: format!("Batch Product {}", i),
+                        quantity: 1.0,
+                        unit_price: 10.00,
+                        discount: None,
+                        tax_amount: Some(1.50),
+                    }],
+                    payments: vec![OfflinePayment {
+                        method: "CASH".to_string(),
+                        amount: 11.50,
+                        reference: None,
+                    }],
+                    subtotal: 10.00,
+                    tax_total: 1.50,
+                    discount_total: None,
+                    grand_total: 11.50,
+                    currency: "LYD".to_string(),
+                    created_at: Some(to_iso_string(chrono::Utc::now())),
+                }
+            })
+            .collect();
 
         let request = UploadRequest { transactions };
 
@@ -2368,7 +2577,10 @@ mod p6_offline_queue {
 
         assert_eq!(uploaded.received, 3, "Should receive 3 transactions");
 
-        println!("✓ Batch upload: {} received, {} queued", uploaded.received, uploaded.queued);
+        println!(
+            "✓ Batch upload: {} received, {} queued",
+            uploaded.received, uploaded.queued
+        );
     }
 
     #[tokio::test]
@@ -2380,7 +2592,10 @@ mod p6_offline_queue {
         ensure_setup(&client).await.expect("Setup should succeed");
 
         let state = get_test_state().lock().await;
-        let terminal_token = state.terminal_token.clone().expect("Should have terminal token");
+        let terminal_token = state
+            .terminal_token
+            .clone()
+            .expect("Should have terminal token");
         drop(state);
 
         // Use a fixed local ID to create a duplicate
@@ -2390,7 +2605,7 @@ mod p6_offline_queue {
         let request = UploadRequest {
             transactions: vec![OfflineTransaction {
                 local_id: local_id.clone(),
-                terminal_id: None,  // From terminal context
+                terminal_id: None, // From terminal context
                 transaction_type: "SALE".to_string(),
                 items: vec![OfflineItem {
                     product_id: product_id.clone(),
@@ -2417,7 +2632,11 @@ mod p6_offline_queue {
 
         // First upload
         let _ = client
-            .post_terminal::<ApiResponse<UploadApiResponse>, _>("/api/pos/offline/upload", &request, &terminal_token)
+            .post_terminal::<ApiResponse<UploadApiResponse>, _>(
+                "/api/pos/offline/upload",
+                &request,
+                &terminal_token,
+            )
             .await;
 
         // Second upload (duplicate)
@@ -2431,8 +2650,10 @@ mod p6_offline_queue {
         let uploaded = &data.uploaded;
 
         // Either duplicates > 0 or received but not queued
-        println!("✓ Duplicate handling: received={}, queued={}, duplicates={}",
-            uploaded.received, uploaded.queued, uploaded.duplicates);
+        println!(
+            "✓ Duplicate handling: received={}, queued={}, duplicates={}",
+            uploaded.received, uploaded.queued, uploaded.duplicates
+        );
     }
 
     #[tokio::test]
@@ -2444,8 +2665,14 @@ mod p6_offline_queue {
         ensure_setup(&client).await.expect("Setup should succeed");
 
         let state = get_test_state().lock().await;
-        let user_token = state.session_token.clone().expect("Should have session token");
-        let terminal_uuid = state.terminal_uuid.clone().expect("Should have terminal UUID");
+        let user_token = state
+            .session_token
+            .clone()
+            .expect("Should have session token");
+        let terminal_uuid = state
+            .terminal_uuid
+            .clone()
+            .expect("Should have terminal UUID");
         drop(state);
 
         // Process queue endpoint expects terminal UUID, not business ID
@@ -2474,13 +2701,22 @@ mod p6_offline_queue {
         ensure_setup(&client).await.expect("Setup should succeed");
 
         let state = get_test_state().lock().await;
-        let user_token = state.session_token.clone().expect("Should have session token");
-        let terminal_uuid = state.terminal_uuid.clone().expect("Should have terminal UUID");
+        let user_token = state
+            .session_token
+            .clone()
+            .expect("Should have session token");
+        let terminal_uuid = state
+            .terminal_uuid
+            .clone()
+            .expect("Should have terminal UUID");
         drop(state);
 
         // Queue stats endpoint expects terminal UUID
         let result: serde_json::Value = client
-            .get(&format!("/api/pos/sync/queue/{}/stats", terminal_uuid), &user_token)
+            .get(
+                &format!("/api/pos/sync/queue/{}/stats", terminal_uuid),
+                &user_token,
+            )
             .await
             .expect("Queue stats should succeed");
 
@@ -2519,7 +2755,10 @@ mod p7_cash_drawer {
 
         let state = get_test_state().lock().await;
         let token = state.session_token.clone().expect("Should have token");
-        let terminal_uuid = state.terminal_uuid.clone().expect("Should have terminal UUID");
+        let terminal_uuid = state
+            .terminal_uuid
+            .clone()
+            .expect("Should have terminal UUID");
         let shift_id = state.shift_id.clone();
         let csrf = state.csrf_token.clone();
         drop(state);
@@ -2533,14 +2772,22 @@ mod p7_cash_drawer {
         });
 
         let result: serde_json::Value = client
-            .post("/api/pos/cash-drawer/events", &request, &token, csrf.as_deref())
+            .post(
+                "/api/pos/cash-drawer/events",
+                &request,
+                &token,
+                csrf.as_deref(),
+            )
             .await
             .expect("Log drawer event should succeed");
 
         assert_eq!(result["success"], true, "Response should indicate success");
         let data = &result["data"];
 
-        assert!(!data["id"].as_str().unwrap_or("").is_empty(), "Should have event ID");
+        assert!(
+            !data["id"].as_str().unwrap_or("").is_empty(),
+            "Should have event ID"
+        );
 
         println!("✓ Drawer open logged: {}", data["id"]);
     }
@@ -2555,7 +2802,10 @@ mod p7_cash_drawer {
 
         let state = get_test_state().lock().await;
         let token = state.session_token.clone().expect("Should have token");
-        let terminal_uuid = state.terminal_uuid.clone().expect("Should have terminal UUID");
+        let terminal_uuid = state
+            .terminal_uuid
+            .clone()
+            .expect("Should have terminal UUID");
         let shift_id = state.shift_id.clone();
         let csrf = state.csrf_token.clone();
         drop(state);
@@ -2569,7 +2819,12 @@ mod p7_cash_drawer {
         });
 
         let result: serde_json::Value = client
-            .post("/api/pos/cash-drawer/events", &request, &token, csrf.as_deref())
+            .post(
+                "/api/pos/cash-drawer/events",
+                &request,
+                &token,
+                csrf.as_deref(),
+            )
             .await
             .expect("Log cash in should succeed");
 
@@ -2588,7 +2843,10 @@ mod p7_cash_drawer {
 
         let state = get_test_state().lock().await;
         let token = state.session_token.clone().expect("Should have token");
-        let terminal_uuid = state.terminal_uuid.clone().expect("Should have terminal UUID");
+        let terminal_uuid = state
+            .terminal_uuid
+            .clone()
+            .expect("Should have terminal UUID");
         let shift_id = state.shift_id.clone();
         let csrf = state.csrf_token.clone();
         drop(state);
@@ -2602,7 +2860,12 @@ mod p7_cash_drawer {
         });
 
         let result: serde_json::Value = client
-            .post("/api/pos/cash-drawer/events", &request, &token, csrf.as_deref())
+            .post(
+                "/api/pos/cash-drawer/events",
+                &request,
+                &token,
+                csrf.as_deref(),
+            )
             .await
             .expect("Log cash out should succeed");
 
@@ -2695,7 +2958,10 @@ mod p8_reports {
 
         // Use flexible JSON value to handle any response format
         let result: serde_json::Value = client
-            .get(&format!("/api/pos/reports/daily-sales?date={}", today), &token)
+            .get(
+                &format!("/api/pos/reports/daily-sales?date={}", today),
+                &token,
+            )
             .await
             .expect("Daily sales report should succeed");
 
@@ -2778,7 +3044,10 @@ mod p8_reports {
 
         let state = get_test_state().lock().await;
         let token = state.session_token.clone().expect("Should have token");
-        let terminal_uuid = state.terminal_uuid.clone().expect("Should have terminal UUID");
+        let terminal_uuid = state
+            .terminal_uuid
+            .clone()
+            .expect("Should have terminal UUID");
         let csrf = state.csrf_token.clone();
         drop(state);
 
@@ -2798,7 +3067,8 @@ mod p8_reports {
             return;
         }
 
-        let result: serde_json::Value = serde_json::from_str(&body).unwrap_or(serde_json::json!({}));
+        let result: serde_json::Value =
+            serde_json::from_str(&body).unwrap_or(serde_json::json!({}));
         assert_eq!(result["success"], true, "Response should indicate success");
 
         println!("✓ Z-Report generated: {:?}", result["data"]);
@@ -2814,7 +3084,10 @@ mod p8_reports {
 
         let state = get_test_state().lock().await;
         let token = state.session_token.clone().expect("Should have token");
-        let terminal_uuid = state.terminal_uuid.clone().expect("Should have terminal UUID");
+        let terminal_uuid = state
+            .terminal_uuid
+            .clone()
+            .expect("Should have terminal UUID");
         let csrf = state.csrf_token.clone();
         drop(state);
 
@@ -2848,7 +3121,9 @@ mod p8_reports {
 
         // Should fail because Z-report already exists for today
         assert!(
-            status2 == StatusCode::BAD_REQUEST || status2 == StatusCode::CONFLICT || status2 == StatusCode::NOT_FOUND,
+            status2 == StatusCode::BAD_REQUEST
+                || status2 == StatusCode::CONFLICT
+                || status2 == StatusCode::NOT_FOUND,
             "Duplicate Z-report should be prevented or endpoint not found"
         );
 
@@ -2927,7 +3202,10 @@ mod p9_fleet_management {
         ensure_setup(&client).await.expect("Setup should succeed");
 
         let state = get_test_state().lock().await;
-        let terminal_token = state.terminal_token.clone().expect("Should have terminal token");
+        let terminal_token = state
+            .terminal_token
+            .clone()
+            .expect("Should have terminal token");
         drop(state);
 
         let request = HeartbeatRequest {
@@ -2967,7 +3245,9 @@ mod p9_fleet_management {
         drop(state);
 
         // Fleet status uses user JWT auth (Bearer token)
-        let result = client.get::<ApiResponse<FleetStatusResponse>>("/api/pos/fleet/status", &user_token).await;
+        let result = client
+            .get::<ApiResponse<FleetStatusResponse>>("/api/pos/fleet/status", &user_token)
+            .await;
 
         match result {
             Ok(response) => {
@@ -2977,10 +3257,9 @@ mod p9_fleet_management {
                 println!("✓ Fleet status: {} terminals", data.terminals.len());
 
                 for terminal in &data.terminals {
-                    println!("  - {}: {} (last seen: {:?})",
-                        terminal.terminal_code,
-                        terminal.status,
-                        terminal.last_seen,
+                    println!(
+                        "  - {}: {} (last seen: {:?})",
+                        terminal.terminal_code, terminal.status, terminal.last_seen,
                     );
                 }
             }
@@ -3003,7 +3282,10 @@ mod p9_fleet_management {
         ensure_setup(&client).await.expect("Setup should succeed");
 
         let state = get_test_state().lock().await;
-        let terminal_token = state.terminal_token.clone().expect("Should have terminal token");
+        let terminal_token = state
+            .terminal_token
+            .clone()
+            .expect("Should have terminal token");
         drop(state);
 
         // Try logout endpoint - may not be implemented
@@ -3011,7 +3293,7 @@ mod p9_fleet_management {
             .post_terminal::<ApiResponse<serde_json::Value>, _>(
                 "/api/pos/terminals/logout",
                 &serde_json::json!({}),
-                &terminal_token
+                &terminal_token,
             )
             .await;
 
@@ -3045,7 +3327,9 @@ mod p9_fleet_management {
         // Use old token (should be invalid now)
         let old_token = "old-invalid-token";
 
-        let result = client.get::<ApiResponse<serde_json::Value>>("/api/pos/fleet/status", old_token).await;
+        let result = client
+            .get::<ApiResponse<serde_json::Value>>("/api/pos/fleet/status", old_token)
+            .await;
 
         assert!(result.is_err(), "Old token should be invalid");
 
@@ -3112,7 +3396,8 @@ mod p10_ota_updates {
     }
 
     // Store release ID across tests
-    static RELEASE_ID: std::sync::OnceLock<tokio::sync::Mutex<Option<String>>> = std::sync::OnceLock::new();
+    static RELEASE_ID: std::sync::OnceLock<tokio::sync::Mutex<Option<String>>> =
+        std::sync::OnceLock::new();
 
     fn get_release_id() -> &'static tokio::sync::Mutex<Option<String>> {
         RELEASE_ID.get_or_init(|| tokio::sync::Mutex::new(None))
@@ -3128,14 +3413,17 @@ mod p10_ota_updates {
         ensure_setup(&client).await.expect("Setup should succeed");
 
         let state = get_test_state().lock().await;
-        let terminal_token = state.terminal_token.clone().expect("Should have terminal token");
+        let terminal_token = state
+            .terminal_token
+            .clone()
+            .expect("Should have terminal token");
         drop(state);
 
         // Check for updates when none are available - include required query params
         let result = client
             .get_terminal::<ApiResponse<UpdateCheckResponse>>(
                 "/api/pos/ota/check?version=0.1.0&platform=android",
-                &terminal_token
+                &terminal_token,
             )
             .await;
 
@@ -3175,7 +3463,8 @@ mod p10_ota_updates {
             version: format!("1.{}.0", chrono::Utc::now().timestamp() % 1000),
             release_notes: "E2E Test Release - Automated testing release".to_string(),
             download_url: "https://example.com/releases/test-release.apk".to_string(),
-            checksum: "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string(),
+            checksum: "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                .to_string(),
             file_size: 1024000,
             min_app_version: Some("0.1.0".to_string()),
             is_mandatory: false,
@@ -3183,7 +3472,12 @@ mod p10_ota_updates {
         };
 
         let result = client
-            .post::<ApiResponse<ReleaseResponse>, _>("/api/pos/ota/releases", &request, &user_token, None)
+            .post::<ApiResponse<ReleaseResponse>, _>(
+                "/api/pos/ota/releases",
+                &request,
+                &user_token,
+                None,
+            )
             .await;
 
         match result {
@@ -3236,8 +3530,10 @@ mod p10_ota_updates {
 
                 println!("✓ OTA Releases listed: {} releases", data.releases.len());
                 for release in &data.releases {
-                    println!("  - {} (v{}, {}% rollout)",
-                        release.id, release.version, release.rollout_percentage);
+                    println!(
+                        "  - {} (v{}, {}% rollout)",
+                        release.id, release.version, release.rollout_percentage
+                    );
                 }
             }
             Err(e) if e.contains("404") => {
@@ -3260,14 +3556,17 @@ mod p10_ota_updates {
         ensure_setup(&client).await.expect("Setup should succeed");
 
         let state = get_test_state().lock().await;
-        let terminal_token = state.terminal_token.clone().expect("Should have terminal token");
+        let terminal_token = state
+            .terminal_token
+            .clone()
+            .expect("Should have terminal token");
         drop(state);
 
         // Check for updates - should find one if we created a release
         let result = client
             .get_terminal::<ApiResponse<UpdateCheckResponse>>(
                 "/api/pos/ota/check?version=0.1.0&platform=android",
-                &terminal_token
+                &terminal_token,
             )
             .await;
 
@@ -3321,14 +3620,16 @@ mod p10_ota_updates {
             rollout_percentage: i32,
         }
 
-        let request = RolloutUpdate { rollout_percentage: 50 };
+        let request = RolloutUpdate {
+            rollout_percentage: 50,
+        };
 
         let result = client
             .post::<ApiResponse<ReleaseResponse>, _>(
                 &format!("/api/pos/ota/releases/{}/rollout", release_id),
                 &request,
                 &user_token,
-                None
+                None,
             )
             .await;
 
@@ -3381,7 +3682,7 @@ mod p10_ota_updates {
                 &format!("/api/pos/ota/releases/{}/active", release_id),
                 &request,
                 &user_token,
-                None
+                None,
             )
             .await;
 
@@ -3482,12 +3783,17 @@ mod p10_ota_updates {
 
         // Should return 400 for invalid version, 404 if endpoint doesn't exist, or 403 for permission denied
         assert!(
-            status == StatusCode::BAD_REQUEST || status == StatusCode::NOT_FOUND || status == StatusCode::FORBIDDEN,
+            status == StatusCode::BAD_REQUEST
+                || status == StatusCode::NOT_FOUND
+                || status == StatusCode::FORBIDDEN,
             "Invalid version should return 400, 403, or 404, got {}",
             status
         );
 
-        println!("✓ Invalid version format test completed (status: {})", status);
+        println!(
+            "✓ Invalid version format test completed (status: {})",
+            status
+        );
     }
 }
 
@@ -3554,7 +3860,10 @@ mod p11_pos_config {
 
                 println!("✓ POS Config retrieved:");
                 println!("  - Tenant ID: {:?}", data.tenant_id);
-                println!("  - Config: {}", serde_json::to_string_pretty(&data.config).unwrap_or_default());
+                println!(
+                    "  - Config: {}",
+                    serde_json::to_string_pretty(&data.config).unwrap_or_default()
+                );
             }
             Err(e) if e.contains("404") => {
                 println!("✓ POS config endpoint not implemented (404) - skipping");
@@ -3605,8 +3914,8 @@ mod p11_pos_config {
             Ok(response) => {
                 let status = response.status();
                 if status.is_success() {
-                    let body: ApiResponse<PosConfigResponse> = response.json().await
-                        .expect("Should parse response");
+                    let body: ApiResponse<PosConfigResponse> =
+                        response.json().await.expect("Should parse response");
                     assert!(body.success, "Response should indicate success");
                     println!("✓ POS Config updated successfully");
                 } else if status == StatusCode::NOT_FOUND {
@@ -3662,7 +3971,9 @@ mod p11_pos_config {
 
         // Should return 400 for invalid config, 404 if endpoint doesn't exist, or 403 if no permission
         assert!(
-            status == StatusCode::BAD_REQUEST || status == StatusCode::NOT_FOUND || status == StatusCode::FORBIDDEN,
+            status == StatusCode::BAD_REQUEST
+                || status == StatusCode::NOT_FOUND
+                || status == StatusCode::FORBIDDEN,
             "Invalid config should return 400, 403, or 404, got {}",
             status
         );
@@ -3695,12 +4006,17 @@ mod p11_pos_config {
 
         // Should return 401 (Unauthorized) without auth token
         assert!(
-            status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN || status == StatusCode::NOT_FOUND,
+            status == StatusCode::UNAUTHORIZED
+                || status == StatusCode::FORBIDDEN
+                || status == StatusCode::NOT_FOUND,
             "Config update without auth should return 401/403/404, got {}",
             status
         );
 
-        println!("✓ Config update requires authentication (status: {})", status);
+        println!(
+            "✓ Config update requires authentication (status: {})",
+            status
+        );
     }
 }
 
@@ -3749,7 +4065,8 @@ mod p12_screen_management {
     }
 
     // Store screen ID across tests
-    static SCREEN_ID: std::sync::OnceLock<tokio::sync::Mutex<Option<String>>> = std::sync::OnceLock::new();
+    static SCREEN_ID: std::sync::OnceLock<tokio::sync::Mutex<Option<String>>> =
+        std::sync::OnceLock::new();
 
     fn get_screen_id() -> &'static tokio::sync::Mutex<Option<String>> {
         SCREEN_ID.get_or_init(|| tokio::sync::Mutex::new(None))
@@ -3801,8 +4118,8 @@ mod p12_screen_management {
             Ok(response) => {
                 let status = response.status();
                 if status.is_success() {
-                    let body: ApiResponse<ScreenResponse> = response.json().await
-                        .expect("Should parse response");
+                    let body: ApiResponse<ScreenResponse> =
+                        response.json().await.expect("Should parse response");
                     assert!(body.success, "Response should indicate success");
                     let data = body.data.expect("Should have screen data");
 
@@ -3886,7 +4203,10 @@ mod p12_screen_management {
         let screen_id = screen_id.unwrap();
 
         let result = client
-            .get::<ApiResponse<ScreenResponse>>(&format!("/api/pos/screens/{}", screen_id), &user_token)
+            .get::<ApiResponse<ScreenResponse>>(
+                &format!("/api/pos/screens/{}", screen_id),
+                &user_token,
+            )
             .await;
 
         match result {
@@ -4137,13 +4457,16 @@ mod p13_fleet_admin {
 
         let state = get_test_state().lock().await;
         let user_token = state.session_token.clone().expect("Should have user token");
-        let terminal_uuid = state.terminal_uuid.clone().expect("Should have terminal UUID");
+        let terminal_uuid = state
+            .terminal_uuid
+            .clone()
+            .expect("Should have terminal UUID");
         drop(state);
 
         let result = client
             .get::<ApiResponse<TerminalDetailsResponse>>(
                 &format!("/api/pos/fleet/terminals/{}", terminal_uuid),
-                &user_token
+                &user_token,
             )
             .await;
 
@@ -4182,7 +4505,10 @@ mod p13_fleet_admin {
 
         let state = get_test_state().lock().await;
         let user_token = state.session_token.clone().expect("Should have user token");
-        let terminal_uuid = state.terminal_uuid.clone().expect("Should have terminal UUID");
+        let terminal_uuid = state
+            .terminal_uuid
+            .clone()
+            .expect("Should have terminal UUID");
         drop(state);
 
         let request = SendCommandRequest {
@@ -4192,7 +4518,12 @@ mod p13_fleet_admin {
         };
 
         let result = client
-            .post::<ApiResponse<CommandResponse>, _>("/api/pos/fleet/commands", &request, &user_token, None)
+            .post::<ApiResponse<CommandResponse>, _>(
+                "/api/pos/fleet/commands",
+                &request,
+                &user_token,
+                None,
+            )
             .await;
 
         match result {
@@ -4229,7 +4560,10 @@ mod p13_fleet_admin {
 
         let state = get_test_state().lock().await;
         let user_token = state.session_token.clone().expect("Should have user token");
-        let terminal_uuid = state.terminal_uuid.clone().expect("Should have terminal UUID");
+        let terminal_uuid = state
+            .terminal_uuid
+            .clone()
+            .expect("Should have terminal UUID");
         drop(state);
 
         let request = SendCommandRequest {
@@ -4241,7 +4575,12 @@ mod p13_fleet_admin {
         };
 
         let result = client
-            .post::<ApiResponse<CommandResponse>, _>("/api/pos/fleet/commands", &request, &user_token, None)
+            .post::<ApiResponse<CommandResponse>, _>(
+                "/api/pos/fleet/commands",
+                &request,
+                &user_token,
+                None,
+            )
             .await;
 
         match result {
@@ -4273,7 +4612,10 @@ mod p13_fleet_admin {
 
         let state = get_test_state().lock().await;
         let user_token = state.session_token.clone().expect("Should have user token");
-        let terminal_uuid = state.terminal_uuid.clone().expect("Should have terminal UUID");
+        let terminal_uuid = state
+            .terminal_uuid
+            .clone()
+            .expect("Should have terminal UUID");
         drop(state);
 
         let request = TerminalActionRequest {
@@ -4286,13 +4628,16 @@ mod p13_fleet_admin {
                 &format!("/api/pos/fleet/terminals/{}/action", terminal_uuid),
                 &request,
                 &user_token,
-                None
+                None,
             )
             .await;
 
         match result {
             Ok(response) => {
-                println!("✓ Terminal action (APPROVE) sent: success={}", response.success);
+                println!(
+                    "✓ Terminal action (APPROVE) sent: success={}",
+                    response.success
+                );
             }
             Err(e) if e.contains("404") => {
                 println!("✓ Terminal action endpoint not implemented (404) - skipping");
@@ -4322,7 +4667,10 @@ mod p13_fleet_admin {
 
         let state = get_test_state().lock().await;
         let user_token = state.session_token.clone().expect("Should have user token");
-        let terminal_uuid = state.terminal_uuid.clone().expect("Should have terminal UUID");
+        let terminal_uuid = state
+            .terminal_uuid
+            .clone()
+            .expect("Should have terminal UUID");
         drop(state);
 
         // Note: We don't want to actually suspend the test terminal
@@ -4338,13 +4686,16 @@ mod p13_fleet_admin {
                 &format!("/api/pos/fleet/terminals/{}/action", terminal_uuid),
                 &request,
                 &user_token,
-                None
+                None,
             )
             .await;
 
         match result {
             Ok(response) => {
-                println!("✓ Terminal action (ACTIVATE) sent: success={}", response.success);
+                println!(
+                    "✓ Terminal action (ACTIVATE) sent: success={}",
+                    response.success
+                );
             }
             Err(e) if e.contains("404") => {
                 println!("✓ Terminal action endpoint not implemented (404) - skipping");
@@ -4353,7 +4704,9 @@ mod p13_fleet_admin {
                 println!("✓ Terminal action requires permission (403) - skipping");
             }
             Err(e) if e.contains("400") => {
-                println!("✓ Terminal action returned 400 (may be invalid state transition) - continuing");
+                println!(
+                    "✓ Terminal action returned 400 (may be invalid state transition) - continuing"
+                );
             }
             Err(e) if e.contains("500") => {
                 println!("✓ Terminal action has backend issue (500) - skipping");
@@ -4416,7 +4769,8 @@ mod p14_payment_management {
     }
 
     // Store payment ID across tests
-    static PAYMENT_ID: std::sync::OnceLock<tokio::sync::Mutex<Option<String>>> = std::sync::OnceLock::new();
+    static PAYMENT_ID: std::sync::OnceLock<tokio::sync::Mutex<Option<String>>> =
+        std::sync::OnceLock::new();
 
     fn get_payment_id() -> &'static tokio::sync::Mutex<Option<String>> {
         PAYMENT_ID.get_or_init(|| tokio::sync::Mutex::new(None))
@@ -4453,7 +4807,12 @@ mod p14_payment_management {
         };
 
         let result = client
-            .post::<ApiResponse<PaymentResponse>, _>("/api/pos/payments", &request, &user_token, None)
+            .post::<ApiResponse<PaymentResponse>, _>(
+                "/api/pos/payments",
+                &request,
+                &user_token,
+                None,
+            )
             .await;
 
         match result {
@@ -4507,7 +4866,7 @@ mod p14_payment_management {
         let result = client
             .get::<ApiResponse<PaymentListResponse>>(
                 &format!("/api/pos/payments/transaction/{}", transaction_id),
-                &user_token
+                &user_token,
             )
             .await;
 
@@ -4516,9 +4875,15 @@ mod p14_payment_management {
                 assert!(response.success, "Response should indicate success");
                 let data = response.data.expect("Should have payments data");
 
-                println!("✓ Transaction payments listed: {} payments", data.payments.len());
+                println!(
+                    "✓ Transaction payments listed: {} payments",
+                    data.payments.len()
+                );
                 for payment in &data.payments {
-                    println!("  - {} ({}) - {}", payment.id, payment.payment_method, payment.status);
+                    println!(
+                        "  - {} ({}) - {}",
+                        payment.id, payment.payment_method, payment.status
+                    );
                 }
             }
             Err(e) if e.contains("404") => {
@@ -4551,7 +4916,10 @@ mod p14_payment_management {
         let payment_id = payment_id.unwrap();
 
         let result = client
-            .get::<ApiResponse<PaymentResponse>>(&format!("/api/pos/payments/{}", payment_id), &user_token)
+            .get::<ApiResponse<PaymentResponse>>(
+                &format!("/api/pos/payments/{}", payment_id),
+                &user_token,
+            )
             .await;
 
         match result {
@@ -4600,7 +4968,7 @@ mod p14_payment_management {
                 &format!("/api/pos/payments/{}/refund", payment_id),
                 &request,
                 &user_token,
-                None
+                None,
             )
             .await;
 
@@ -4654,16 +5022,16 @@ mod p14_payment_management {
                 &format!("/api/pos/payments/{}/refund", payment_id),
                 &request,
                 Some(&user_token),
-                None
+                None,
             )
             .await
             .expect("Request should complete");
 
         // Should return 400 (already refunded), 409 (conflict), or 404 (endpoint not found)
         assert!(
-            status == StatusCode::BAD_REQUEST ||
-            status == StatusCode::CONFLICT ||
-            status == StatusCode::NOT_FOUND,
+            status == StatusCode::BAD_REQUEST
+                || status == StatusCode::CONFLICT
+                || status == StatusCode::NOT_FOUND,
             "Double refund should be rejected, got {}",
             status
         );
@@ -4722,7 +5090,10 @@ mod p15_return_extended {
 
                 println!("✓ Returns listed: {} returns", returns.len());
                 for ret in &returns {
-                    println!("  - {} (txn: {:?}) - {}", ret.id, ret.transaction_id, ret.status);
+                    println!(
+                        "  - {} (txn: {:?}) - {}",
+                        ret.id, ret.transaction_id, ret.status
+                    );
                 }
             }
             Err(e) if e.contains("404") => {
@@ -4751,10 +5122,7 @@ mod p15_return_extended {
             .await;
 
         let return_id = match list_result {
-            Ok(response) => {
-                response.data
-                    .and_then(|d| d.first().map(|r| r.id.clone()))
-            }
+            Ok(response) => response.data.and_then(|d| d.first().map(|r| r.id.clone())),
             Err(_) => None,
         };
 
@@ -4766,7 +5134,10 @@ mod p15_return_extended {
         let return_id = return_id.unwrap();
 
         let result = client
-            .get::<ApiResponse<ReturnResponse>>(&format!("/api/pos/returns/{}", return_id), &user_token)
+            .get::<ApiResponse<ReturnResponse>>(
+                &format!("/api/pos/returns/{}", return_id),
+                &user_token,
+            )
             .await;
 
         match result {
@@ -4807,7 +5178,7 @@ mod p15_return_extended {
         let result = client
             .get::<ApiResponse<Vec<ReturnResponse>>>(
                 &format!("/api/pos/returns/transaction/{}", transaction_id),
-                &user_token
+                &user_token,
             )
             .await;
 
@@ -4911,13 +5282,16 @@ mod p16_terminal_extended {
 
         let state = get_test_state().lock().await;
         let user_token = state.session_token.clone().expect("Should have user token");
-        let terminal_uuid = state.terminal_uuid.clone().expect("Should have terminal UUID");
+        let terminal_uuid = state
+            .terminal_uuid
+            .clone()
+            .expect("Should have terminal UUID");
         drop(state);
 
         let result = client
             .get::<ApiResponse<TerminalResponse>>(
                 &format!("/api/pos/terminals/{}", terminal_uuid),
-                &user_token
+                &user_token,
             )
             .await;
 
@@ -4949,7 +5323,10 @@ mod p16_terminal_extended {
 
         let state = get_test_state().lock().await;
         let user_token = state.session_token.clone().expect("Should have user token");
-        let terminal_uuid = state.terminal_uuid.clone().expect("Should have terminal UUID");
+        let terminal_uuid = state
+            .terminal_uuid
+            .clone()
+            .expect("Should have terminal UUID");
         drop(state);
 
         let request = UpdateTerminalRequest {
@@ -5029,7 +5406,7 @@ mod p16_terminal_extended {
                 "/api/pos/terminals/register",
                 &register_request,
                 &user_token,
-                None
+                None,
             )
             .await;
 
@@ -5045,7 +5422,11 @@ mod p16_terminal_extended {
 
         let terminal_to_delete = terminal_to_delete.unwrap();
 
-        let url = format!("{}/api/pos/terminals/{}", get_backend_url(), terminal_to_delete);
+        let url = format!(
+            "{}/api/pos/terminals/{}",
+            get_backend_url(),
+            terminal_to_delete
+        );
         let http_client = reqwest::Client::new();
 
         let result = http_client

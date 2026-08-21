@@ -32,14 +32,14 @@
 //! }
 //! ```
 
-use pos_api::sync::{CatalogDeltaResponse, CatalogResponse, OperatorsResponse};
-use pos_api::{ApiClient, GetResult};
-use pos_db::{Database, SyncResource};
-use pos_models::{Feature, FeatureScreen};
 use crate::offline_service::OfflineService;
 use crate::shared_draft_service::SharedDraftService;
 use anyhow::Result;
 use chrono::Utc;
+use pos_api::sync::{CatalogDeltaResponse, CatalogResponse, OperatorsResponse};
+use pos_api::{ApiClient, GetResult};
+use pos_db::{Database, SyncResource};
+use pos_models::{Feature, FeatureScreen};
 use rusqlite::params;
 use std::sync::Arc;
 use std::time::Duration;
@@ -87,10 +87,7 @@ pub enum SyncEvent {
     /// No offline transactions to process
     OfflineQueueEmpty,
     /// Shared drafts queue processed
-    DraftsSynced {
-        synced: u32,
-        failed: u32,
-    },
+    DraftsSynced { synced: u32, failed: u32 },
     /// No pending draft sync operations
     DraftsQueueEmpty,
     /// Conflict detected during sync (needs manager resolution)
@@ -99,9 +96,7 @@ pub enum SyncEvent {
         error: String,
     },
     /// Multiple conflicts detected during sync
-    ConflictsDetected {
-        count: u32,
-    },
+    ConflictsDetected { count: u32 },
     /// Sync completed successfully
     Completed,
     /// Sync failed
@@ -353,11 +348,19 @@ impl SyncService {
             WHERE id = 1 AND is_registered = 1 AND secret IS NOT NULL
             "#,
             [],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?)),
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            },
         );
 
         match result {
-            Ok((terminal_code, hardware_id, secret)) => Ok(Some((terminal_code, hardware_id, secret))),
+            Ok((terminal_code, hardware_id, secret)) => {
+                Ok(Some((terminal_code, hardware_id, secret)))
+            }
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
             Err(e) => Err(e.into()),
         }
@@ -392,7 +395,11 @@ impl SyncService {
         };
 
         // Try to login
-        match self.api.login_terminal(&terminal_code, &hardware_id, &secret).await {
+        match self
+            .api
+            .login_terminal(&terminal_code, &hardware_id, &secret)
+            .await
+        {
             Ok(response) => {
                 info!("Re-authentication successful, new token acquired");
                 // Save new token to database
@@ -460,15 +467,21 @@ impl SyncService {
         // Debug: Check if token is set
         let has_token = self.api.is_authenticated().await;
         let token = self.api.get_token().await;
-        info!("Sync catalog - has token: {}, token preview: {:?}",
-              has_token,
-              token.as_ref().map(|t| format!("{}...", &t[..t.len().min(16)])));
+        info!(
+            "Sync catalog - has token: {}, token preview: {:?}",
+            has_token,
+            token
+                .as_ref()
+                .map(|t| format!("{}...", &t[..t.len().min(16)]))
+        );
 
         // Get current ETag
         let etag = self.db.get_etag(SyncResource::Products)?;
 
         // Get last sync time for delta requests
-        let last_sync = self.db.get_sync_state(SyncResource::Products)?
+        let last_sync = self
+            .db
+            .get_sync_state(SyncResource::Products)?
             .and_then(|s| s.last_sync);
 
         // If we have an ETag and last_sync, try delta sync first
@@ -485,11 +498,7 @@ impl SyncService {
     }
 
     /// Attempts delta sync - returns Ok(true) if successful, Ok(false) if should fall back
-    async fn try_delta_sync(
-        &self,
-        tx: &broadcast::Sender<SyncEvent>,
-        since: &str,
-    ) -> Result<bool> {
+    async fn try_delta_sync(&self, tx: &broadcast::Sender<SyncEvent>, since: &str) -> Result<bool> {
         debug!("Attempting delta sync since {}", since);
 
         // URL encode the timestamp
@@ -510,8 +519,11 @@ impl SyncService {
                 let categories_deleted = delta.categories_deleted.len();
 
                 // No changes
-                if products_updated == 0 && products_deleted == 0 &&
-                   categories_updated == 0 && categories_deleted == 0 {
+                if products_updated == 0
+                    && products_deleted == 0
+                    && categories_updated == 0
+                    && categories_deleted == 0
+                {
                     debug!("Delta sync: no changes");
                     let _ = tx.send(SyncEvent::CatalogNotModified);
                     return Ok(true);
@@ -597,17 +609,23 @@ impl SyncService {
                 for product in &data.products {
                     if let Some(ref cat_id) = product.category_id {
                         if !category_map.contains_key(cat_id) {
-                            category_map.insert(cat_id.clone(), pos_db::CategoryRow {
-                                id: cat_id.clone(),
-                                parent_id: None,
-                                name: product.category_name.clone().unwrap_or_else(|| "Unknown".to_string()),
-                                name_ar: None,
-                                color: None,
-                                icon: None,
-                                image_url: None,
-                                display_order: 0,
-                                is_active: true,
-                            });
+                            category_map.insert(
+                                cat_id.clone(),
+                                pos_db::CategoryRow {
+                                    id: cat_id.clone(),
+                                    parent_id: None,
+                                    name: product
+                                        .category_name
+                                        .clone()
+                                        .unwrap_or_else(|| "Unknown".to_string()),
+                                    name_ar: None,
+                                    color: None,
+                                    icon: None,
+                                    image_url: None,
+                                    display_order: 0,
+                                    is_active: true,
+                                },
+                            );
                         }
                     }
                 }
@@ -686,7 +704,8 @@ impl SyncService {
                 self.db.deactivate_all_operators()?;
 
                 // Save operators (INSERT OR REPLACE re-activates them)
-                let operators: Vec<_> = data.operators.iter().map(|o| o.to_operator_row()).collect();
+                let operators: Vec<_> =
+                    data.operators.iter().map(|o| o.to_operator_row()).collect();
                 self.db.save_operators(&operators)?;
 
                 // Update sync state
@@ -774,7 +793,11 @@ impl SyncService {
                 )?;
 
                 let count = features.len();
-                info!("Features synced: {} features, {} screens", count, screens.len());
+                info!(
+                    "Features synced: {} features, {} screens",
+                    count,
+                    screens.len()
+                );
 
                 let _ = tx.send(SyncEvent::FeaturesUpdated { count });
             }

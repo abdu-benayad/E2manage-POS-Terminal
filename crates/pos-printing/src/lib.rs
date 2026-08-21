@@ -34,11 +34,11 @@
 //! printer.open_drawer()?;
 //! ```
 
-use pos_models::{PaymentMethod, Transaction};
-use pos_escpos::{CodePage, EscPos};
 use anyhow::{Context, Result};
-use rust_decimal::Decimal;
+use pos_escpos::{CodePage, EscPos};
+use pos_models::{PaymentMethod, Transaction};
 use rust_decimal::prelude::*;
+use rust_decimal::Decimal;
 use tracing::info;
 
 // warn! is used in Windows/unsupported platform code branches
@@ -252,7 +252,11 @@ impl PrintService {
 
         // Tax ID
         if let Some(tax_id) = &self.config.store_tax_id {
-            let label = if is_arabic { "رقم الضريبي" } else { "Tax ID" };
+            let label = if is_arabic {
+                "رقم الضريبي"
+            } else {
+                "Tax ID"
+            };
             esc.line(&format!("{}: {}", label, tax_id));
         }
 
@@ -263,26 +267,49 @@ impl PrintService {
         esc.hr(w);
 
         // Receipt number
-        let receipt_label = if is_arabic { "رقم الفاتورة:" } else { "Receipt No:" };
-        let receipt_num = txn.receipt_number.as_deref().unwrap_or(&txn.transaction_number);
+        let receipt_label = if is_arabic {
+            "رقم الفاتورة:"
+        } else {
+            "Receipt No:"
+        };
+        let receipt_num = txn
+            .receipt_number
+            .as_deref()
+            .unwrap_or(&txn.transaction_number);
         esc.two_col(receipt_label, receipt_num, w);
 
         // Date/Time
-        let date_label = if is_arabic { "التاريخ:" } else { "Date:" };
+        let date_label = if is_arabic {
+            "التاريخ:"
+        } else {
+            "Date:"
+        };
         let date_str = txn.created_at.format("%Y-%m-%d %H:%M").to_string();
         esc.two_col(date_label, &date_str, w);
 
         // Cashier
-        let cashier_label = if is_arabic { "الكاشير:" } else { "Cashier:" };
+        let cashier_label = if is_arabic {
+            "الكاشير:"
+        } else {
+            "Cashier:"
+        };
         esc.two_col(cashier_label, &txn.operator_name, w);
 
         // Terminal
-        let terminal_label = if is_arabic { "الجهاز:" } else { "Terminal:" };
+        let terminal_label = if is_arabic {
+            "الجهاز:"
+        } else {
+            "Terminal:"
+        };
         esc.two_col(terminal_label, &txn.terminal_id, w);
 
         // Customer (if any)
         if let Some(customer_name) = &txn.customer_name {
-            let customer_label = if is_arabic { "العميل:" } else { "Customer:" };
+            let customer_label = if is_arabic {
+                "العميل:"
+            } else {
+                "Customer:"
+            };
             esc.two_col(customer_label, customer_name, w);
         }
 
@@ -299,11 +326,41 @@ impl PrintService {
                 &item.product_name
             };
             let type_prefix = match item.product_type.as_str() {
-                "SERVICE" => if is_arabic { "[خدمة] " } else { "[SVC] " },
-                "FEE" => if is_arabic { "[رسم] " } else { "[FEE] " },
-                "LABOR" => if is_arabic { "[عمالة] " } else { "[LBR] " },
-                "DIGITAL" => if is_arabic { "[رقمي] " } else { "[DIG] " },
-                "SUBSCRIPTION" => if is_arabic { "[اشتراك] " } else { "[SUB] " },
+                "SERVICE" => {
+                    if is_arabic {
+                        "[خدمة] "
+                    } else {
+                        "[SVC] "
+                    }
+                }
+                "FEE" => {
+                    if is_arabic {
+                        "[رسم] "
+                    } else {
+                        "[FEE] "
+                    }
+                }
+                "LABOR" => {
+                    if is_arabic {
+                        "[عمالة] "
+                    } else {
+                        "[LBR] "
+                    }
+                }
+                "DIGITAL" => {
+                    if is_arabic {
+                        "[رقمي] "
+                    } else {
+                        "[DIG] "
+                    }
+                }
+                "SUBSCRIPTION" => {
+                    if is_arabic {
+                        "[اشتراك] "
+                    } else {
+                        "[SUB] "
+                    }
+                }
                 _ => "", // PHYSICAL_GOOD, CONSUMABLE, BUNDLE — no prefix
             };
             if type_prefix.is_empty() {
@@ -324,7 +381,11 @@ impl PrintService {
 
             // Show discount if any
             if item.discount_amount > Decimal::ZERO {
-                let discount_label = if is_arabic { "    خصم" } else { "    Discount" };
+                let discount_label = if is_arabic {
+                    "    خصم"
+                } else {
+                    "    Discount"
+                };
                 let discount_str = format!("-{}", item.discount_amount.round_dp(3));
                 esc.two_col(discount_label, &discount_str, w);
             }
@@ -334,13 +395,25 @@ impl PrintService {
 
         // ========== Totals ==========
         // Subtotal
-        let subtotal_label = if is_arabic { "المجموع الفرعي:" } else { "Subtotal:" };
+        let subtotal_label = if is_arabic {
+            "المجموع الفرعي:"
+        } else {
+            "Subtotal:"
+        };
         esc.two_col(subtotal_label, &format!("{}", txn.subtotal.round_dp(3)), w);
 
         // Discount (if any)
         if txn.discount_total > Decimal::ZERO {
-            let discount_label = if is_arabic { "الخصم:" } else { "Discount:" };
-            esc.two_col(discount_label, &format!("-{}", txn.discount_total.round_dp(3)), w);
+            let discount_label = if is_arabic {
+                "الخصم:"
+            } else {
+                "Discount:"
+            };
+            esc.two_col(
+                discount_label,
+                &format!("-{}", txn.discount_total.round_dp(3)),
+                w,
+            );
         }
 
         // Tax
@@ -349,14 +422,26 @@ impl PrintService {
 
         // Grand Total (bold, larger)
         esc.bold_on();
-        let total_label = if is_arabic { "الإجمالي:" } else { "TOTAL:" };
-        esc.two_col(total_label, &format!("{} {}", txn.currency, txn.grand_total.round_dp(3)), w);
+        let total_label = if is_arabic {
+            "الإجمالي:"
+        } else {
+            "TOTAL:"
+        };
+        esc.two_col(
+            total_label,
+            &format!("{} {}", txn.currency, txn.grand_total.round_dp(3)),
+            w,
+        );
         esc.bold_off();
 
         esc.newline();
 
         // ========== Payments ==========
-        let payments_label = if is_arabic { "المدفوعات:" } else { "Payments:" };
+        let payments_label = if is_arabic {
+            "المدفوعات:"
+        } else {
+            "Payments:"
+        };
         esc.line(payments_label);
 
         for payment in &txn.payments {
@@ -389,7 +474,11 @@ impl PrintService {
         let change = txn.change_due();
         if change > Decimal::ZERO {
             esc.bold_on();
-            let change_label = if is_arabic { "الباقي:" } else { "Change:" };
+            let change_label = if is_arabic {
+                "الباقي:"
+            } else {
+                "Change:"
+            };
             esc.two_col(change_label, &format!("{}", change.round_dp(3)), w);
             esc.bold_off();
         }
@@ -478,7 +567,11 @@ impl PrintService {
         // Header
         esc.align_center();
         esc.double_size().bold_on();
-        let title = if is_arabic { "تقرير X" } else { "X REPORT" };
+        let title = if is_arabic {
+            "تقرير X"
+        } else {
+            "X REPORT"
+        };
         esc.line(title);
         let subtitle = if is_arabic {
             "ملخص الوردية"
@@ -493,13 +586,25 @@ impl PrintService {
         esc.align_left();
         esc.hr(w);
 
-        let shift_label = if is_arabic { "الوردية:" } else { "Shift:" };
+        let shift_label = if is_arabic {
+            "الوردية:"
+        } else {
+            "Shift:"
+        };
         esc.two_col(shift_label, &report.shift_number, w);
 
-        let operator_label = if is_arabic { "الموظف:" } else { "Operator:" };
+        let operator_label = if is_arabic {
+            "الموظف:"
+        } else {
+            "Operator:"
+        };
         esc.two_col(operator_label, &report.operator_name, w);
 
-        let terminal_label = if is_arabic { "الجهاز:" } else { "Terminal:" };
+        let terminal_label = if is_arabic {
+            "الجهاز:"
+        } else {
+            "Terminal:"
+        };
         esc.two_col(terminal_label, &report.terminal_id, w);
 
         let started_label = if is_arabic { "بدأت:" } else { "Started:" };
@@ -508,7 +613,11 @@ impl PrintService {
         esc.hr(w);
 
         // Sales summary
-        let txn_label = if is_arabic { "المعاملات:" } else { "Transactions:" };
+        let txn_label = if is_arabic {
+            "المعاملات:"
+        } else {
+            "Transactions:"
+        };
         esc.two_col(txn_label, &report.transaction_count.to_string(), w);
 
         let gross_label = if is_arabic {
@@ -522,7 +631,11 @@ impl PrintService {
             w,
         );
 
-        let discount_label = if is_arabic { "الخصومات:" } else { "Discounts:" };
+        let discount_label = if is_arabic {
+            "الخصومات:"
+        } else {
+            "Discounts:"
+        };
         esc.two_col(
             discount_label,
             &format!("-{}", report.discounts.round_dp(3)),
@@ -530,14 +643,14 @@ impl PrintService {
         );
 
         let tax_label = if is_arabic { "الضريبة:" } else { "Tax:" };
-        esc.two_col(
-            tax_label,
-            &format!("{}", report.tax.round_dp(3)),
-            w,
-        );
+        esc.two_col(tax_label, &format!("{}", report.tax.round_dp(3)), w);
 
         esc.bold_on();
-        let net_label = if is_arabic { "صافي المبيعات:" } else { "Net Sales:" };
+        let net_label = if is_arabic {
+            "صافي المبيعات:"
+        } else {
+            "Net Sales:"
+        };
         esc.two_col(
             net_label,
             &format!("{} {}", report.currency, report.net_sales.round_dp(3)),
@@ -558,19 +671,39 @@ impl PrintService {
         let cash_label = if is_arabic { "  نقدي:" } else { "  Cash:" };
         esc.two_col(cash_label, &format!("{}", report.cash_total.round_dp(3)), w);
 
-        let card_label = if is_arabic { "  بطاقة:" } else { "  Card:" };
+        let card_label = if is_arabic {
+            "  بطاقة:"
+        } else {
+            "  Card:"
+        };
         esc.two_col(card_label, &format!("{}", report.card_total.round_dp(3)), w);
 
-        let wallet_label = if is_arabic { "  محفظة:" } else { "  Wallet:" };
-        esc.two_col(wallet_label, &format!("{}", report.wallet_total.round_dp(3)), w);
+        let wallet_label = if is_arabic {
+            "  محفظة:"
+        } else {
+            "  Wallet:"
+        };
+        esc.two_col(
+            wallet_label,
+            &format!("{}", report.wallet_total.round_dp(3)),
+            w,
+        );
 
         let credit_label = if is_arabic { "  آجل:" } else { "  Credit:" };
-        esc.two_col(credit_label, &format!("{}", report.credit_total.round_dp(3)), w);
+        esc.two_col(
+            credit_label,
+            &format!("{}", report.credit_total.round_dp(3)),
+            w,
+        );
 
         esc.hr(w);
 
         // Cash drawer
-        let cash_drawer_label = if is_arabic { "الدرج النقدي:" } else { "Cash Drawer:" };
+        let cash_drawer_label = if is_arabic {
+            "الدرج النقدي:"
+        } else {
+            "Cash Drawer:"
+        };
         esc.line(cash_drawer_label);
 
         let opening_label = if is_arabic {
@@ -578,30 +711,50 @@ impl PrintService {
         } else {
             "  Opening Float:"
         };
-        esc.two_col(opening_label, &format!("{}", report.opening_float.round_dp(3)), w);
+        esc.two_col(
+            opening_label,
+            &format!("{}", report.opening_float.round_dp(3)),
+            w,
+        );
 
         let expected_label = if is_arabic {
             "  المتوقع:"
         } else {
             "  Expected Cash:"
         };
-        esc.two_col(expected_label, &format!("{}", report.expected_cash.round_dp(3)), w);
+        esc.two_col(
+            expected_label,
+            &format!("{}", report.expected_cash.round_dp(3)),
+            w,
+        );
 
         // Returns/Voids
         if report.return_count > 0 || report.void_count > 0 {
             esc.hr(w);
 
             if report.return_count > 0 {
-                let returns_label = if is_arabic { "المرتجعات:" } else { "Returns:" };
+                let returns_label = if is_arabic {
+                    "المرتجعات:"
+                } else {
+                    "Returns:"
+                };
                 esc.two_col(
                     returns_label,
-                    &format!("{} ({})", report.return_count, report.return_total.round_dp(3)),
+                    &format!(
+                        "{} ({})",
+                        report.return_count,
+                        report.return_total.round_dp(3)
+                    ),
                     w,
                 );
             }
 
             if report.void_count > 0 {
-                let voids_label = if is_arabic { "الملغاة:" } else { "Voids:" };
+                let voids_label = if is_arabic {
+                    "الملغاة:"
+                } else {
+                    "Voids:"
+                };
                 esc.two_col(voids_label, &report.void_count.to_string(), w);
             }
         }
@@ -681,13 +834,25 @@ impl PrintService {
         esc.align_left();
         esc.hr_double(w);
 
-        let shift_label = if is_arabic { "الوردية:" } else { "Shift:" };
+        let shift_label = if is_arabic {
+            "الوردية:"
+        } else {
+            "Shift:"
+        };
         esc.two_col(shift_label, &report.shift_number, w);
 
-        let operator_label = if is_arabic { "الموظف:" } else { "Operator:" };
+        let operator_label = if is_arabic {
+            "الموظف:"
+        } else {
+            "Operator:"
+        };
         esc.two_col(operator_label, &report.operator_name, w);
 
-        let terminal_label = if is_arabic { "الجهاز:" } else { "Terminal:" };
+        let terminal_label = if is_arabic {
+            "الجهاز:"
+        } else {
+            "Terminal:"
+        };
         esc.two_col(terminal_label, &report.terminal_id, w);
 
         let started_label = if is_arabic { "بدأت:" } else { "Started:" };
@@ -702,12 +867,20 @@ impl PrintService {
 
         // Sales summary
         esc.bold_on();
-        let sales_header = if is_arabic { "ملخص المبيعات" } else { "SALES SUMMARY" };
+        let sales_header = if is_arabic {
+            "ملخص المبيعات"
+        } else {
+            "SALES SUMMARY"
+        };
         esc.align_center().line(sales_header);
         esc.bold_off();
         esc.align_left();
 
-        let txn_label = if is_arabic { "المعاملات:" } else { "Transactions:" };
+        let txn_label = if is_arabic {
+            "المعاملات:"
+        } else {
+            "Transactions:"
+        };
         esc.two_col(txn_label, &report.transaction_count.to_string(), w);
 
         let gross_label = if is_arabic {
@@ -715,17 +888,33 @@ impl PrintService {
         } else {
             "Gross Sales:"
         };
-        esc.two_col(gross_label, &format!("{}", report.gross_sales.round_dp(3)), w);
+        esc.two_col(
+            gross_label,
+            &format!("{}", report.gross_sales.round_dp(3)),
+            w,
+        );
 
-        let discount_label = if is_arabic { "الخصومات:" } else { "Discounts:" };
-        esc.two_col(discount_label, &format!("-{}", report.discounts.round_dp(3)), w);
+        let discount_label = if is_arabic {
+            "الخصومات:"
+        } else {
+            "Discounts:"
+        };
+        esc.two_col(
+            discount_label,
+            &format!("-{}", report.discounts.round_dp(3)),
+            w,
+        );
 
         let tax_label = if is_arabic { "الضريبة:" } else { "Tax:" };
         esc.two_col(tax_label, &format!("{}", report.tax.round_dp(3)), w);
 
         esc.hr(w);
         esc.bold_on();
-        let net_label = if is_arabic { "صافي المبيعات:" } else { "NET SALES:" };
+        let net_label = if is_arabic {
+            "صافي المبيعات:"
+        } else {
+            "NET SALES:"
+        };
         esc.two_col(
             net_label,
             &format!("{} {}", report.currency, report.net_sales.round_dp(3)),
@@ -753,10 +942,18 @@ impl PrintService {
         esc.two_col(card_label, &format!("{}", report.card_total.round_dp(3)), w);
 
         let wallet_label = if is_arabic { "محفظة:" } else { "Wallet:" };
-        esc.two_col(wallet_label, &format!("{}", report.wallet_total.round_dp(3)), w);
+        esc.two_col(
+            wallet_label,
+            &format!("{}", report.wallet_total.round_dp(3)),
+            w,
+        );
 
         let credit_label = if is_arabic { "آجل:" } else { "Credit:" };
-        esc.two_col(credit_label, &format!("{}", report.credit_total.round_dp(3)), w);
+        esc.two_col(
+            credit_label,
+            &format!("{}", report.credit_total.round_dp(3)),
+            w,
+        );
 
         esc.hr_double(w);
 
@@ -776,17 +973,37 @@ impl PrintService {
         } else {
             "Opening Float:"
         };
-        esc.two_col(opening_label, &format!("{}", report.opening_float.round_dp(3)), w);
+        esc.two_col(
+            opening_label,
+            &format!("{}", report.opening_float.round_dp(3)),
+            w,
+        );
 
-        let expected_label = if is_arabic { "المتوقع:" } else { "Expected:" };
-        esc.two_col(expected_label, &format!("{}", report.expected_cash.round_dp(3)), w);
+        let expected_label = if is_arabic {
+            "المتوقع:"
+        } else {
+            "Expected:"
+        };
+        esc.two_col(
+            expected_label,
+            &format!("{}", report.expected_cash.round_dp(3)),
+            w,
+        );
 
         if let Some(counted) = report.counted_cash {
-            let counted_label = if is_arabic { "المعدود:" } else { "Counted:" };
+            let counted_label = if is_arabic {
+                "المعدود:"
+            } else {
+                "Counted:"
+            };
             esc.two_col(counted_label, &format!("{}", counted.round_dp(3)), w);
 
             if let Some(variance) = report.cash_variance {
-                let variance_label = if is_arabic { "الفرق:" } else { "Variance:" };
+                let variance_label = if is_arabic {
+                    "الفرق:"
+                } else {
+                    "Variance:"
+                };
                 let variance_str = if variance.is_sign_negative() {
                     format!("-{}", variance.abs().round_dp(3))
                 } else if variance > Decimal::ZERO {
@@ -804,22 +1021,38 @@ impl PrintService {
         if report.return_count > 0 || report.void_count > 0 {
             esc.hr_double(w);
             esc.bold_on();
-            let adj_header = if is_arabic { "التعديلات" } else { "ADJUSTMENTS" };
+            let adj_header = if is_arabic {
+                "التعديلات"
+            } else {
+                "ADJUSTMENTS"
+            };
             esc.align_center().line(adj_header);
             esc.bold_off();
             esc.align_left();
 
             if report.return_count > 0 {
-                let returns_label = if is_arabic { "المرتجعات:" } else { "Returns:" };
+                let returns_label = if is_arabic {
+                    "المرتجعات:"
+                } else {
+                    "Returns:"
+                };
                 esc.two_col(
                     returns_label,
-                    &format!("{} ({})", report.return_count, report.return_total.round_dp(3)),
+                    &format!(
+                        "{} ({})",
+                        report.return_count,
+                        report.return_total.round_dp(3)
+                    ),
                     w,
                 );
             }
 
             if report.void_count > 0 {
-                let voids_label = if is_arabic { "الملغاة:" } else { "Voids:" };
+                let voids_label = if is_arabic {
+                    "الملغاة:"
+                } else {
+                    "Voids:"
+                };
                 esc.two_col(voids_label, &report.void_count.to_string(), w);
             }
         }
@@ -1210,8 +1443,7 @@ mod tests {
     #[test]
     fn test_receipt_with_customer() {
         let cart = create_test_cart();
-        let mut txn =
-            Transaction::from_cart(&cart, "LYD", "shift-1", "TERM-001", "op-1", "Ahmed");
+        let mut txn = Transaction::from_cart(&cart, "LYD", "shift-1", "TERM-001", "op-1", "Ahmed");
         txn.customer_id = Some("cust-001".to_string());
         txn.customer_name = Some("John Doe".to_string());
         txn.add_cash_payment(Decimal::from(30));
@@ -1227,8 +1459,7 @@ mod tests {
     #[test]
     fn test_receipt_with_card_payment() {
         let cart = create_test_cart();
-        let mut txn =
-            Transaction::from_cart(&cart, "LYD", "shift-1", "TERM-001", "op-1", "Ahmed");
+        let mut txn = Transaction::from_cart(&cart, "LYD", "shift-1", "TERM-001", "op-1", "Ahmed");
         txn.add_card_payment(Decimal::from(23), "1234", "VISA", "AUTH123");
 
         let service = PrintService::console_only();
@@ -1248,8 +1479,7 @@ mod tests {
         cart.items.push(item);
         cart.recalculate();
 
-        let mut txn =
-            Transaction::from_cart(&cart, "LYD", "shift-1", "TERM-001", "op-1", "Ahmed");
+        let mut txn = Transaction::from_cart(&cart, "LYD", "shift-1", "TERM-001", "op-1", "Ahmed");
         txn.add_cash_payment(Decimal::from(30));
 
         let service = PrintService::console_only();

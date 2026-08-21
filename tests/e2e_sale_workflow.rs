@@ -110,9 +110,15 @@ fn test_split_payment_workflow() {
     let result2 = app.product_service.search("SKU002", 10).unwrap();
     let result3 = app.product_service.search("SKU003", 10).unwrap();
 
-    app.cart_service.add_item(&result1.products[0], Decimal::ONE).unwrap();
-    app.cart_service.add_item(&result2.products[0], Decimal::ONE).unwrap();
-    app.cart_service.add_item(&result3.products[0], Decimal::ONE).unwrap();
+    app.cart_service
+        .add_item(&result1.products[0], Decimal::ONE)
+        .unwrap();
+    app.cart_service
+        .add_item(&result2.products[0], Decimal::ONE)
+        .unwrap();
+    app.cart_service
+        .add_item(&result3.products[0], Decimal::ONE)
+        .unwrap();
 
     let cart = app.cart_service.get_cart();
     assert_eq!(cart.items.len(), 3);
@@ -130,7 +136,9 @@ fn test_split_payment_workflow() {
     let card_amount = total - cash_amount;
 
     // First payment: Cash
-    app.transaction_service.add_cash_payment(cash_amount).unwrap();
+    app.transaction_service
+        .add_cash_payment(cash_amount)
+        .unwrap();
 
     let txn = app.transaction_service.get_current().unwrap();
     assert!(!txn.is_fully_paid()); // Not fully paid yet
@@ -160,7 +168,9 @@ fn test_card_only_payment_workflow() {
 
     // Search and add product
     let result = app.product_service.search("SKU005", 10).unwrap();
-    app.cart_service.add_item(&result.products[0], Decimal::ONE).unwrap();
+    app.cart_service
+        .add_item(&result.products[0], Decimal::ONE)
+        .unwrap();
 
     let cart = app.cart_service.get_cart();
 
@@ -198,9 +208,14 @@ fn test_multiple_items_transaction() {
 
     // Add products with different quantities (use SKU to avoid FTS5 hyphen issue)
     for i in 1..=5 {
-        let result = app.product_service.search(&format!("SKU{:03}", i), 10).unwrap();
+        let result = app
+            .product_service
+            .search(&format!("SKU{:03}", i), 10)
+            .unwrap();
         if !result.products.is_empty() {
-            app.cart_service.add_item(&result.products[0], Decimal::from(i)).unwrap();
+            app.cart_service
+                .add_item(&result.products[0], Decimal::from(i))
+                .unwrap();
         }
     }
 
@@ -218,7 +233,9 @@ fn test_multiple_items_transaction() {
         .unwrap();
 
     let txn = app.transaction_service.get_current().unwrap();
-    app.transaction_service.add_cash_payment(txn.grand_total).unwrap();
+    app.transaction_service
+        .add_cash_payment(txn.grand_total)
+        .unwrap();
 
     let txn = app.transaction_service.get_current().unwrap();
     assert!(txn.is_fully_paid());
@@ -255,9 +272,15 @@ fn test_barcode_lookup_and_sale() {
         .unwrap();
 
     let txn = app.transaction_service.get_current().unwrap();
-    app.transaction_service.add_cash_payment(txn.grand_total).unwrap();
+    app.transaction_service
+        .add_cash_payment(txn.grand_total)
+        .unwrap();
 
-    assert!(app.transaction_service.get_current().unwrap().is_fully_paid());
+    assert!(app
+        .transaction_service
+        .get_current()
+        .unwrap()
+        .is_fully_paid());
 
     println!("✓ Barcode lookup and sale passed");
 }
@@ -275,13 +298,17 @@ fn test_discount_application_workflow() {
 
     // Add product
     let result = app.product_service.search("SKU001", 10).unwrap();
-    app.cart_service.add_item(&result.products[0], Decimal::ONE).unwrap();
+    app.cart_service
+        .add_item(&result.products[0], Decimal::ONE)
+        .unwrap();
 
     let cart_before = app.cart_service.get_cart();
     let original_total = cart_before.grand_total;
 
     // Apply 10% cart discount
-    app.cart_service.apply_cart_discount(Decimal::from(10)).unwrap();
+    app.cart_service
+        .apply_cart_discount(Decimal::from(10))
+        .unwrap();
 
     let cart_after = app.cart_service.get_cart();
     assert!(cart_after.grand_total < original_total);
@@ -289,13 +316,26 @@ fn test_discount_application_workflow() {
 
     // Complete transaction
     app.transaction_service
-        .create_from_cart(&cart_after, "LYD", &shift_id, "TERM-001", "op-001", "Operator")
+        .create_from_cart(
+            &cart_after,
+            "LYD",
+            &shift_id,
+            "TERM-001",
+            "op-001",
+            "Operator",
+        )
         .unwrap();
 
     let txn = app.transaction_service.get_current().unwrap();
-    app.transaction_service.add_cash_payment(txn.grand_total).unwrap();
+    app.transaction_service
+        .add_cash_payment(txn.grand_total)
+        .unwrap();
 
-    assert!(app.transaction_service.get_current().unwrap().is_fully_paid());
+    assert!(app
+        .transaction_service
+        .get_current()
+        .unwrap()
+        .is_fully_paid());
 
     println!("✓ Discount application workflow passed");
 }
@@ -314,7 +354,9 @@ fn test_add_same_item_increases_quantity() {
 
     // Add same product multiple times
     app.cart_service.add_item(product, Decimal::ONE).unwrap();
-    app.cart_service.add_item(product, Decimal::from(2)).unwrap();
+    app.cart_service
+        .add_item(product, Decimal::from(2))
+        .unwrap();
     app.cart_service.add_item(product, Decimal::ONE).unwrap();
 
     let cart = app.cart_service.get_cart();
@@ -338,12 +380,16 @@ fn test_update_item_quantity() {
     let result = app.product_service.search("SKU001", 10).unwrap();
     let product = &result.products[0];
 
-    app.cart_service.add_item(product, Decimal::from(2)).unwrap();
+    app.cart_service
+        .add_item(product, Decimal::from(2))
+        .unwrap();
     let cart = app.cart_service.get_cart();
     let item_id = &cart.items[0].id;
 
     // Update quantity
-    app.cart_service.update_quantity(item_id, Decimal::from(5)).unwrap();
+    app.cart_service
+        .update_quantity(item_id, Decimal::from(5))
+        .unwrap();
 
     let cart = app.cart_service.get_cart();
     assert_eq!(cart.items[0].quantity, Decimal::from(5));
@@ -364,8 +410,12 @@ fn test_remove_item_from_cart() {
     let result1 = app.product_service.search("SKU001", 10).unwrap();
     let result2 = app.product_service.search("SKU002", 10).unwrap();
 
-    app.cart_service.add_item(&result1.products[0], Decimal::ONE).unwrap();
-    app.cart_service.add_item(&result2.products[0], Decimal::ONE).unwrap();
+    app.cart_service
+        .add_item(&result1.products[0], Decimal::ONE)
+        .unwrap();
+    app.cart_service
+        .add_item(&result2.products[0], Decimal::ONE)
+        .unwrap();
 
     let cart = app.cart_service.get_cart();
     assert_eq!(cart.items.len(), 2);

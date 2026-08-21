@@ -27,8 +27,8 @@
 
 use crate::services::cart_service::CartService;
 use crate::utils::formatting;
-use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
+use rust_decimal::Decimal;
 use std::sync::Arc;
 
 /// Cart item model for Slint UI
@@ -152,7 +152,11 @@ impl CartBridge {
                 has_discount: item.has_discount(),
                 discount_label: item.discount_label(),
                 discount_amount: formatting::format_currency(item.line_discount, currency, locale),
-                original_price: formatting::format_currency(item.original_line_total(), currency, locale),
+                original_price: formatting::format_currency(
+                    item.original_line_total(),
+                    currency,
+                    locale,
+                ),
                 note: item.note.clone().unwrap_or_default(),
                 has_note: item.note.is_some(),
             })
@@ -186,7 +190,11 @@ impl CartBridge {
             has_customer: cart.has_customer(),
             // Slint UI needs f64 for numeric display
             cart_discount_percent: cart.cart_discount_percent.to_f64().unwrap_or(0.0),
-            cart_discount_amount: formatting::format_currency(cart.cart_discount_amount, currency, locale),
+            cart_discount_amount: formatting::format_currency(
+                cart.cart_discount_amount,
+                currency,
+                locale,
+            ),
         }
     }
 
@@ -386,7 +394,9 @@ mod tests {
         let service = Arc::new(CartService::new());
         let product = create_test_product("p1", "Test Product", Decimal::from(100));
         let item_id = service.add_item(&product, Decimal::ONE).unwrap();
-        service.apply_item_discount(&item_id, Decimal::from(10)).unwrap();
+        service
+            .apply_item_discount(&item_id, Decimal::from(10))
+            .unwrap();
 
         let bridge = CartBridge::new(service);
         let items = bridge.get_items_model("en", "LYD");

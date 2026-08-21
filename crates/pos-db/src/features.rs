@@ -265,7 +265,10 @@ impl Database {
     }
 
     /// Gets the entry point screen for a feature
-    pub fn get_feature_entry_screen(&self, feature_id: &str) -> SqliteResult<Option<FeatureScreen>> {
+    pub fn get_feature_entry_screen(
+        &self,
+        feature_id: &str,
+    ) -> SqliteResult<Option<FeatureScreen>> {
         let conn = self.connection();
         let conn = conn.lock();
 
@@ -313,7 +316,11 @@ impl Database {
     }
 
     /// Bulk upserts features and their screens in a transaction
-    pub fn sync_features(&self, features: &[Feature], screens: &[FeatureScreen]) -> SqliteResult<()> {
+    pub fn sync_features(
+        &self,
+        features: &[Feature],
+        screens: &[FeatureScreen],
+    ) -> SqliteResult<()> {
         let conn = self.connection();
         let conn = conn.lock();
 

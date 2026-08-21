@@ -308,7 +308,15 @@ impl ProductUnit {
 
     /// Returns true if this unit typically requires decimal quantities
     pub fn allows_decimal(&self) -> bool {
-        matches!(self, ProductUnit::Kg | ProductUnit::Gram | ProductUnit::Liter | ProductUnit::Ml | ProductUnit::Meter | ProductUnit::Cm)
+        matches!(
+            self,
+            ProductUnit::Kg
+                | ProductUnit::Gram
+                | ProductUnit::Liter
+                | ProductUnit::Ml
+                | ProductUnit::Meter
+                | ProductUnit::Cm
+        )
     }
 }
 
@@ -576,7 +584,8 @@ mod tests {
         assert_eq!("KG".parse::<ProductUnit>().unwrap(), ProductUnit::Kg);
         assert_eq!("kg".parse::<ProductUnit>().unwrap(), ProductUnit::Kg);
         assert_eq!("UNIT".parse::<ProductUnit>().unwrap(), ProductUnit::Unit);
-        assert_eq!("INVALID".parse::<ProductUnit>().unwrap(), ProductUnit::Unit); // Default
+        assert_eq!("INVALID".parse::<ProductUnit>().unwrap(), ProductUnit::Unit);
+        // Default
     }
 
     #[test]

@@ -34,30 +34,55 @@ pub mod sync;
 pub use client::{ApiClient, ApiErrorResponse, GetResult, OnlineStatus};
 
 pub use auth::{
-    HeartbeatRequest, HeartbeatResponse, LoginTerminalRequest, LoginTerminalResponse,
-    ReceiptConfig, RegisterTerminalRequest, RegisterTerminalResponse, TaxConfig, TerminalCommand,
-    TerminalConfig, VerifyPinRequest, VerifyPinResponse,
     // Pairing types
-    DeviceInfo, PairedTerminalInfo, PairingStatus, PairingStatusResponse,
-    RequestPairingRequest, RequestPairingResponse,
+    DeviceInfo,
+    HeartbeatRequest,
+    HeartbeatResponse,
+    LoginTerminalRequest,
+    LoginTerminalResponse,
+    PairedTerminalInfo,
+    PairingStatus,
+    PairingStatusResponse,
+    ReceiptConfig,
+    RegisterTerminalRequest,
+    RegisterTerminalResponse,
+    RequestPairingRequest,
+    RequestPairingResponse,
+    TaxConfig,
+    TerminalCommand,
+    TerminalConfig,
+    VerifyPinRequest,
+    VerifyPinResponse,
 };
 
 pub use sync::{
-    CatalogDeltaResponse, CatalogResponse, CategoryDto, CustomerDto, CustomersResponse, OperatorDto,
-    OperatorsResponse, PaymentMethodDto, PaymentMethodsResponse, ProductDto, ScreenDefinitionDto,
-    ScreensResponse,
+    CatalogDeltaResponse, CatalogResponse, CategoryDto, CustomerDto, CustomersResponse,
+    OperatorDto, OperatorsResponse, PaymentMethodDto, PaymentMethodsResponse, ProductDto,
+    ScreenDefinitionDto, ScreensResponse,
 };
 
 pub use platform::{
-    // Heartbeat types
-    PlatformHeartbeatRequest, PlatformHeartbeatResponse, HeartbeatStatus,
-    PlatformCommand, PlatformCommandType,
-    // Security policy types
-    SecurityPoliciesResponse, SecurityPolicy, SecurityCategory, PolicyType, EnforcementMode,
     // Update types
-    CheckUpdateResponse, ReportVersionRequest,
+    CheckUpdateResponse,
+    EnforcementMode,
+    HardwareInfo,
+    HeartbeatStatus,
+    LicenseStatus,
+    OsInfo,
+    PlatformCommand,
+    PlatformCommandType,
+    // Heartbeat types
+    PlatformHeartbeatRequest,
+    PlatformHeartbeatResponse,
+    PolicyType,
     // Device registration types
-    RegisterDeviceRequest, RegisterDeviceResponse, OsInfo, HardwareInfo, LicenseStatus,
+    RegisterDeviceRequest,
+    RegisterDeviceResponse,
+    ReportVersionRequest,
+    SecurityCategory,
+    // Security policy types
+    SecurityPoliciesResponse,
+    SecurityPolicy,
 };
 
 pub use cart::{

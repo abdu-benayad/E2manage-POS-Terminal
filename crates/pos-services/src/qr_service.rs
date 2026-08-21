@@ -181,12 +181,7 @@ impl QrService {
     }
 
     /// Generate a payment URL for QR code
-    pub fn generate_payment_url(
-        &self,
-        amount: f64,
-        currency: &str,
-        reference: &str,
-    ) -> String {
+    pub fn generate_payment_url(&self, amount: f64, currency: &str, reference: &str) -> String {
         // Create payment data URL
         // In production, this would use actual wallet provider URL schemes
         format!(
@@ -308,7 +303,10 @@ impl QrService {
 
             // Simulate successful payment after 12 seconds
             if remaining == timeout_seconds - 12 {
-                let transaction_id = format!("TXN-{}", uuid::Uuid::new_v4().to_string()[..8].to_uppercase());
+                let transaction_id = format!(
+                    "TXN-{}",
+                    uuid::Uuid::new_v4().to_string()[..8].to_uppercase()
+                );
                 let _ = event_tx.send(QrEvent::PaymentReceived {
                     wallet_type: "Sadad".to_string(),
                     transaction_id: transaction_id.clone(),

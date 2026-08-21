@@ -332,8 +332,10 @@ mod service {
                     {
                         *status.lock() = ScaleStatus::Connecting;
                     }
-                    info!("Connecting to scale on {} at {} baud ({:?} protocol)...",
-                        config.port, config.baud_rate, config.protocol);
+                    info!(
+                        "Connecting to scale on {} at {} baud ({:?} protocol)...",
+                        config.port, config.baud_rate, config.protocol
+                    );
 
                     match serialport::new(&config.port, config.baud_rate)
                         .timeout(Duration::from_secs(5))
@@ -369,8 +371,12 @@ mod service {
                                     }
                                     Ok(_) => {
                                         if let Some(reading) = parser.parse(line_buf.as_bytes()) {
-                                            debug!("Scale reading: {:.3} {} stable={}",
-                                                reading.weight, reading.unit.label("en"), reading.stable);
+                                            debug!(
+                                                "Scale reading: {:.3} {} stable={}",
+                                                reading.weight,
+                                                reading.unit.label("en"),
+                                                reading.stable
+                                            );
                                             let _ = tx.send(reading);
                                         }
                                     }
@@ -529,9 +535,18 @@ mod tests {
     #[test]
     fn test_scale_protocol_from_str() {
         assert_eq!(ScaleProtocol::from_str("cas").unwrap(), ScaleProtocol::Cas);
-        assert_eq!(ScaleProtocol::from_str("toledo").unwrap(), ScaleProtocol::Toledo);
-        assert_eq!(ScaleProtocol::from_str("mt-sics").unwrap(), ScaleProtocol::Toledo);
-        assert_eq!(ScaleProtocol::from_str("generic").unwrap(), ScaleProtocol::Generic);
+        assert_eq!(
+            ScaleProtocol::from_str("toledo").unwrap(),
+            ScaleProtocol::Toledo
+        );
+        assert_eq!(
+            ScaleProtocol::from_str("mt-sics").unwrap(),
+            ScaleProtocol::Toledo
+        );
+        assert_eq!(
+            ScaleProtocol::from_str("generic").unwrap(),
+            ScaleProtocol::Generic
+        );
     }
 
     #[test]

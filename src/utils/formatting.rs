@@ -58,7 +58,10 @@ pub fn format_number(value: Decimal, decimals: u32, locale: &str) -> String {
     let decimal_sep = decimal_separator(locale);
 
     if decimals > 0 {
-        format!("{}{}{}{}", sign, integer_with_separators, decimal_sep, decimal_part)
+        format!(
+            "{}{}{}{}",
+            sign, integer_with_separators, decimal_sep, decimal_part
+        )
     } else {
         format!("{}{}", sign, integer_with_separators)
     }
@@ -287,7 +290,10 @@ mod tests {
 
     #[test]
     fn test_format_number_basic() {
-        assert_eq!(format_number(Decimal::new(1234567, 3), 3, "en"), "1,234.567");
+        assert_eq!(
+            format_number(Decimal::new(1234567, 3), 3, "en"),
+            "1,234.567"
+        );
         assert_eq!(format_number(Decimal::new(1234567, 3), 2, "en"), "1,234.57");
         assert_eq!(format_number(Decimal::new(1234567, 3), 0, "en"), "1,235");
     }
@@ -295,18 +301,27 @@ mod tests {
     #[test]
     fn test_format_number_arabic() {
         // Arabic uses Western Arabic numerals with comma separators
-        assert_eq!(format_number(Decimal::new(1234567, 3), 3, "ar"), "1,234.567");
+        assert_eq!(
+            format_number(Decimal::new(1234567, 3), 3, "ar"),
+            "1,234.567"
+        );
     }
 
     #[test]
     fn test_format_number_french() {
         // French uses space as thousand separator and comma as decimal
-        assert_eq!(format_number(Decimal::new(1234567, 3), 3, "fr"), "1 234,567");
+        assert_eq!(
+            format_number(Decimal::new(1234567, 3), 3, "fr"),
+            "1 234,567"
+        );
     }
 
     #[test]
     fn test_format_number_negative() {
-        assert_eq!(format_number(Decimal::new(-1234567, 3), 3, "en"), "-1,234.567");
+        assert_eq!(
+            format_number(Decimal::new(-1234567, 3), 3, "en"),
+            "-1,234.567"
+        );
     }
 
     #[test]
@@ -318,19 +333,34 @@ mod tests {
 
     #[test]
     fn test_format_number_large() {
-        assert_eq!(format_number(Decimal::new(1234567890123i64, 3), 3, "en"), "1,234,567,890.123");
+        assert_eq!(
+            format_number(Decimal::new(1234567890123i64, 3), 3, "en"),
+            "1,234,567,890.123"
+        );
     }
 
     #[test]
     fn test_format_currency_lyd() {
-        assert_eq!(format_currency(Decimal::new(1234567, 3), "LYD", "ar"), "1,234.567 د.ل");
-        assert_eq!(format_currency(Decimal::new(1234567, 3), "LYD", "en"), "1,234.567 LYD");
+        assert_eq!(
+            format_currency(Decimal::new(1234567, 3), "LYD", "ar"),
+            "1,234.567 د.ل"
+        );
+        assert_eq!(
+            format_currency(Decimal::new(1234567, 3), "LYD", "en"),
+            "1,234.567 LYD"
+        );
     }
 
     #[test]
     fn test_format_currency_usd() {
-        assert_eq!(format_currency(Decimal::new(123456, 2), "USD", "ar"), "1,234.56 دولار");
-        assert_eq!(format_currency(Decimal::new(123456, 2), "USD", "en"), "1,234.56 USD");
+        assert_eq!(
+            format_currency(Decimal::new(123456, 2), "USD", "ar"),
+            "1,234.56 دولار"
+        );
+        assert_eq!(
+            format_currency(Decimal::new(123456, 2), "USD", "en"),
+            "1,234.56 USD"
+        );
     }
 
     #[test]

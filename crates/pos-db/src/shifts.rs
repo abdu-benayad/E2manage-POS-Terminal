@@ -3,8 +3,8 @@
 //! Handles shift data storage and management.
 
 use chrono::Utc;
-use rust_decimal::Decimal;
 use rusqlite::{params, OptionalExtension, Result as SqliteResult};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use super::Database;
@@ -347,7 +347,13 @@ mod tests {
 
         // Start shift
         let shift = db
-            .start_shift("shift-1", "T01-20240101-001", "op-1", Some("term-1"), Decimal::from(100))
+            .start_shift(
+                "shift-1",
+                "T01-20240101-001",
+                "op-1",
+                Some("term-1"),
+                Decimal::from(100),
+            )
             .unwrap();
 
         assert_eq!(shift.status, "ACTIVE");
@@ -358,8 +364,13 @@ mod tests {
         assert!(active.is_some());
 
         // End shift
-        db.end_shift("shift-1", Decimal::from(350), Decimal::from(300), Some("Good shift"))
-            .unwrap();
+        db.end_shift(
+            "shift-1",
+            Decimal::from(350),
+            Decimal::from(300),
+            Some("Good shift"),
+        )
+        .unwrap();
 
         let ended = db.get_shift_by_id("shift-1").unwrap().unwrap();
         assert_eq!(ended.status, "CLOSED");
@@ -380,7 +391,8 @@ mod tests {
         assert!(num1.ends_with("-001"));
 
         // Create a shift with this number
-        db.start_shift("s1", &num1, "op-1", None, Decimal::ZERO).unwrap();
+        db.start_shift("s1", &num1, "op-1", None, Decimal::ZERO)
+            .unwrap();
 
         // Next number should be 002
         let num2 = db.generate_shift_number("T01").unwrap();
@@ -393,8 +405,10 @@ mod tests {
         create_test_operator(&db, "op-1");
         create_test_operator(&db, "op-2");
 
-        db.start_shift("s1", "S001", "op-1", None, Decimal::from(100)).unwrap();
-        db.start_shift("s2", "S002", "op-2", None, Decimal::from(200)).unwrap();
+        db.start_shift("s1", "S001", "op-1", None, Decimal::from(100))
+            .unwrap();
+        db.start_shift("s2", "S002", "op-2", None, Decimal::from(200))
+            .unwrap();
 
         let pending = db.get_pending_shifts().unwrap();
         assert_eq!(pending.len(), 2);

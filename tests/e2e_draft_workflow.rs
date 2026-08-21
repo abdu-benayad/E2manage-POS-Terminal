@@ -28,17 +28,24 @@ fn test_hold_and_recall_workflow() {
     let result1 = app.product_service.search("SKU001", 10).unwrap();
     let result2 = app.product_service.search("SKU002", 10).unwrap();
 
-    app.cart_service.add_item(&result1.products[0], Decimal::from(2)).unwrap();
-    app.cart_service.add_item(&result2.products[0], Decimal::ONE).unwrap();
+    app.cart_service
+        .add_item(&result1.products[0], Decimal::from(2))
+        .unwrap();
+    app.cart_service
+        .add_item(&result2.products[0], Decimal::ONE)
+        .unwrap();
 
     let cart = app.cart_service.get_cart();
     let original_total = cart.grand_total;
     let original_items_count = cart.items.len();
 
     // 1. SAVE AS DRAFT
-    let draft = app
-        .draft_service
-        .save_cart(&cart, Some("Customer Order #1".to_string()), "op-001", &shift_id);
+    let draft = app.draft_service.save_cart(
+        &cart,
+        Some("Customer Order #1".to_string()),
+        "op-001",
+        &shift_id,
+    );
     assert!(draft.is_ok());
     let draft = draft.unwrap();
     let draft_id = draft.id.clone();
@@ -52,7 +59,9 @@ fn test_hold_and_recall_workflow() {
 
     // 3. PROCESS ANOTHER CUSTOMER
     let result3 = app.product_service.search("SKU005", 10).unwrap();
-    app.cart_service.add_item(&result3.products[0], Decimal::from(3)).unwrap();
+    app.cart_service
+        .add_item(&result3.products[0], Decimal::from(3))
+        .unwrap();
     assert_eq!(app.cart_service.get_cart().items.len(), 1);
     app.cart_service.clear();
 
@@ -96,9 +105,14 @@ fn test_multiple_drafts_for_operator() {
     let mut draft_ids = Vec::new();
 
     for i in 1..=3 {
-        let result = app.product_service.search(&format!("SKU{:03}", i), 10).unwrap();
+        let result = app
+            .product_service
+            .search(&format!("SKU{:03}", i), 10)
+            .unwrap();
         app.cart_service.clear();
-        app.cart_service.add_item(&result.products[0], Decimal::from(i)).unwrap();
+        app.cart_service
+            .add_item(&result.products[0], Decimal::from(i))
+            .unwrap();
 
         let cart = app.cart_service.get_cart();
         let draft = app
@@ -133,7 +147,9 @@ fn test_draft_without_name() {
     let shift_id = app.create_shift("shift-003", "op-001", Decimal::from(500));
 
     let result = app.product_service.search("SKU001", 10).unwrap();
-    app.cart_service.add_item(&result.products[0], Decimal::ONE).unwrap();
+    app.cart_service
+        .add_item(&result.products[0], Decimal::ONE)
+        .unwrap();
 
     let cart = app.cart_service.get_cart();
 
@@ -189,11 +205,17 @@ fn test_draft_preserves_cart_state() {
     let result1 = app.product_service.search("SKU001", 10).unwrap();
     let result2 = app.product_service.search("SKU002", 10).unwrap();
 
-    app.cart_service.add_item(&result1.products[0], Decimal::from(2)).unwrap();
-    app.cart_service.add_item(&result2.products[0], Decimal::from(3)).unwrap();
+    app.cart_service
+        .add_item(&result1.products[0], Decimal::from(2))
+        .unwrap();
+    app.cart_service
+        .add_item(&result2.products[0], Decimal::from(3))
+        .unwrap();
 
     // Apply discount
-    app.cart_service.apply_cart_discount(Decimal::from(10)).unwrap();
+    app.cart_service
+        .apply_cart_discount(Decimal::from(10))
+        .unwrap();
 
     // Set customer
     app.cart_service.set_customer(
@@ -244,13 +266,23 @@ fn test_list_all_active_drafts() {
 
     // Create drafts
     for i in 1..=3 {
-        let result = app.product_service.search(&format!("SKU{:03}", i), 10).unwrap();
+        let result = app
+            .product_service
+            .search(&format!("SKU{:03}", i), 10)
+            .unwrap();
         app.cart_service.clear();
-        app.cart_service.add_item(&result.products[0], Decimal::ONE).unwrap();
+        app.cart_service
+            .add_item(&result.products[0], Decimal::ONE)
+            .unwrap();
 
         let cart = app.cart_service.get_cart();
         app.draft_service
-            .save_cart(&cart, Some(format!("Active Draft {}", i)), "op-001", &shift_id)
+            .save_cart(
+                &cart,
+                Some(format!("Active Draft {}", i)),
+                "op-001",
+                &shift_id,
+            )
             .unwrap();
     }
 
@@ -274,7 +306,9 @@ fn test_delete_draft() {
 
     // Create a draft
     let result = app.product_service.search("SKU001", 10).unwrap();
-    app.cart_service.add_item(&result.products[0], Decimal::ONE).unwrap();
+    app.cart_service
+        .add_item(&result.products[0], Decimal::ONE)
+        .unwrap();
 
     let cart = app.cart_service.get_cart();
     let draft = app
@@ -313,9 +347,14 @@ fn test_draft_count_statistics() {
 
     // Create drafts
     for i in 1..=2 {
-        let result = app.product_service.search(&format!("SKU{:03}", i), 10).unwrap();
+        let result = app
+            .product_service
+            .search(&format!("SKU{:03}", i), 10)
+            .unwrap();
         app.cart_service.clear();
-        app.cart_service.add_item(&result.products[0], Decimal::ONE).unwrap();
+        app.cart_service
+            .add_item(&result.products[0], Decimal::ONE)
+            .unwrap();
 
         let cart = app.cart_service.get_cart();
         app.draft_service
@@ -343,18 +382,27 @@ fn test_draft_with_item_discount() {
 
     // Add product and apply item discount
     let result = app.product_service.search("SKU001", 10).unwrap();
-    app.cart_service.add_item(&result.products[0], Decimal::from(2)).unwrap();
+    app.cart_service
+        .add_item(&result.products[0], Decimal::from(2))
+        .unwrap();
 
     let cart = app.cart_service.get_cart();
     let item_id = &cart.items[0].id;
-    app.cart_service.apply_item_discount(item_id, Decimal::from(15)).unwrap();
+    app.cart_service
+        .apply_item_discount(item_id, Decimal::from(15))
+        .unwrap();
 
     let cart = app.cart_service.get_cart();
 
     // Save as draft
     let draft = app
         .draft_service
-        .save_cart(&cart, Some("Item Discount Draft".to_string()), "op-001", &shift_id)
+        .save_cart(
+            &cart,
+            Some("Item Discount Draft".to_string()),
+            "op-001",
+            &shift_id,
+        )
         .unwrap();
 
     // Recall and verify discount preserved

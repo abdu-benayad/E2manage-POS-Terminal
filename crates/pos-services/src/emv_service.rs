@@ -485,9 +485,7 @@ mod tests {
         let service = EmvService::with_simulation(100); // Fast simulation
         let (tx, mut rx) = broadcast::channel::<EmvEvent>(16);
 
-        let handle = tokio::spawn(async move {
-            service.start_payment(25.500, "LYD", tx).await
-        });
+        let handle = tokio::spawn(async move { service.start_payment(25.500, "LYD", tx).await });
 
         // Collect some events
         let mut events = Vec::new();

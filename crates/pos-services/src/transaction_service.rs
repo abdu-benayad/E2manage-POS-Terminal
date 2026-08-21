@@ -366,10 +366,7 @@ impl TransactionService {
     }
 
     /// Syncs a transaction to the backend API
-    async fn sync_to_backend(
-        &self,
-        txn: &Transaction,
-    ) -> Result<CreateTransactionResponse> {
+    async fn sync_to_backend(&self, txn: &Transaction) -> Result<CreateTransactionResponse> {
         let request = CreateTransactionRequest {
             transaction_number: txn.transaction_number.clone(),
             transaction_type: txn.transaction_type.clone(),
@@ -386,7 +383,11 @@ impl TransactionService {
                     tax_amount: i.tax_amount,
                     discount_amount: i.discount_amount,
                     line_total: i.line_total,
-                    product_type: if i.product_type.is_empty() { None } else { Some(i.product_type.clone()) },
+                    product_type: if i.product_type.is_empty() {
+                        None
+                    } else {
+                        Some(i.product_type.clone())
+                    },
                     inventory_deducted: i.inventory_deducted,
                 })
                 .collect(),
@@ -562,7 +563,9 @@ impl TransactionService {
                         totals.discount_total += txn.discount_total;
 
                         // Parse payments to get breakdown
-                        if let Ok(payments) = serde_json::from_str::<Vec<serde_json::Value>>(&txn.payments_json) {
+                        if let Ok(payments) =
+                            serde_json::from_str::<Vec<serde_json::Value>>(&txn.payments_json)
+                        {
                             for payment in payments {
                                 let method = payment
                                     .get("method")
@@ -852,7 +855,9 @@ mod tests {
         service.add_cash_payment(Decimal::from(10)).unwrap();
         assert!(!service.is_fully_paid());
 
-        service.add_card_payment(Decimal::from(13), "5678", "MASTERCARD", "AUTH456").unwrap();
+        service
+            .add_card_payment(Decimal::from(13), "5678", "MASTERCARD", "AUTH456")
+            .unwrap();
         assert!(service.is_fully_paid());
         assert_eq!(service.remaining(), Decimal::ZERO);
     }

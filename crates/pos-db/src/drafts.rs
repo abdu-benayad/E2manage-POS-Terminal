@@ -240,9 +240,8 @@ impl Database {
         let now = Utc::now();
         let created_at = now.to_rfc3339();
 
-        let expires_at = expires_hours.map(|hours| {
-            (now + chrono::Duration::hours(hours as i64)).to_rfc3339()
-        });
+        let expires_at =
+            expires_hours.map(|hours| (now + chrono::Duration::hours(hours as i64)).to_rfc3339());
 
         // Generate name like "Hold #3"
         let count = self.get_draft_count()? + 1;
@@ -304,7 +303,7 @@ mod tests {
                 "draft-1",
                 r#"[{"id":"prod-1","qty":2}]"#,
                 Some("op-1"),
-                None,  // Don't use shift foreign key in tests
+                None, // Don't use shift foreign key in tests
                 None,
                 None,
                 Some(24),

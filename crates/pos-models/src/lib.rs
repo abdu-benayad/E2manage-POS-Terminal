@@ -18,7 +18,9 @@ pub mod z_report;
 // Re-export main types for convenience
 pub use cart::{Cart, CartItem};
 pub use feature::{Feature, FeatureDto, FeatureScreen, FeatureScreenDto, FeaturesResponse};
-pub use product::{Category, Product, ProductNature, ProductSearchResult, ProductType, ProductUnit};
+pub use product::{
+    Category, Product, ProductNature, ProductSearchResult, ProductType, ProductUnit,
+};
 pub use shift::{ShiftStatus, ShiftSummary, VarianceStatus};
 pub use transaction::{
     generate_receipt_number, Payment, PaymentMethod, Transaction, TransactionItem,

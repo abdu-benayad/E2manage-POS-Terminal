@@ -2,8 +2,8 @@
 //!
 //! Handles Z-Report (end-of-day) data storage and aggregation.
 
-use rust_decimal::Decimal;
 use rusqlite::{params, Result as SqliteResult};
+use rust_decimal::Decimal;
 
 use super::Database;
 use crate::{decimal_from_sqlite, decimal_to_sqlite};
@@ -310,7 +310,11 @@ impl Database {
     }
 
     /// Gets the next Z-Report sequence number for a date
-    pub fn get_next_z_report_sequence(&self, terminal_id: &str, date_part: &str) -> SqliteResult<i64> {
+    pub fn get_next_z_report_sequence(
+        &self,
+        terminal_id: &str,
+        date_part: &str,
+    ) -> SqliteResult<i64> {
         let conn = self.connection();
         let conn = conn.lock();
 
@@ -346,7 +350,9 @@ mod tests {
     #[test]
     fn test_count_z_reports_for_date() {
         let db = setup_db();
-        let count = db.count_z_reports_for_date("POS-001", "2024-01-15").unwrap();
+        let count = db
+            .count_z_reports_for_date("POS-001", "2024-01-15")
+            .unwrap();
         assert_eq!(count, 0);
     }
 
@@ -375,7 +381,9 @@ mod tests {
     #[test]
     fn test_get_next_z_report_sequence() {
         let db = setup_db();
-        let seq = db.get_next_z_report_sequence("POS-001", "20240115").unwrap();
+        let seq = db
+            .get_next_z_report_sequence("POS-001", "20240115")
+            .unwrap();
         assert_eq!(seq, 1);
     }
 }

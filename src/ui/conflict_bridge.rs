@@ -213,10 +213,7 @@ mod tests {
 
     #[test]
     fn test_format_date() {
-        assert_eq!(
-            format_date("2025-01-15T10:30:00+00:00"),
-            "2025-01-15 10:30"
-        );
+        assert_eq!(format_date("2025-01-15T10:30:00+00:00"), "2025-01-15 10:30");
         assert_eq!(format_date("invalid"), "invalid");
     }
 

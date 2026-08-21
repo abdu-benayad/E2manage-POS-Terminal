@@ -2,9 +2,7 @@
 //!
 //! Tests for version checking, comparison, and update handling.
 
-use e2manage_pos_terminal::services::update_service::{
-    ReleaseNotes, UpdateService,
-};
+use e2manage_pos_terminal::services::update_service::{ReleaseNotes, UpdateService};
 use e2manage_pos_terminal::ApiClient;
 use std::sync::Arc;
 

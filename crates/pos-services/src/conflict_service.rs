@@ -58,7 +58,9 @@ impl std::fmt::Display for ConflictError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ConflictError::NotFound(id) => write!(f, "Transaction not found: {}", id),
-            ConflictError::NotConflict(id) => write!(f, "Transaction is not in conflict state: {}", id),
+            ConflictError::NotConflict(id) => {
+                write!(f, "Transaction is not in conflict state: {}", id)
+            }
             ConflictError::DatabaseError(msg) => write!(f, "Database error: {}", msg),
             ConflictError::ApiError(msg) => write!(f, "API error: {}", msg),
             ConflictError::AuthorizationRequired => write!(f, "Manager authorization required"),
@@ -98,11 +100,17 @@ impl From<&OfflineTransactionRow> for ConflictSummary {
     fn from(row: &OfflineTransactionRow) -> Self {
         Self {
             offline_id: row.offline_id.clone(),
-            transaction_number: row.transaction_number.clone().unwrap_or_else(|| "N/A".to_string()),
+            transaction_number: row
+                .transaction_number
+                .clone()
+                .unwrap_or_else(|| "N/A".to_string()),
             transaction_type: row.transaction_type.clone(),
             grand_total: row.grand_total,
             created_at: row.created_at.clone(),
-            error_message: row.last_error.clone().unwrap_or_else(|| "Unknown error".to_string()),
+            error_message: row
+                .last_error
+                .clone()
+                .unwrap_or_else(|| "Unknown error".to_string()),
             retry_count: row.retry_count,
             operator_id: row.operator_id.clone(),
             receipt_number: row.receipt_number.clone(),
@@ -279,8 +287,9 @@ impl ConflictService {
             transaction_type: row.transaction_type,
             items: serde_json::from_str(&row.items_json)
                 .map_err(|e| ConflictError::DatabaseError(format!("Invalid items JSON: {}", e)))?,
-            payments: serde_json::from_str(&row.payments_json)
-                .map_err(|e| ConflictError::DatabaseError(format!("Invalid payments JSON: {}", e)))?,
+            payments: serde_json::from_str(&row.payments_json).map_err(|e| {
+                ConflictError::DatabaseError(format!("Invalid payments JSON: {}", e))
+            })?,
             subtotal: row.subtotal,
             tax_total: row.tax_total,
             discount_total: row.discount_total,
@@ -297,17 +306,24 @@ impl ConflictService {
         };
 
         // Attempt force sync
-        match self.api.post::<ForceTransactionRequest, ForceTransactionResponse>(
-            "/api/pos/offline/upload",
-            &request,
-        ).await {
+        match self
+            .api
+            .post::<ForceTransactionRequest, ForceTransactionResponse>(
+                "/api/pos/offline/upload",
+                &request,
+            )
+            .await
+        {
             Ok(response) => {
                 // Mark as synced
                 self.db
                     .mark_transaction_synced(offline_id, &response.id)
                     .map_err(|e| ConflictError::DatabaseError(e.to_string()))?;
 
-                info!("Conflict transaction force synced: {} -> {}", offline_id, response.id);
+                info!(
+                    "Conflict transaction force synced: {} -> {}",
+                    offline_id, response.id
+                );
 
                 Ok(ResolutionResult {
                     success: true,
@@ -403,11 +419,11 @@ struct ForceTransactionResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Utc;
     use pos_db::init_memory_database;
     use pos_db::operators::OperatorRow;
     use pos_db::transactions::OfflineTransactionRow;
     use rust_decimal::Decimal;
-    use chrono::Utc;
 
     fn setup() -> (Arc<ApiClient>, Arc<Database>) {
         let api = Arc::new(ApiClient::new("http://localhost:3000"));

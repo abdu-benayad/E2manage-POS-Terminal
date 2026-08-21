@@ -4,13 +4,16 @@
 
 slint::include_modules!();
 
-use rust_decimal::prelude::ToPrimitive;
 use e2manage_pos_terminal::api::ApiClient;
-use e2manage_pos_terminal::db::{init_database, Database};
-use e2manage_pos_terminal::services::{AuthService, CartService, DraftService, FeatureService, PairingService, ProductService, SharedDraftService, SyncService, SyncEvent, SystemService};
-use e2manage_pos_terminal::ui::navigation::{NavigationResult, Navigator};
 use e2manage_pos_terminal::api::PairingStatus;
+use e2manage_pos_terminal::db::{init_database, Database};
+use e2manage_pos_terminal::services::{
+    AuthService, CartService, DraftService, FeatureService, PairingService, ProductService,
+    SharedDraftService, SyncEvent, SyncService, SystemService,
+};
+use e2manage_pos_terminal::ui::navigation::{NavigationResult, Navigator};
 use parking_lot::Mutex;
+use rust_decimal::prelude::ToPrimitive;
 use slint::{ModelRc, SharedString, VecModel};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -46,8 +49,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Database initialized in {:?}", data_dir);
 
     // Get server URL from environment or use default
-    let server_url = std::env::var("E2M_API_URL")
-        .unwrap_or_else(|_| "http://178.156.135.235:3000".to_string());
+    let server_url =
+        std::env::var("E2M_API_URL").unwrap_or_else(|_| "http://178.156.135.235:3000".to_string());
     info!("API Server: {}", server_url);
 
     // Create API client
@@ -58,7 +61,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let saved_session = auth_service.load_saved_session().ok().flatten();
     if let Some(ref session) = saved_session {
         if !session.session_token.is_empty() {
-            info!("Loaded saved session token for terminal: {}", session.terminal_code);
+            info!(
+                "Loaded saved session token for terminal: {}",
+                session.terminal_code
+            );
             runtime.block_on(api.set_token(session.session_token.clone()));
         }
     }
@@ -92,11 +98,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ));
 
     // Create sync service with shared draft service
-    let mut sync_service = SyncService::new(
-        Arc::clone(&api),
-        Arc::clone(&db),
-        SYNC_INTERVAL_MINUTES,
-    );
+    let mut sync_service =
+        SyncService::new(Arc::clone(&api), Arc::clone(&db), SYNC_INTERVAL_MINUTES);
     sync_service.set_shared_draft_service(Arc::clone(&shared_draft_service));
     let sync_service = Arc::new(sync_service);
 
@@ -118,7 +121,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .as_ref()
         .and_then(|r| r.company_name.clone())
         .unwrap_or_default();
-    info!("Terminal registered: {}, code: {}, company: {}", is_registered, terminal_code, company_name);
+    info!(
+        "Terminal registered: {}, code: {}, company: {}",
+        is_registered, terminal_code, company_name
+    );
 
     // Create the main window
     let window = MainWindow::new()?;
@@ -131,7 +137,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Propagate currency and tax config from saved session to UI
     if let Some(ref session) = saved_session {
-        let decimals = e2manage_pos_terminal::utils::formatting::currency_decimals(&session.currency);
+        let decimals =
+            e2manage_pos_terminal::utils::formatting::currency_decimals(&session.currency);
         let zero = format!("{:.*}", decimals as usize, 0.0f64);
         window.set_app_currency(SharedString::from(&session.currency));
         window.set_app_currency_decimals(decimals as i32);
@@ -147,7 +154,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         window.set_app_tax_rate_label(SharedString::from(&tax_label));
         window.set_app_tax_inclusive(session.tax_inclusive);
 
-        info!("Currency: {}, decimals: {}, tax_rate: {}%", session.currency, decimals, tax_rate);
+        info!(
+            "Currency: {}, decimals: {}, tax_rate: {}%",
+            session.currency, decimals, tax_rate
+        );
     }
 
     // Store current server URL for callbacks
@@ -177,7 +187,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // Set up catalog callbacks (category selection, add to cart)
-    let session_currency = saved_session.as_ref().map(|s| s.currency.clone()).unwrap_or_else(|| "LYD".to_string());
+    let session_currency = saved_session
+        .as_ref()
+        .map(|s| s.currency.clone())
+        .unwrap_or_else(|| "LYD".to_string());
     setup_catalog_callbacks(
         &window,
         Arc::clone(&db),
@@ -186,11 +199,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // Set up price check callbacks (Phase 3 — Price Check Mode)
-    setup_price_check_callbacks(
-        &window,
-        Arc::clone(&db),
-        session_currency.clone(),
-    );
+    setup_price_check_callbacks(&window, Arc::clone(&db), session_currency.clone());
 
     // Set up cart item operation callbacks (Phase 2: increment, decrement, remove, clear, void-last, qty-multiply)
     setup_cart_item_callbacks(
@@ -231,18 +240,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok(Some(op)) => {
                 // Avatar colors (same as in populate_operators_data)
                 let avatar_colors: [(u8, u8, u8); 8] = [
-                    (37, 99, 235),   // Blue
-                    (139, 92, 246),  // Purple
-                    (34, 197, 94),   // Green
-                    (245, 158, 11),  // Amber
-                    (239, 68, 68),   // Red
-                    (6, 182, 212),   // Cyan
-                    (236, 72, 153),  // Pink
-                    (249, 115, 22),  // Orange
+                    (37, 99, 235),  // Blue
+                    (139, 92, 246), // Purple
+                    (34, 197, 94),  // Green
+                    (245, 158, 11), // Amber
+                    (239, 68, 68),  // Red
+                    (6, 182, 212),  // Cyan
+                    (236, 72, 153), // Pink
+                    (249, 115, 22), // Orange
                 ];
 
                 // Generate color from ID hash
-                let color_idx = operator_id_str.bytes().fold(0usize, |acc, b| acc.wrapping_add(b as usize)) % avatar_colors.len();
+                let color_idx = operator_id_str
+                    .bytes()
+                    .fold(0usize, |acc, b| acc.wrapping_add(b as usize))
+                    % avatar_colors.len();
                 let color = avatar_colors[color_idx];
 
                 // Use Arabic name if available
@@ -269,7 +281,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     w.set_selected_operator_name(SharedString::from(display_name));
                     w.set_selected_operator_role(SharedString::from(role_ar));
                     w.set_selected_operator_initials(SharedString::from(&initials));
-                    w.set_selected_operator_color(slint::Color::from_rgb_u8(color.0, color.1, color.2));
+                    w.set_selected_operator_color(slint::Color::from_rgb_u8(
+                        color.0, color.1, color.2,
+                    ));
                     w.set_pin_error(false);
                     w.set_pin_error_message(SharedString::from(""));
                     w.set_pin_attempts_remaining(3);
@@ -303,14 +317,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
 
         let avatar_colors: [(u8, u8, u8); 8] = [
-            (37, 99, 235),   // Blue
-            (139, 92, 246),  // Purple
-            (34, 197, 94),   // Green
-            (245, 158, 11),  // Amber
-            (239, 68, 68),   // Red
-            (6, 182, 212),   // Cyan
-            (236, 72, 153),  // Pink
-            (249, 115, 22),  // Orange
+            (37, 99, 235),  // Blue
+            (139, 92, 246), // Purple
+            (34, 197, 94),  // Green
+            (245, 158, 11), // Amber
+            (239, 68, 68),  // Red
+            (6, 182, 212),  // Cyan
+            (236, 72, 153), // Pink
+            (249, 115, 22), // Orange
         ];
 
         let slint_operators: Vec<Operator> = operators
@@ -324,7 +338,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "ADMIN" => "مدير",
                     _ => "كاشير",
                 };
-                let color_idx = op.id.bytes().fold(0usize, |acc, b| acc.wrapping_add(b as usize)) % avatar_colors.len();
+                let color_idx = op
+                    .id
+                    .bytes()
+                    .fold(0usize, |acc, b| acc.wrapping_add(b as usize))
+                    % avatar_colors.len();
                 let color = avatar_colors[color_idx];
 
                 Operator {
@@ -342,7 +360,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let model = ModelRc::new(VecModel::from(slint_operators));
                 w.set_operators(model);
             }
-        }).ok();
+        })
+        .ok();
     });
 
     // Set up employee ID submitted callback (looks up operator by employee number)
@@ -353,14 +372,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         info!("Employee ID submitted: {}", emp_num_str);
 
         let avatar_colors: [(u8, u8, u8); 8] = [
-            (37, 99, 235),   // Blue
-            (139, 92, 246),  // Purple
-            (34, 197, 94),   // Green
-            (245, 158, 11),  // Amber
-            (239, 68, 68),   // Red
-            (6, 182, 212),   // Cyan
-            (236, 72, 153),  // Pink
-            (249, 115, 22),  // Orange
+            (37, 99, 235),  // Blue
+            (139, 92, 246), // Purple
+            (34, 197, 94),  // Green
+            (245, 158, 11), // Amber
+            (239, 68, 68),  // Red
+            (6, 182, 212),  // Cyan
+            (236, 72, 153), // Pink
+            (249, 115, 22), // Orange
         ];
 
         match db_for_empid.get_operator_by_employee_number(&emp_num_str) {
@@ -377,7 +396,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "ADMIN" => "مدير",
                     _ => "كاشير",
                 };
-                let color_idx = op.id.bytes().fold(0usize, |acc, b| acc.wrapping_add(b as usize)) % avatar_colors.len();
+                let color_idx = op
+                    .id
+                    .bytes()
+                    .fold(0usize, |acc, b| acc.wrapping_add(b as usize))
+                    % avatar_colors.len();
                 let color = avatar_colors[color_idx];
                 let op_id = op.id.clone();
 
@@ -387,12 +410,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     w.set_selected_operator_name(SharedString::from(&display_name));
                     w.set_selected_operator_role(SharedString::from(role_ar));
                     w.set_selected_operator_initials(SharedString::from(&initials));
-                    w.set_selected_operator_color(slint::Color::from_rgb_u8(color.0, color.1, color.2));
+                    w.set_selected_operator_color(slint::Color::from_rgb_u8(
+                        color.0, color.1, color.2,
+                    ));
                     w.set_pin_error(false);
                     w.set_pin_error_message(SharedString::from(""));
                     w.set_pin_attempts_remaining(3);
                     w.set_current_screen(SharedString::from("pin-entry"));
-                    info!("Employee ID login: navigating to PIN entry for {}", display_name);
+                    info!(
+                        "Employee ID login: navigating to PIN entry for {}",
+                        display_name
+                    );
                 }
             }
             Ok(None) => {
@@ -468,7 +496,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                 }
-            }).ok();
+            })
+            .ok();
         });
     });
 
@@ -508,12 +537,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Start clock timer — HH:MM only changes every 60s, so 30s is plenty
     let window_weak_for_clock = window.as_weak();
     let clock_timer = slint::Timer::default();
-    clock_timer.start(slint::TimerMode::Repeated, std::time::Duration::from_secs(30), move || {
-        if let Some(w) = window_weak_for_clock.upgrade() {
-            let now = chrono::Local::now().format("%H:%M").to_string();
-            w.set_app_current_time(SharedString::from(&now));
-        }
-    });
+    clock_timer.start(
+        slint::TimerMode::Repeated,
+        std::time::Duration::from_secs(30),
+        move || {
+            if let Some(w) = window_weak_for_clock.upgrade() {
+                let now = chrono::Local::now().format("%H:%M").to_string();
+                w.set_app_current_time(SharedString::from(&now));
+            }
+        },
+    );
 
     // Set initial time immediately
     {
@@ -527,23 +560,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let runtime_for_online = Arc::clone(&runtime);
     let db_for_online = Arc::clone(&db);
     let online_timer = slint::Timer::default();
-    online_timer.start(slint::TimerMode::Repeated, std::time::Duration::from_secs(30), move || {
-        let api = Arc::clone(&api_for_online);
-        let rt = Arc::clone(&runtime_for_online);
-        let db = Arc::clone(&db_for_online);
-        let w = window_weak_for_online.clone();
-        std::thread::spawn(move || {
-            let status = rt.block_on(api.is_online());
-            let is_online = status.is_online();
-            let pending_count = db.get_pending_transaction_count().unwrap_or(0);
-            slint::invoke_from_event_loop(move || {
-                if let Some(window) = w.upgrade() {
-                    window.set_app_is_online(is_online);
-                    window.set_app_pending_sync_count(pending_count as i32);
-                }
-            }).ok();
-        });
-    });
+    online_timer.start(
+        slint::TimerMode::Repeated,
+        std::time::Duration::from_secs(30),
+        move || {
+            let api = Arc::clone(&api_for_online);
+            let rt = Arc::clone(&runtime_for_online);
+            let db = Arc::clone(&db_for_online);
+            let w = window_weak_for_online.clone();
+            std::thread::spawn(move || {
+                let status = rt.block_on(api.is_online());
+                let is_online = status.is_online();
+                let pending_count = db.get_pending_transaction_count().unwrap_or(0);
+                slint::invoke_from_event_loop(move || {
+                    if let Some(window) = w.upgrade() {
+                        window.set_app_is_online(is_online);
+                        window.set_app_pending_sync_count(pending_count as i32);
+                    }
+                })
+                .ok();
+            });
+        },
+    );
 
     // Set initial online status
     {
@@ -583,7 +621,8 @@ fn setup_pairing_callbacks(
         // auth rejected, etc.) — if so, we need to clear the broken registration
         // first so the backend issues a fresh pairing code instead of recovering
         // the same dead registration.
-        let is_error_recovery = window_weak.upgrade()
+        let is_error_recovery = window_weak
+            .upgrade()
             .map(|w| w.get_setup_status().as_str() == "error")
             .unwrap_or(false);
 
@@ -603,7 +642,8 @@ fn setup_pairing_callbacks(
                     if let Some(window) = window_weak_clone.upgrade() {
                         window.set_current_screen("login".into());
                     }
-                }).ok();
+                })
+                .ok();
             }
         });
     });
@@ -1000,9 +1040,14 @@ fn run_sync_with_ui_updates(
             w.set_sync_catalog_not_modified(catalog_not_modified);
             w.set_sync_operators_not_modified(operators_not_modified);
             w.set_sync_dialog_progress(1.0);
-            w.set_sync_dialog_status(if sync_success { "اكتملت المزامنة".into() } else { "فشلت المزامنة".into() });
+            w.set_sync_dialog_status(if sync_success {
+                "اكتملت المزامنة".into()
+            } else {
+                "فشلت المزامنة".into()
+            });
         }
-    }).ok();
+    })
+    .ok();
 
     info!("Sync UI update complete");
 }
@@ -1018,11 +1063,21 @@ fn setup_catalog_callbacks(
     let category_color_map: Arc<HashMap<String, (u8, u8, u8)>> = {
         let product_service = ProductService::new(Arc::clone(&db));
         Arc::new(match product_service.categories() {
-            Ok(cats) => cats.iter().enumerate()
+            Ok(cats) => cats
+                .iter()
+                .enumerate()
                 .map(|(idx, c)| {
-                    let hex = c.color.as_deref()
+                    let hex = c
+                        .color
+                        .as_deref()
                         .filter(|h| !h.is_empty())
-                        .unwrap_or_else(|| supermarket_category_color(&c.name, c.name_ar.as_deref().unwrap_or(""), idx));
+                        .unwrap_or_else(|| {
+                            supermarket_category_color(
+                                &c.name,
+                                c.name_ar.as_deref().unwrap_or(""),
+                                idx,
+                            )
+                        });
                     (c.id.clone(), parse_hex_color(hex))
                 })
                 .collect(),
@@ -1037,7 +1092,14 @@ fn setup_catalog_callbacks(
     let color_map_for_category = Arc::clone(&category_color_map);
     window.on_select_category(move |category_id: SharedString| {
         let category_id_str: String = category_id.into();
-        info!("Category selected: {}", if category_id_str.is_empty() { "All" } else { &category_id_str });
+        info!(
+            "Category selected: {}",
+            if category_id_str.is_empty() {
+                "All"
+            } else {
+                &category_id_str
+            }
+        );
 
         let window_weak_clone = window_weak.clone();
         let product_service = ProductService::new(Arc::clone(&db_for_category));
@@ -1070,7 +1132,9 @@ fn setup_catalog_callbacks(
                         ProductData {
                             id: SharedString::from(&prod.id),
                             name: SharedString::from(&prod.name),
-                            name_ar: SharedString::from(prod.name_ar.as_deref().unwrap_or(&prod.name)),
+                            name_ar: SharedString::from(
+                                prod.name_ar.as_deref().unwrap_or(&prod.name),
+                            ),
                             sku: SharedString::from(&prod.sku),
                             barcode: SharedString::from(prod.barcode.as_deref().unwrap_or("")),
                             price: SharedString::from(fmt_decimal(prod.price, cur)),
@@ -1079,7 +1143,9 @@ fn setup_catalog_callbacks(
                             out_of_stock: stock <= 0,
                             has_image: prod.image_url.is_some(),
                             image_url: SharedString::from(prod.image_url.as_deref().unwrap_or("")),
-                            category_id: SharedString::from(prod.category_id.as_deref().unwrap_or("")),
+                            category_id: SharedString::from(
+                                prod.category_id.as_deref().unwrap_or(""),
+                            ),
                             unit: SharedString::from(format!("{:?}", prod.unit).to_lowercase()),
                             category_color: slint::Color::from_rgb_u8(r, g, b),
                             is_weighable: prod.is_weighable,
@@ -1095,7 +1161,8 @@ fn setup_catalog_callbacks(
                         let model = ModelRc::new(VecModel::from(slint_products));
                         w.set_products(model);
                     }
-                }).ok();
+                })
+                .ok();
             }
             Err(e) => {
                 warn!("Failed to filter products by category: {}", e);
@@ -1121,12 +1188,19 @@ fn setup_catalog_callbacks(
             Ok(Some(product)) => {
                 // Check if product requires weighing
                 if product.is_weighable {
-                    info!("Product {} requires weighing — opening weight pad", product.name);
+                    info!(
+                        "Product {} requires weighing — opening weight pad",
+                        product.name
+                    );
 
-                    let display_name = product.name_ar.as_deref()
-                        .unwrap_or(&product.name).to_string();
+                    let display_name = product
+                        .name_ar
+                        .as_deref()
+                        .unwrap_or(&product.name)
+                        .to_string();
                     let unit_label = product.unit.label("ar").to_string();
-                    let price_str = format!("{} {}/{}", fmt_decimal(product.price, cur), cur, unit_label);
+                    let price_str =
+                        format!("{} {}/{}", fmt_decimal(product.price, cur), cur, unit_label);
                     let prod_id = product.id.clone();
 
                     let ww = window_weak_for_cart.clone();
@@ -1145,7 +1219,8 @@ fn setup_catalog_callbacks(
                             w.set_weight_pad_manual_mode(!w.get_weight_pad_scale_connected());
                             w.set_weight_pad_open(true);
                         }
-                    }).ok();
+                    })
+                    .ok();
                     return;
                 }
 
@@ -1155,8 +1230,11 @@ fn setup_catalog_callbacks(
                         info!("Added {} to cart", product.name);
 
                         // Last scanned item info for display feedback
-                        let last_name = product.name_ar.as_deref()
-                            .unwrap_or(&product.name).to_string();
+                        let last_name = product
+                            .name_ar
+                            .as_deref()
+                            .unwrap_or(&product.name)
+                            .to_string();
                         let last_price = fmt_decimal(product.price, cur);
 
                         // Refresh cart UI using shared helper
@@ -1171,7 +1249,8 @@ fn setup_catalog_callbacks(
                                 w.set_last_scanned_price(SharedString::from(&last_price));
                                 w.set_show_last_scanned(true);
                             }
-                        }).ok();
+                        })
+                        .ok();
 
                         // Auto-clear last scanned display after 5 seconds
                         let window_weak_timer = window_weak_for_cart.clone();
@@ -1181,7 +1260,8 @@ fn setup_catalog_callbacks(
                                 if let Some(w) = window_weak_timer.upgrade() {
                                     w.set_show_last_scanned(false);
                                 }
-                            }).ok();
+                            })
+                            .ok();
                         });
                     }
                     Err(e) => {
@@ -1220,7 +1300,8 @@ fn setup_catalog_callbacks(
                 w.set_plu_error_message(SharedString::from(""));
                 w.set_plu_result_count(0);
             }
-        }).ok();
+        })
+        .ok();
 
         // Perform search (barcode exact match first, then FTS5)
         match product_service.search(&code, 5) {
@@ -1238,12 +1319,16 @@ fn setup_catalog_callbacks(
                             w.set_plu_result_count(0);
                             w.set_plu_error_message(SharedString::from(&error_msg));
                         }
-                    }).ok();
+                    })
+                    .ok();
                 } else if count == 1 {
                     // Exact match — auto-add to cart
                     let product = &result.products[0];
-                    let product_name = product.name_ar.as_deref()
-                        .unwrap_or(&product.name).to_string();
+                    let product_name = product
+                        .name_ar
+                        .as_deref()
+                        .unwrap_or(&product.name)
+                        .to_string();
                     let product_price = fmt_decimal(product.price, &cur);
 
                     // Add to cart
@@ -1270,7 +1355,8 @@ fn setup_catalog_callbacks(
                                     w.set_last_scanned_price(SharedString::from(&price));
                                     w.set_show_last_scanned(true);
                                 }
-                            }).ok();
+                            })
+                            .ok();
 
                             // Auto-clear last scanned after 5 seconds
                             let ww_timer = window_weak_clone.clone();
@@ -1280,7 +1366,8 @@ fn setup_catalog_callbacks(
                                     if let Some(w) = ww_timer.upgrade() {
                                         w.set_show_last_scanned(false);
                                     }
-                                }).ok();
+                                })
+                                .ok();
                             });
                         }
                         Err(e) => {
@@ -1293,14 +1380,14 @@ fn setup_catalog_callbacks(
                                     w.set_plu_result_count(0);
                                     w.set_plu_error_message(SharedString::from(&error_msg));
                                 }
-                            }).ok();
+                            })
+                            .ok();
                         }
                     }
                 } else {
                     // Multiple matches — show first result with count
                     let first = &result.products[0];
-                    let product_name = first.name_ar.as_deref()
-                        .unwrap_or(&first.name).to_string();
+                    let product_name = first.name_ar.as_deref().unwrap_or(&first.name).to_string();
                     let product_price = fmt_decimal(first.price, &cur);
                     let product_id = first.id.clone();
                     let result_count = count as i32;
@@ -1314,7 +1401,8 @@ fn setup_catalog_callbacks(
                             w.set_plu_result_price(SharedString::from(&product_price));
                             w.set_plu_result_product_id(SharedString::from(&product_id));
                         }
-                    }).ok();
+                    })
+                    .ok();
                 }
             }
             Err(e) => {
@@ -1327,7 +1415,8 @@ fn setup_catalog_callbacks(
                         w.set_plu_result_count(0);
                         w.set_plu_error_message(SharedString::from(&error_msg));
                     }
-                }).ok();
+                })
+                .ok();
             }
         }
     });
@@ -1350,8 +1439,11 @@ fn setup_catalog_callbacks(
                     Ok(_) => {
                         info!("PLU: Added {} to cart (multi-result)", product.name);
 
-                        let last_name = product.name_ar.as_deref()
-                            .unwrap_or(&product.name).to_string();
+                        let last_name = product
+                            .name_ar
+                            .as_deref()
+                            .unwrap_or(&product.name)
+                            .to_string();
                         let last_price = fmt_decimal(product.price, cur);
 
                         refresh_cart_ui(&window_weak_plu_add, &cart_service_for_plu_add, cur);
@@ -1365,7 +1457,8 @@ fn setup_catalog_callbacks(
                                 w.set_last_scanned_price(SharedString::from(&last_price));
                                 w.set_show_last_scanned(true);
                             }
-                        }).ok();
+                        })
+                        .ok();
 
                         // Auto-clear last scanned after 5 seconds
                         let ww_timer = window_weak_plu_add.clone();
@@ -1375,7 +1468,8 @@ fn setup_catalog_callbacks(
                                 if let Some(w) = ww_timer.upgrade() {
                                     w.set_show_last_scanned(false);
                                 }
-                            }).ok();
+                            })
+                            .ok();
                         });
                     }
                     Err(e) => {
@@ -1396,11 +1490,7 @@ fn setup_catalog_callbacks(
 }
 
 /// Sets up price check callbacks — read-only product lookup without cart interaction
-fn setup_price_check_callbacks(
-    window: &MainWindow,
-    db: Arc<Database>,
-    currency: String,
-) {
+fn setup_price_check_callbacks(window: &MainWindow, db: Arc<Database>, currency: String) {
     let window_weak = window.as_weak();
     let db_clone = Arc::clone(&db);
     let cur = currency.clone();
@@ -1421,17 +1511,18 @@ fn setup_price_check_callbacks(
                 w.set_price_check_name(SharedString::from(""));
                 w.set_price_check_open(true);
             }
-        }).ok();
+        })
+        .ok();
 
         // Try lookup: by ID first, then barcode, then search
-        let product = product_service.get_by_id(&query_str)
+        let product = product_service
+            .get_by_id(&query_str)
             .ok()
             .flatten()
+            .or_else(|| product_service.lookup_barcode(&query_str).ok().flatten())
             .or_else(|| {
-                product_service.lookup_barcode(&query_str).ok().flatten()
-            })
-            .or_else(|| {
-                product_service.search(&query_str, 1)
+                product_service
+                    .search(&query_str, 1)
                     .ok()
                     .and_then(|r| r.products.into_iter().next())
             });
@@ -1440,8 +1531,11 @@ fn setup_price_check_callbacks(
 
         match product {
             Some(product) => {
-                let name = product.name_ar.as_deref()
-                    .unwrap_or(&product.name).to_string();
+                let name = product
+                    .name_ar
+                    .as_deref()
+                    .unwrap_or(&product.name)
+                    .to_string();
                 let price = format!("{} {}", fmt_decimal(product.price, &currency), currency);
                 let barcode = product.barcode.clone().unwrap_or_default();
                 let sku = product.sku.clone();
@@ -1475,7 +1569,8 @@ fn setup_price_check_callbacks(
                         w.set_price_check_tax_info(SharedString::from(&tax_info));
                         w.set_price_check_error(SharedString::from(""));
                     }
-                }).ok();
+                })
+                .ok();
             }
             None => {
                 let error_msg = if query_str.chars().all(|c| c.is_ascii_digit()) {
@@ -1491,7 +1586,8 @@ fn setup_price_check_callbacks(
                         w.set_price_check_name(SharedString::from(""));
                         w.set_price_check_error(SharedString::from(&error_msg));
                     }
-                }).ok();
+                })
+                .ok();
             }
         }
     });
@@ -1575,7 +1671,10 @@ fn setup_cart_item_callbacks(
                 .unwrap_or_else(|| last_item.product_name.clone());
             let voided_price = fmt_decimal(last_item.unit_price, &cur);
             let last_id = last_item.id.clone();
-            info!("Voiding last item: {} ({})", last_item.product_name, last_id);
+            info!(
+                "Voiding last item: {} ({})",
+                last_item.product_name, last_id
+            );
             match cart_svc.remove_item(&last_id) {
                 Ok(()) => {
                     refresh_cart_ui(&window_weak, &cart_svc, &cur);
@@ -1591,7 +1690,8 @@ fn setup_cart_item_callbacks(
                             w.set_void_item_price(SharedString::from(&price));
                             w.set_show_void_feedback(true);
                         }
-                    }).ok();
+                    })
+                    .ok();
 
                     // Auto-clear void feedback after 3 seconds
                     let ww_timer = window_weak.clone();
@@ -1601,7 +1701,8 @@ fn setup_cart_item_callbacks(
                             if let Some(w) = ww_timer.upgrade() {
                                 w.set_show_void_feedback(false);
                             }
-                        }).ok();
+                        })
+                        .ok();
                     });
                 }
                 Err(e) => warn!("Failed to void last item: {}", e),
@@ -1626,7 +1727,10 @@ fn setup_cart_item_callbacks(
             let qty = last_item.quantity.to_i32().unwrap_or(1);
             let id = last_item.id.clone();
 
-            info!("Opening quantity pad for last item: {} ({})", last_item.product_name, id);
+            info!(
+                "Opening quantity pad for last item: {} ({})",
+                last_item.product_name, id
+            );
 
             if let Some(w) = window_weak.upgrade() {
                 w.set_qty_pad_item_id(SharedString::from(&id));
@@ -1657,7 +1761,10 @@ fn setup_cart_item_callbacks(
             let price = fmt_decimal(item.unit_price, &cur);
             let qty = item.quantity.to_i32().unwrap_or(1);
 
-            info!("Opening quantity pad for item: {} ({})", item.product_name, id);
+            info!(
+                "Opening quantity pad for item: {} ({})",
+                item.product_name, id
+            );
 
             if let Some(w) = window_weak.upgrade() {
                 w.set_qty_pad_item_id(SharedString::from(&id));
@@ -1751,10 +1858,16 @@ fn setup_cart_item_callbacks(
                         Ok(Some(product)) => {
                             match cart_svc.add_item(&product, weight) {
                                 Ok(_) => {
-                                    info!("Added weighable item {} with weight {} to cart", product.name, weight);
+                                    info!(
+                                        "Added weighable item {} with weight {} to cart",
+                                        product.name, weight
+                                    );
 
-                                    let last_name = product.name_ar.as_deref()
-                                        .unwrap_or(&product.name).to_string();
+                                    let last_name = product
+                                        .name_ar
+                                        .as_deref()
+                                        .unwrap_or(&product.name)
+                                        .to_string();
                                     let last_price = fmt_decimal(product.price * weight, &cur);
 
                                     // Refresh cart UI
@@ -1768,10 +1881,13 @@ fn setup_cart_item_callbacks(
                                             w.set_weight_pad_manual_value(SharedString::from(""));
                                             w.set_show_void_feedback(false);
                                             w.set_last_scanned_name(SharedString::from(&last_name));
-                                            w.set_last_scanned_price(SharedString::from(&last_price));
+                                            w.set_last_scanned_price(SharedString::from(
+                                                &last_price,
+                                            ));
                                             w.set_show_last_scanned(true);
                                         }
-                                    }).ok();
+                                    })
+                                    .ok();
 
                                     // Auto-clear last scanned display after 5 seconds
                                     let ww_timer = window_weak.clone();
@@ -1781,7 +1897,8 @@ fn setup_cart_item_callbacks(
                                             if let Some(w) = ww_timer.upgrade() {
                                                 w.set_show_last_scanned(false);
                                             }
-                                        }).ok();
+                                        })
+                                        .ok();
                                     });
                                 }
                                 Err(e) => {
@@ -1792,7 +1909,8 @@ fn setup_cart_item_callbacks(
                                         if let Some(w) = ww.upgrade() {
                                             w.set_weight_pad_error(SharedString::from(&error_msg));
                                         }
-                                    }).ok();
+                                    })
+                                    .ok();
                                 }
                             }
                         }
@@ -1809,9 +1927,12 @@ fn setup_cart_item_callbacks(
                     let ww = window_weak.clone();
                     slint::invoke_from_event_loop(move || {
                         if let Some(w) = ww.upgrade() {
-                            w.set_weight_pad_error(SharedString::from("Weight must be greater than zero"));
+                            w.set_weight_pad_error(SharedString::from(
+                                "Weight must be greater than zero",
+                            ));
                         }
-                    }).ok();
+                    })
+                    .ok();
                 }
                 Err(_) => {
                     let ww = window_weak.clone();
@@ -1819,7 +1940,8 @@ fn setup_cart_item_callbacks(
                         if let Some(w) = ww.upgrade() {
                             w.set_weight_pad_error(SharedString::from("Invalid weight value"));
                         }
-                    }).ok();
+                    })
+                    .ok();
                 }
             }
         }
@@ -1846,84 +1968,117 @@ fn setup_draft_callbacks(
     let draft_service_for_save = Arc::clone(&draft_service);
     let cart_service_for_save = Arc::clone(&cart_service);
 
-    window.on_save_draft(move |name: SharedString, operator_id: SharedString, shift_id: SharedString| {
-        let name_str: String = name.into();
-        let operator_id_str: String = operator_id.into();
-        let shift_id_str: String = shift_id.into();
+    window.on_save_draft(
+        move |name: SharedString, operator_id: SharedString, shift_id: SharedString| {
+            let name_str: String = name.into();
+            let operator_id_str: String = operator_id.into();
+            let shift_id_str: String = shift_id.into();
 
-        info!(
-            "Save draft requested: name='{}', operator='{}', shift='{}'",
-            if name_str.is_empty() { "<none>" } else { &name_str },
-            if operator_id_str.is_empty() { "<none>" } else { &operator_id_str },
-            if shift_id_str.is_empty() { "<none>" } else { &shift_id_str }
-        );
-
-        // Get current cart
-        let cart = cart_service_for_save.get_cart();
-
-        if cart.is_empty() {
-            warn!("Cannot save empty cart as draft");
-            // Update UI to show error
-            let window_weak_clone = window_weak.clone();
-            slint::invoke_from_event_loop(move || {
-                if let Some(w) = window_weak_clone.upgrade() {
-                    w.set_draft_is_saving(false);
-                    // Keep dialog open to show error - user can cancel
+            info!(
+                "Save draft requested: name='{}', operator='{}', shift='{}'",
+                if name_str.is_empty() {
+                    "<none>"
+                } else {
+                    &name_str
+                },
+                if operator_id_str.is_empty() {
+                    "<none>"
+                } else {
+                    &operator_id_str
+                },
+                if shift_id_str.is_empty() {
+                    "<none>"
+                } else {
+                    &shift_id_str
                 }
-            }).ok();
-            return;
-        }
+            );
 
-        // Use actual operator/shift IDs from UI, with fallbacks
-        let operator_id = if operator_id_str.is_empty() { "operator-default" } else { &operator_id_str };
-        let shift_id = if shift_id_str.is_empty() { "shift-default" } else { &shift_id_str };
+            // Get current cart
+            let cart = cart_service_for_save.get_cart();
 
-        let draft_name = if name_str.is_empty() { None } else { Some(name_str) };
-
-        match draft_service_for_save.save_cart(&cart, draft_name, operator_id, shift_id) {
-            Ok(draft) => {
-                info!("Draft saved successfully: {} ({})", draft.display_name(), draft.id);
-
-                // Clear the cart after successful save
-                cart_service_for_save.clear();
-
-                // Update UI
-                let window_weak_clone = window_weak.clone();
-                slint::invoke_from_event_loop(move || {
-                    if let Some(w) = window_weak_clone.upgrade() {
-                        // Update draft count
-                        let current_count = w.get_draft_count();
-                        w.set_draft_count(current_count + 1);
-
-                        // Close dialog and reset state
-                        w.set_show_save_draft_dialog(false);
-                        w.set_draft_is_saving(false);
-                        w.set_draft_name(SharedString::from(""));
-
-                        // Clear cart UI
-                        let empty_items: Vec<CartItemData> = vec![];
-                        w.set_cart_items(ModelRc::new(VecModel::from(empty_items)));
-                        w.set_cart_subtotal(SharedString::from("0.000"));
-                        w.set_cart_tax(SharedString::from("0.000"));
-                        w.set_cart_discount(SharedString::from("0.000"));
-                        w.set_cart_total(SharedString::from("0.000"));
-                    }
-                }).ok();
-            }
-            Err(e) => {
-                error!("Failed to save draft: {}", e);
-
+            if cart.is_empty() {
+                warn!("Cannot save empty cart as draft");
                 // Update UI to show error
                 let window_weak_clone = window_weak.clone();
                 slint::invoke_from_event_loop(move || {
                     if let Some(w) = window_weak_clone.upgrade() {
                         w.set_draft_is_saving(false);
-                        // Keep dialog open so user can retry or cancel
+                        // Keep dialog open to show error - user can cancel
                     }
-                }).ok();
+                })
+                .ok();
+                return;
             }
-        }
-    });
+
+            // Use actual operator/shift IDs from UI, with fallbacks
+            let operator_id = if operator_id_str.is_empty() {
+                "operator-default"
+            } else {
+                &operator_id_str
+            };
+            let shift_id = if shift_id_str.is_empty() {
+                "shift-default"
+            } else {
+                &shift_id_str
+            };
+
+            let draft_name = if name_str.is_empty() {
+                None
+            } else {
+                Some(name_str)
+            };
+
+            match draft_service_for_save.save_cart(&cart, draft_name, operator_id, shift_id) {
+                Ok(draft) => {
+                    info!(
+                        "Draft saved successfully: {} ({})",
+                        draft.display_name(),
+                        draft.id
+                    );
+
+                    // Clear the cart after successful save
+                    cart_service_for_save.clear();
+
+                    // Update UI
+                    let window_weak_clone = window_weak.clone();
+                    slint::invoke_from_event_loop(move || {
+                        if let Some(w) = window_weak_clone.upgrade() {
+                            // Update draft count
+                            let current_count = w.get_draft_count();
+                            w.set_draft_count(current_count + 1);
+
+                            // Close dialog and reset state
+                            w.set_show_save_draft_dialog(false);
+                            w.set_draft_is_saving(false);
+                            w.set_draft_name(SharedString::from(""));
+
+                            // Clear cart UI
+                            let empty_items: Vec<CartItemData> = vec![];
+                            w.set_cart_items(ModelRc::new(VecModel::from(empty_items)));
+                            w.set_cart_subtotal(SharedString::from("0.000"));
+                            w.set_cart_tax(SharedString::from("0.000"));
+                            w.set_cart_discount(SharedString::from("0.000"));
+                            w.set_cart_total(SharedString::from("0.000"));
+                        }
+                    })
+                    .ok();
+                }
+                Err(e) => {
+                    error!("Failed to save draft: {}", e);
+
+                    // Update UI to show error
+                    let window_weak_clone = window_weak.clone();
+                    slint::invoke_from_event_loop(move || {
+                        if let Some(w) = window_weak_clone.upgrade() {
+                            w.set_draft_is_saving(false);
+                            // Keep dialog open so user can retry or cancel
+                        }
+                    })
+                    .ok();
+                }
+            }
+        },
+    );
 
     info!("Draft callbacks set up successfully");
 }
@@ -1960,7 +2115,8 @@ fn run_startup_sequence(
                 window.set_splash_progress(progress);
                 window.set_splash_status(status_str.into());
             }
-        }).ok();
+        })
+        .ok();
     }
 
     // Navigate to appropriate screen
@@ -1989,13 +2145,18 @@ fn run_startup_sequence(
             if let Some(window) = window_weak_clone.upgrade() {
                 window.set_current_screen("login".into());
             }
-        }).ok();
+        })
+        .ok();
     } else {
         info!("Terminal not registered, starting pairing flow");
 
         // Request pairing code (may recover existing registration)
         let window_weak_clone2 = window_weak.clone();
-        let recovered = request_pairing_code(window_weak_clone2, Arc::clone(&pairing_service), Arc::clone(&runtime));
+        let recovered = request_pairing_code(
+            window_weak_clone2,
+            Arc::clone(&pairing_service),
+            Arc::clone(&runtime),
+        );
 
         if recovered {
             // Registration was recovered — load data and go straight to login
@@ -2028,17 +2189,26 @@ fn run_startup_sequence(
                     }
                     window.set_current_screen("login".into());
                 }
-            }).ok();
+            })
+            .ok();
         } else {
             // Normal pairing flow — show setup screen and poll
             slint::invoke_from_event_loop(move || {
                 if let Some(window) = window_weak_clone.upgrade() {
                     window.set_current_screen("setup".into());
                 }
-            }).ok();
+            })
+            .ok();
 
             // Start polling for pairing status
-            start_pairing_poll(window_weak, pairing_service, runtime, db, sync_service, sync_tx);
+            start_pairing_poll(
+                window_weak,
+                pairing_service,
+                runtime,
+                db,
+                sync_service,
+                sync_tx,
+            );
         }
     }
 }
@@ -2060,12 +2230,11 @@ fn request_pairing_code(
             window.set_setup_status("pending".into());
             window.set_setup_pairing_code("---".into());
         }
-    }).ok();
+    })
+    .ok();
 
     // Make the API request
-    let result = runtime.block_on(async {
-        pairing_service.request_pairing_code().await
-    });
+    let result = runtime.block_on(async { pairing_service.request_pairing_code().await });
 
     match result {
         Ok(state) => {
@@ -2087,7 +2256,8 @@ fn request_pairing_code(
                     window.set_setup_expires_in_seconds(expires_in);
                     window.set_setup_status("pending".into());
                 }
-            }).ok();
+            })
+            .ok();
             false
         }
         Err(e) => {
@@ -2100,7 +2270,8 @@ fn request_pairing_code(
                     window.set_setup_status("error".into());
                     window.set_setup_error_message(error_msg.into());
                 }
-            }).ok();
+            })
+            .ok();
             false
         }
     }
@@ -2136,7 +2307,8 @@ fn start_pairing_poll(
                 } else {
                     tx.send(None).ok();
                 }
-            }).ok();
+            })
+            .ok();
 
             let pairing_code = match rx.recv_timeout(Duration::from_secs(1)) {
                 Ok(Some(code)) => code,
@@ -2144,9 +2316,8 @@ fn start_pairing_poll(
             };
 
             // Check pairing status
-            let result = runtime.block_on(async {
-                pairing_service.check_pairing_status(&pairing_code).await
-            });
+            let result = runtime
+                .block_on(async { pairing_service.check_pairing_status(&pairing_code).await });
 
             match result {
                 Ok(state) => {
@@ -2159,7 +2330,8 @@ fn start_pairing_poll(
                                 if let Some(window) = window_weak_clone.upgrade() {
                                     window.set_setup_status("completed".into());
                                 }
-                            }).ok();
+                            })
+                            .ok();
 
                             // Load data and navigate to login after short delay
                             let window_weak_clone2 = window_weak.clone();
@@ -2179,7 +2351,9 @@ fn start_pairing_poll(
                                     match tokio::time::timeout(
                                         Duration::from_secs(30),
                                         sync_service_clone.sync_all(&tx),
-                                    ).await {
+                                    )
+                                    .await
+                                    {
                                         Ok(Ok(())) => {
                                             info!("Initial sync completed successfully");
                                             true
@@ -2200,10 +2374,17 @@ fn start_pairing_poll(
                                 }
 
                                 // Load catalog data from database (may be empty if sync failed)
-                                populate_catalog_data(window_weak_clone2.clone(), Arc::clone(&db_clone), "LYD".to_string());
+                                populate_catalog_data(
+                                    window_weak_clone2.clone(),
+                                    Arc::clone(&db_clone),
+                                    "LYD".to_string(),
+                                );
 
                                 // Load operators from database (may be empty if sync failed)
-                                populate_operators_data(window_weak_clone2.clone(), Arc::clone(&db_clone));
+                                populate_operators_data(
+                                    window_weak_clone2.clone(),
+                                    Arc::clone(&db_clone),
+                                );
 
                                 // Start background sync service
                                 start_background_sync(
@@ -2221,7 +2402,8 @@ fn start_pairing_poll(
                                     if let Some(window) = window_weak_clone2.upgrade() {
                                         window.set_current_screen("login".into());
                                     }
-                                }).ok();
+                                })
+                                .ok();
                             });
                             break;
                         }
@@ -2232,7 +2414,8 @@ fn start_pairing_poll(
                                 if let Some(window) = window_weak_clone.upgrade() {
                                     window.set_setup_status("expired".into());
                                 }
-                            }).ok();
+                            })
+                            .ok();
                             break;
                         }
                         PairingStatus::Cancelled => {
@@ -2243,7 +2426,8 @@ fn start_pairing_poll(
                                     window.set_setup_status("error".into());
                                     window.set_setup_error_message("Pairing was cancelled".into());
                                 }
-                            }).ok();
+                            })
+                            .ok();
                             break;
                         }
                         PairingStatus::Pending => {
@@ -2271,11 +2455,17 @@ fn populate_catalog_data(
 
     // Build category color map for product tiles (before consuming categories)
     let category_color_map: HashMap<String, (u8, u8, u8)> = match product_service.categories() {
-        Ok(ref cats) => cats.iter().enumerate()
+        Ok(ref cats) => cats
+            .iter()
+            .enumerate()
             .map(|(idx, c)| {
-                let hex = c.color.as_deref()
+                let hex = c
+                    .color
+                    .as_deref()
                     .filter(|h| !h.is_empty())
-                    .unwrap_or_else(|| supermarket_category_color(&c.name, c.name_ar.as_deref().unwrap_or(""), idx));
+                    .unwrap_or_else(|| {
+                        supermarket_category_color(&c.name, c.name_ar.as_deref().unwrap_or(""), idx)
+                    });
                 (c.id.clone(), parse_hex_color(hex))
             })
             .collect(),
@@ -2300,12 +2490,16 @@ fn populate_catalog_data(
                         .unwrap_or(0);
 
                     let name_ar_str = cat.name_ar.as_deref().unwrap_or(&cat.name);
-                    let hex_color = cat.color.as_deref()
+                    let hex_color = cat
+                        .color
+                        .as_deref()
                         .filter(|c| !c.is_empty())
                         .unwrap_or_else(|| supermarket_category_color(&cat.name, name_ar_str, idx));
                     let (r, g, b) = parse_hex_color(hex_color);
 
-                    let icon_str = cat.icon.as_deref()
+                    let icon_str = cat
+                        .icon
+                        .as_deref()
                         .filter(|i| !i.is_empty())
                         .unwrap_or_else(|| supermarket_category_icon(&cat.name, name_ar_str));
 
@@ -2327,7 +2521,8 @@ fn populate_catalog_data(
                     let model = ModelRc::new(VecModel::from(slint_categories));
                     window.set_categories(model);
                 }
-            }).ok();
+            })
+            .ok();
         }
         Err(e) => {
             warn!("Failed to load categories: {}", e);
@@ -2383,7 +2578,8 @@ fn populate_catalog_data(
                     window.set_products(model);
                     window.set_total_product_count(total_count);
                 }
-            }).ok();
+            })
+            .ok();
         }
         Err(e) => {
             warn!("Failed to load products: {}", e);
@@ -2431,13 +2627,11 @@ fn refresh_cart_ui(
             original_price: SharedString::from(fmt_decimal(item.unit_price, cur)),
             unit: SharedString::from(format!("{:?}", item.unit).to_lowercase()),
             notes: SharedString::from(item.note.as_deref().unwrap_or("")),
-            quantity_display: SharedString::from(
-                if item.unit.allows_decimal() {
-                    format!("{:.3} {}", item.quantity, item.unit.label("ar"))
-                } else {
-                    String::new()
-                }
-            ),
+            quantity_display: SharedString::from(if item.unit.allows_decimal() {
+                format!("{:.3} {}", item.quantity, item.unit.label("ar"))
+            } else {
+                String::new()
+            }),
         })
         .collect();
 
@@ -2490,25 +2684,69 @@ fn contains_any(text: &str, keywords: &[&str]) -> bool {
 /// Uses standard supermarket department colors.
 fn supermarket_category_color(name: &str, name_ar: &str, index: usize) -> &'static str {
     match () {
-        _ if contains_any(name_ar, &["ألبان", "حليب"]) || contains_any(name, &["dairy", "milk"]) => "#3B82F6",
-        _ if contains_any(name_ar, &["خضر", "طازج", "فاكه"]) || contains_any(name, &["fresh", "produce", "vegetable", "fruit"]) => "#22C55E",
-        _ if contains_any(name_ar, &["لحوم", "دواجن", "دجاج"]) || contains_any(name, &["meat", "poultry"]) => "#EF4444",
-        _ if contains_any(name_ar, &["مخبوز", "خبز"]) || contains_any(name, &["bakery", "bread"]) => "#A16207",
-        _ if contains_any(name_ar, &["مشروب", "عصير"]) || contains_any(name, &["beverage", "drink", "juice"]) => "#F97316",
+        _ if contains_any(name_ar, &["ألبان", "حليب"])
+            || contains_any(name, &["dairy", "milk"]) =>
+        {
+            "#3B82F6"
+        }
+        _ if contains_any(name_ar, &["خضر", "طازج", "فاكه"])
+            || contains_any(name, &["fresh", "produce", "vegetable", "fruit"]) =>
+        {
+            "#22C55E"
+        }
+        _ if contains_any(name_ar, &["لحوم", "دواجن", "دجاج"])
+            || contains_any(name, &["meat", "poultry"]) =>
+        {
+            "#EF4444"
+        }
+        _ if contains_any(name_ar, &["مخبوز", "خبز"])
+            || contains_any(name, &["bakery", "bread"]) =>
+        {
+            "#A16207"
+        }
+        _ if contains_any(name_ar, &["مشروب", "عصير"])
+            || contains_any(name, &["beverage", "drink", "juice"]) =>
+        {
+            "#F97316"
+        }
         _ if contains_any(name_ar, &["تنظيف"]) || contains_any(name, &["clean"]) => "#06B6D4",
-        _ if contains_any(name_ar, &["بقال", "غذائ"]) || contains_any(name, &["grocer", "staple"]) => "#6B7280",
+        _ if contains_any(name_ar, &["بقال", "غذائ"])
+            || contains_any(name, &["grocer", "staple"]) =>
+        {
+            "#6B7280"
+        }
         _ if contains_any(name_ar, &["مجمد"]) || contains_any(name, &["frozen"]) => "#8B5CF6",
-        _ if contains_any(name_ar, &["عناية", "شخصي"]) || contains_any(name, &["personal", "care"]) => "#EC4899",
-        _ if contains_any(name_ar, &["أطفال", "طفل"]) || contains_any(name, &["baby", "child"]) => "#F59E0B",
+        _ if contains_any(name_ar, &["عناية", "شخصي"])
+            || contains_any(name, &["personal", "care"]) =>
+        {
+            "#EC4899"
+        }
+        _ if contains_any(name_ar, &["أطفال", "طفل"]) || contains_any(name, &["baby", "child"]) => {
+            "#F59E0B"
+        }
         _ if contains_any(name_ar, &["حيوان"]) || contains_any(name, &["pet"]) => "#84CC16",
-        _ if contains_any(name_ar, &["صحة", "عافية"]) || contains_any(name, &["health", "wellness"]) => "#14B8A6",
-        _ if contains_any(name_ar, &["منزل"]) || contains_any(name, &["house", "home"]) => "#78716C",
-        _ if contains_any(name_ar, &["خفيف", "حلوي", "سناك"]) || contains_any(name, &["snack", "confect"]) => "#F472B6",
-        _ if contains_any(name_ar, &["بحري", "سمك"]) || contains_any(name, &["seafood", "fish"]) => "#0EA5E9",
+        _ if contains_any(name_ar, &["صحة", "عافية"])
+            || contains_any(name, &["health", "wellness"]) =>
+        {
+            "#14B8A6"
+        }
+        _ if contains_any(name_ar, &["منزل"]) || contains_any(name, &["house", "home"]) => {
+            "#78716C"
+        }
+        _ if contains_any(name_ar, &["خفيف", "حلوي", "سناك"])
+            || contains_any(name, &["snack", "confect"]) =>
+        {
+            "#F472B6"
+        }
+        _ if contains_any(name_ar, &["بحري", "سمك"])
+            || contains_any(name, &["seafood", "fish"]) =>
+        {
+            "#0EA5E9"
+        }
         _ => {
             const FALLBACK_PALETTE: &[&str] = &[
-                "#6366F1", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6",
-                "#EC4899", "#06B6D4", "#84CC16", "#F97316", "#14B8A6",
+                "#6366F1", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6", "#EC4899", "#06B6D4",
+                "#84CC16", "#F97316", "#14B8A6",
             ];
             FALLBACK_PALETTE[index % FALLBACK_PALETTE.len()]
         }
@@ -2518,30 +2756,69 @@ fn supermarket_category_color(name: &str, name_ar: &str, index: usize) -> &'stat
 /// Assigns an emoji icon to a category when backend provides none.
 fn supermarket_category_icon(name: &str, name_ar: &str) -> &'static str {
     match () {
-        _ if contains_any(name_ar, &["ألبان", "حليب"]) || contains_any(name, &["dairy", "milk"]) => "🥛",
-        _ if contains_any(name_ar, &["خضر", "طازج"]) || contains_any(name, &["fresh", "produce", "vegetable"]) => "🥬",
-        _ if contains_any(name_ar, &["لحوم", "دواجن"]) || contains_any(name, &["meat", "poultry"]) => "🥩",
-        _ if contains_any(name_ar, &["مخبوز", "خبز"]) || contains_any(name, &["bakery", "bread"]) => "🍞",
-        _ if contains_any(name_ar, &["مشروب", "عصير"]) || contains_any(name, &["beverage", "drink"]) => "🥤",
+        _ if contains_any(name_ar, &["ألبان", "حليب"])
+            || contains_any(name, &["dairy", "milk"]) =>
+        {
+            "🥛"
+        }
+        _ if contains_any(name_ar, &["خضر", "طازج"])
+            || contains_any(name, &["fresh", "produce", "vegetable"]) =>
+        {
+            "🥬"
+        }
+        _ if contains_any(name_ar, &["لحوم", "دواجن"])
+            || contains_any(name, &["meat", "poultry"]) =>
+        {
+            "🥩"
+        }
+        _ if contains_any(name_ar, &["مخبوز", "خبز"])
+            || contains_any(name, &["bakery", "bread"]) =>
+        {
+            "🍞"
+        }
+        _ if contains_any(name_ar, &["مشروب", "عصير"])
+            || contains_any(name, &["beverage", "drink"]) =>
+        {
+            "🥤"
+        }
         _ if contains_any(name_ar, &["تنظيف"]) || contains_any(name, &["clean"]) => "🧹",
-        _ if contains_any(name_ar, &["بقال", "غذائ"]) || contains_any(name, &["grocer", "staple"]) => "🛒",
+        _ if contains_any(name_ar, &["بقال", "غذائ"])
+            || contains_any(name, &["grocer", "staple"]) =>
+        {
+            "🛒"
+        }
         _ if contains_any(name_ar, &["مجمد"]) || contains_any(name, &["frozen"]) => "🧊",
-        _ if contains_any(name_ar, &["عناية", "شخصي"]) || contains_any(name, &["personal", "care"]) => "🧴",
-        _ if contains_any(name_ar, &["أطفال", "طفل"]) || contains_any(name, &["baby", "child"]) => "🍼",
+        _ if contains_any(name_ar, &["عناية", "شخصي"])
+            || contains_any(name, &["personal", "care"]) =>
+        {
+            "🧴"
+        }
+        _ if contains_any(name_ar, &["أطفال", "طفل"]) || contains_any(name, &["baby", "child"]) => {
+            "🍼"
+        }
         _ if contains_any(name_ar, &["حيوان"]) || contains_any(name, &["pet"]) => "🐾",
-        _ if contains_any(name_ar, &["صحة", "عافية"]) || contains_any(name, &["health", "wellness"]) => "💊",
+        _ if contains_any(name_ar, &["صحة", "عافية"])
+            || contains_any(name, &["health", "wellness"]) =>
+        {
+            "💊"
+        }
         _ if contains_any(name_ar, &["منزل"]) || contains_any(name, &["house", "home"]) => "🏠",
-        _ if contains_any(name_ar, &["خفيف", "حلوي"]) || contains_any(name, &["snack", "confect"]) => "🍫",
-        _ if contains_any(name_ar, &["بحري", "سمك"]) || contains_any(name, &["seafood", "fish"]) => "🐟",
+        _ if contains_any(name_ar, &["خفيف", "حلوي"])
+            || contains_any(name, &["snack", "confect"]) =>
+        {
+            "🍫"
+        }
+        _ if contains_any(name_ar, &["بحري", "سمك"])
+            || contains_any(name, &["seafood", "fish"]) =>
+        {
+            "🐟"
+        }
         _ => "📦",
     }
 }
 
 /// Populates the UI with operators from the database
-fn populate_operators_data(
-    window_weak: slint::Weak<MainWindow>,
-    db: Arc<Database>,
-) {
+fn populate_operators_data(window_weak: slint::Weak<MainWindow>, db: Arc<Database>) {
     info!("Loading operators from database...");
 
     // Load operators from database
@@ -2552,14 +2829,14 @@ fn populate_operators_data(
 
             // Avatar colors for operators (cycle through these)
             let avatar_colors: [(u8, u8, u8); 8] = [
-                (37, 99, 235),   // #2563EB - Blue
-                (139, 92, 246),  // #8B5CF6 - Purple
-                (34, 197, 94),   // #22C55E - Green
-                (245, 158, 11),  // #F59E0B - Amber
-                (239, 68, 68),   // #EF4444 - Red
-                (6, 182, 212),   // #06B6D4 - Cyan
-                (236, 72, 153),  // #EC4899 - Pink
-                (249, 115, 22),  // #F97316 - Orange
+                (37, 99, 235),  // #2563EB - Blue
+                (139, 92, 246), // #8B5CF6 - Purple
+                (34, 197, 94),  // #22C55E - Green
+                (245, 158, 11), // #F59E0B - Amber
+                (239, 68, 68),  // #EF4444 - Red
+                (6, 182, 212),  // #06B6D4 - Cyan
+                (236, 72, 153), // #EC4899 - Pink
+                (249, 115, 22), // #F97316 - Orange
             ];
 
             // Convert to Slint Operator struct
@@ -2581,7 +2858,11 @@ fn populate_operators_data(
                     };
 
                     // Pick color based on ID hash (consistent with on_operator_selected)
-                    let color_idx = op.id.bytes().fold(0usize, |acc, b| acc.wrapping_add(b as usize)) % avatar_colors.len();
+                    let color_idx = op
+                        .id
+                        .bytes()
+                        .fold(0usize, |acc, b| acc.wrapping_add(b as usize))
+                        % avatar_colors.len();
                     let color = avatar_colors[color_idx];
 
                     Operator {
@@ -2602,7 +2883,8 @@ fn populate_operators_data(
                     window.set_operators(model);
                     info!("Operators UI updated");
                 }
-            }).ok();
+            })
+            .ok();
         }
         Err(e) => {
             warn!("Failed to load operators: {}", e);
@@ -2659,7 +2941,10 @@ fn start_background_sync(
             match rx.blocking_recv() {
                 Ok(event) => {
                     match event {
-                        SyncEvent::CatalogUpdated { products_count, categories_count } => {
+                        SyncEvent::CatalogUpdated {
+                            products_count,
+                            categories_count,
+                        } => {
                             info!(
                                 "Catalog updated: {} products, {} categories - refreshing UI",
                                 products_count, categories_count
@@ -2685,7 +2970,10 @@ fn start_background_sync(
                         }
                         SyncEvent::DraftsSynced { synced, failed } => {
                             if synced > 0 || failed > 0 {
-                                info!("Background drafts synced: {} synced, {} failed", synced, failed);
+                                info!(
+                                    "Background drafts synced: {} synced, {} failed",
+                                    synced, failed
+                                );
                             }
                         }
                         SyncEvent::OperatorsUpdated { count } => {
@@ -2733,9 +3021,12 @@ fn start_background_sync(
                                     if let Some(w) = window_weak_clone2.upgrade() {
                                         w.set_current_screen("setup".into());
                                         w.set_setup_status("error".into());
-                                        w.set_setup_error_message("الجهاز غير مسجل - يرجى إعادة الربط".into());
+                                        w.set_setup_error_message(
+                                            "الجهاز غير مسجل - يرجى إعادة الربط".into(),
+                                        );
                                     }
-                                }).ok();
+                                })
+                                .ok();
 
                                 // Brief pause for the user to see the error
                                 std::thread::sleep(Duration::from_millis(1500));
@@ -2751,8 +3042,15 @@ fn start_background_sync(
                                     info!("Registration recovered during re-pairing, reloading data and navigating to login");
 
                                     // Reload operators and catalog with fresh data
-                                    populate_catalog_data(window_weak_clone.clone(), Arc::clone(&db_clone), currency_clone.clone());
-                                    populate_operators_data(window_weak_clone.clone(), Arc::clone(&db_clone));
+                                    populate_catalog_data(
+                                        window_weak_clone.clone(),
+                                        Arc::clone(&db_clone),
+                                        currency_clone.clone(),
+                                    );
+                                    populate_operators_data(
+                                        window_weak_clone.clone(),
+                                        Arc::clone(&db_clone),
+                                    );
 
                                     // Update terminal code and company from recovered registration
                                     slint::invoke_from_event_loop(move || {
@@ -2767,7 +3065,8 @@ fn start_background_sync(
                                             }
                                             w.set_current_screen("login".into());
                                         }
-                                    }).ok();
+                                    })
+                                    .ok();
                                 }
                             });
                         }

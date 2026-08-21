@@ -121,7 +121,11 @@ impl LogService {
     }
 
     /// Read logs filtered by level
-    pub fn read_logs_by_level(&self, level: LogLevel, max_lines: usize) -> LogResult<Vec<LogEntry>> {
+    pub fn read_logs_by_level(
+        &self,
+        level: LogLevel,
+        max_lines: usize,
+    ) -> LogResult<Vec<LogEntry>> {
         let all_logs = self.read_recent_logs(max_lines * 10)?;
         Ok(all_logs
             .into_iter()
@@ -151,7 +155,11 @@ impl LogService {
         Some(LogEntry {
             timestamp: parts[0].to_string(),
             level: LogLevel::from_str(parts[1]),
-            target: parts.get(2).map(|s| s.trim_end_matches(':')).unwrap_or("").to_string(),
+            target: parts
+                .get(2)
+                .map(|s| s.trim_end_matches(':'))
+                .unwrap_or("")
+                .to_string(),
             message: parts.get(3).unwrap_or(&"").to_string(),
         })
     }
@@ -205,8 +213,9 @@ impl LogService {
 
                     let content = fs::read_to_string(&path).map_err(LogError::IoError)?;
 
-                    zip.start_file(file_name, options)
-                        .map_err(|e| LogError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+                    zip.start_file(file_name, options).map_err(|e| {
+                        LogError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e))
+                    })?;
                     zip.write_all(content.as_bytes())
                         .map_err(LogError::IoError)?;
                 }
@@ -226,8 +235,9 @@ impl LogService {
             .unwrap_or_else(|| PathBuf::from("./data/pos_terminal.db"));
 
         if db_path.exists() {
-            zip.start_file("database-info.txt", options)
-                .map_err(|e| LogError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+            zip.start_file("database-info.txt", options).map_err(|e| {
+                LogError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e))
+            })?;
             let db_info = format!(
                 "Database path: {:?}\nDatabase size: {} bytes\n",
                 db_path,

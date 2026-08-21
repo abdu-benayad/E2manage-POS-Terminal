@@ -151,7 +151,7 @@ fn test_get_enabled_screen_ids_excludes_disabled() {
 }
 
 // Navigator-specific tests
-use e2manage_pos_terminal::ui::navigation::{Navigator, NavigationResult};
+use e2manage_pos_terminal::ui::navigation::{NavigationResult, Navigator};
 
 #[test]
 fn test_navigator_navigate_to_success() {

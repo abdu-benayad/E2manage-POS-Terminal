@@ -3,11 +3,11 @@
 //! Handles offline transactions storage and management.
 
 use chrono::Utc;
-use rust_decimal::Decimal;
 use rusqlite::{OptionalExtension, Result as SqliteResult};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
-use super::{Database, decimal_from_sqlite, decimal_to_sqlite};
+use super::{decimal_from_sqlite, decimal_to_sqlite, Database};
 
 /// Transaction type
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -150,7 +150,10 @@ impl Database {
     }
 
     /// Gets an offline transaction by ID
-    pub fn get_offline_transaction(&self, offline_id: &str) -> SqliteResult<Option<OfflineTransactionRow>> {
+    pub fn get_offline_transaction(
+        &self,
+        offline_id: &str,
+    ) -> SqliteResult<Option<OfflineTransactionRow>> {
         let conn = self.connection();
         let conn = conn.lock();
 
@@ -309,7 +312,10 @@ impl Database {
     }
 
     /// Gets transactions by sync status
-    pub fn get_transactions_by_status(&self, status: &str) -> SqliteResult<Vec<OfflineTransactionRow>> {
+    pub fn get_transactions_by_status(
+        &self,
+        status: &str,
+    ) -> SqliteResult<Vec<OfflineTransactionRow>> {
         let conn = self.connection();
         let conn = conn.lock();
 
@@ -389,7 +395,10 @@ impl Database {
     }
 
     /// Gets transactions by shift
-    pub fn get_transactions_by_shift(&self, shift_id: &str) -> SqliteResult<Vec<OfflineTransactionRow>> {
+    pub fn get_transactions_by_shift(
+        &self,
+        shift_id: &str,
+    ) -> SqliteResult<Vec<OfflineTransactionRow>> {
         let conn = self.connection();
         let conn = conn.lock();
 
@@ -490,7 +499,7 @@ mod tests {
             grand_total: Decimal::from(100),
             customer_id: None,
             customer_name: None,
-            shift_id: None,  // Don't use shift FK in tests
+            shift_id: None, // Don't use shift FK in tests
             operator_id: Some("op-1".to_string()),
             terminal_id: Some("term-1".to_string()),
             receipt_number: Some("R001".to_string()),
@@ -532,7 +541,7 @@ mod tests {
                 grand_total: Decimal::from(i) * Decimal::from(11),
                 customer_id: None,
                 customer_name: None,
-                shift_id: None,  // Don't use shift FK in tests
+                shift_id: None, // Don't use shift FK in tests
                 operator_id: Some("op-1".to_string()),
                 terminal_id: None,
                 receipt_number: None,
@@ -576,7 +585,8 @@ mod tests {
         db.save_offline_transaction(&txn).unwrap();
 
         // Mark as synced
-        db.mark_transaction_synced("txn-1", "server-id-123").unwrap();
+        db.mark_transaction_synced("txn-1", "server-id-123")
+            .unwrap();
 
         let found = db.get_offline_transaction("txn-1").unwrap().unwrap();
         assert_eq!(found.sync_status, "SYNCED");

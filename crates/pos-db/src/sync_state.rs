@@ -162,8 +162,8 @@ impl Database {
         let conn = self.connection();
         let conn = conn.lock();
 
-        let mut stmt =
-            conn.prepare("SELECT resource, etag, version, last_sync, record_count FROM sync_state")?;
+        let mut stmt = conn
+            .prepare("SELECT resource, etag, version, last_sync, record_count FROM sync_state")?;
 
         let rows = stmt.query_map([], |row| {
             Ok(SyncState {
