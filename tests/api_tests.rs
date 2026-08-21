@@ -33,7 +33,7 @@
 )]
 
 use chrono::{DateTime, Utc};
-use e2manage_pos_terminal::models::OperatorRole;
+use e2manage_pos_terminal::models::{OperatorId, OperatorRole};
 use reqwest::{Client, StatusCode};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::env;
@@ -85,7 +85,7 @@ struct TestState {
     transaction_id: Option<String>,
     receipt_number: Option<String>,
     queue_id: Option<String>,
-    operator_id: Option<String>,
+    operator_id: Option<OperatorId>,
     product_ids: Vec<String>,
 }
 
@@ -1332,7 +1332,10 @@ mod p2_sync_apis {
                 // Store first operator ID
                 if !data.operators.is_empty() {
                     let mut state = get_test_state().lock().await;
-                    state.operator_id = Some(data.operators[0].id.clone());
+                    state.operator_id = Some(
+                        OperatorId::new(data.operators[0].id.clone())
+                            .expect("the server does not send a blank operator id"),
+                    );
                     println!(
                         "  - Using operator: {} ({})",
                         data.operators[0].name, data.operators[0].code
@@ -1419,7 +1422,7 @@ mod p3_shift_management {
     #[serde(rename_all = "camelCase")]
     pub struct StartShiftRequest {
         pub terminal_id: String,
-        pub operator_id: String,
+        pub operator_id: OperatorId,
         pub opening_cash: f64,
     }
 
@@ -1495,7 +1498,7 @@ mod p3_shift_management {
         let operator_id = state
             .operator_id
             .clone()
-            .unwrap_or_else(|| "default-op".to_string());
+            .unwrap_or_else(|| OperatorId::new("default-op").expect("the literal is not blank"));
         let csrf = state.csrf_token.clone();
         drop(state);
 
@@ -1587,7 +1590,7 @@ mod p3_shift_management {
         let operator_id = state
             .operator_id
             .clone()
-            .unwrap_or_else(|| "default-op".to_string());
+            .unwrap_or_else(|| OperatorId::new("default-op").expect("the literal is not blank"));
         let csrf = state.csrf_token.clone();
         drop(state);
 
@@ -1712,7 +1715,7 @@ mod p4_transaction_management {
     #[serde(rename_all = "camelCase")]
     pub struct VoidTransactionRequest {
         pub reason: String,
-        pub operator_id: String,
+        pub operator_id: OperatorId,
     }
 
     // --- Tests ---
@@ -2176,7 +2179,7 @@ mod p5_return_management {
         pub original_transaction_id: String,
         pub terminal_id: String,
         pub shift_id: String,
-        pub operator_id: String,
+        pub operator_id: OperatorId,
         pub items: Vec<ReturnItem>,
         pub refund_method: String,
         pub refund_amount: f64,
