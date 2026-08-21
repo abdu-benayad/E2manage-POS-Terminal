@@ -10,6 +10,7 @@
 //! - `OperatorId`, `OperatorName`, `OperatorRole`, `OperatorPermissions`, `VerifiedOperator` -
 //!   operator identity models
 //! - `Pin`, `PinPolicy`, `PinLength` - PIN entry and the policy that governs it
+//! - `PinVerification` and its payloads - the outcome of an operator entering a PIN
 
 pub mod cart;
 pub mod feature;
@@ -19,6 +20,7 @@ pub mod pin;
 pub mod product;
 pub mod shift;
 pub mod transaction;
+pub mod verification;
 pub mod z_report;
 
 // Re-export main types for convenience
@@ -39,5 +41,9 @@ pub use shift::{ShiftStatus, ShiftSummary, VarianceStatus};
 pub use transaction::{
     generate_receipt_number, Payment, PaymentMethod, Transaction, TransactionItem,
     TransactionStatus,
+};
+pub use verification::{
+    AttemptsRemaining, Authority, CredentialExpiry, EnrolmentState, FailedAttempts, LockState,
+    PinRefusal, PinVerification, StoreFailure, StoreFailureKind, UndeterminedCause,
 };
 pub use z_report::ZReport;
