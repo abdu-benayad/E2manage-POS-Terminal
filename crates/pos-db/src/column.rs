@@ -12,7 +12,7 @@
 //!
 //! The public ones are used by `pos-services`, which reads a few rows directly.
 
-use pos_models::{OperatorId, OperatorRole, RecordedOperatorName};
+use pos_models::{OperatorId, OperatorName, OperatorRole, RecordedOperatorName};
 use rusqlite::types::Type;
 use rusqlite::{Error, Result as SqliteResult, Row};
 
@@ -52,6 +52,21 @@ pub fn optional_recorded_operator_name(
             .map(Some)
             .map_err(|error| conversion_failed(index, error)),
     }
+}
+
+/// Reads an operator's name from the two columns the store keeps it in.
+///
+/// Takes both indices because the two columns are **one** value. Read separately they can drift:
+/// a row with a blank Latin name and a present Arabic one is an operator the domain says cannot
+/// exist, and only a reader holding both at once can say so.
+pub fn operator_name(
+    row: &Row<'_>,
+    latin_index: usize,
+    arabic_index: usize,
+) -> SqliteResult<OperatorName> {
+    let latin: String = row.get(latin_index)?;
+    let arabic: Option<String> = row.get(arabic_index)?;
+    OperatorName::new(latin, arabic).map_err(|error| conversion_failed(latin_index, error))
 }
 
 /// Reads an operator's role, refusing a value the server's enum does not admit.

@@ -13,7 +13,7 @@ use e2manage_pos_terminal::db::migrations::run_migrations;
 use e2manage_pos_terminal::db::{Database, OperatorRow, ProductRow, ShiftRow};
 use e2manage_pos_terminal::models::cart::{Cart, CartItem};
 use e2manage_pos_terminal::models::product::{Product, ProductUnit};
-use e2manage_pos_terminal::models::{OperatorId, OperatorRole, RecordedOperatorName};
+use e2manage_pos_terminal::models::{OperatorId, OperatorName, OperatorRole, RecordedOperatorName};
 
 /// Builds an operator id for a fixture. The domain type is fallible; a test literal is not,
 /// so this keeps the call sites readable without letting a blank id back in.
@@ -24,6 +24,16 @@ pub fn op_id(id: &str) -> OperatorId {
 /// Builds a recorded operator name for a fixture.
 pub fn op_name(name: &str) -> RecordedOperatorName {
     RecordedOperatorName::new(name).expect("a fixture name is never blank")
+}
+
+/// Builds an operator's two-script name for a fixture.
+pub fn op_full_name(latin: &str, arabic: &str) -> OperatorName {
+    OperatorName::new(latin, Some(arabic)).expect("a fixture name is never blank")
+}
+
+/// Builds an operator name for a fixture whose HR record carries no Arabic spelling.
+pub fn op_latin_name(latin: &str) -> OperatorName {
+    OperatorName::new(latin, None::<&str>).expect("a fixture name is never blank")
 }
 use e2manage_pos_terminal::services::auth_service::AuthService;
 use e2manage_pos_terminal::services::cart_service::CartService;
@@ -101,32 +111,35 @@ pub fn create_product(id: &str, name: &str, price: Decimal, tax_rate: Decimal) -
 }
 
 /// Creates a sample operator data structure for database.
+///
+/// The one place a fixture operator is written out in full. `OperatorRow` has no `Default` —
+/// deliberately, because the one it used to have produced a record belonging to nobody — so every
+/// other fixture below updates from *this* value with `..sample_operator_row()`. The base is a
+/// real operator, which is the whole difference.
 pub fn sample_operator_row() -> OperatorRow {
     OperatorRow {
-        id: "op-001".to_string(),
+        id: op_id("op-001"),
         code: "OP001".to_string(),
-        name: "Test Operator".to_string(),
-        name_ar: Some("مشغل تجريبي".to_string()),
+        employee_id: None,
+        employee_number: None,
+        name: op_full_name("Test Operator", "مشغل تجريبي"),
         pin_hash: "$2b$10$testhashedpin".to_string(),
         role: OperatorRole::Cashier,
+        department: None,
+        position: None,
         permissions: None,
         is_active: true,
-        ..Default::default()
     }
 }
 
 /// Creates an operator with custom ID and saves to database.
 pub fn create_test_operator(db: &Database, id: &str, name: &str) {
     let op = OperatorRow {
-        id: id.to_string(),
-        code: format!("C{}", id),
-        name: name.to_string(),
-        name_ar: Some(format!("مشغل {}", id)),
+        id: op_id(id),
+        code: format!("C{id}"),
+        name: op_full_name(name, &format!("مشغل {id}")),
         pin_hash: "testhash".to_string(),
-        role: OperatorRole::Cashier,
-        permissions: None,
-        is_active: true,
-        ..Default::default()
+        ..sample_operator_row()
     };
     db.save_operator(&op).expect("Failed to save operator");
 }
@@ -275,15 +288,9 @@ impl TestApp {
         // 1. Create operator FIRST (required for foreign keys)
         let pin_hash = AuthService::hash_pin("1234").expect("Failed to hash PIN");
         let operator = OperatorRow {
-            id: "op-001".to_string(),
-            code: "OP001".to_string(),
-            name: "أحمد محمد".to_string(),
-            name_ar: Some("أحمد محمد".to_string()),
+            name: op_full_name("أحمد محمد", "أحمد محمد"),
             pin_hash,
-            role: OperatorRole::Cashier,
-            permissions: None,
-            is_active: true,
-            ..Default::default()
+            ..sample_operator_row()
         };
         self.db
             .save_operator(&operator)
@@ -317,15 +324,8 @@ impl TestApp {
         // Create operator
         let pin_hash = AuthService::hash_pin("1234").expect("Failed to hash PIN");
         let operator = OperatorRow {
-            id: "op-001".to_string(),
-            code: "OP001".to_string(),
-            name: "Test Operator".to_string(),
-            name_ar: Some("مشغل تجريبي".to_string()),
             pin_hash,
-            role: OperatorRole::Cashier,
-            permissions: None,
-            is_active: true,
-            ..Default::default()
+            ..sample_operator_row()
         };
         self.db
             .save_operator(&operator)

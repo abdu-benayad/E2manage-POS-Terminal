@@ -4,7 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use pos_models::{OperatorPermissions, OperatorRole};
+use pos_models::{OperatorError, OperatorId, OperatorName, OperatorPermissions, OperatorRole};
 
 /// Response from /api/pos/sync/catalog endpoint
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -223,7 +223,7 @@ pub struct OperatorsResponse {
 #[serde(rename_all = "camelCase")]
 pub struct OperatorDto {
     /// POS Operator Profile ID
-    pub id: String,
+    pub id: OperatorId,
     /// HR Employee ID
     #[serde(default)]
     pub employee_id: Option<String>,
@@ -231,6 +231,12 @@ pub struct OperatorDto {
     #[serde(default)]
     pub employee_number: Option<String>,
     /// Full name (English)
+    ///
+    /// Two fields rather than one `OperatorName`, and that is this layer's job. The server sends
+    /// `name` and `nameAr` side by side; a DTO is the shape of the wire, and `OperatorName` has
+    /// no serde precisely so that nothing gives the wire a nested shape it does not have. The
+    /// pair becomes one value in [`Self::to_operator_row`], which is the anti-corruption boundary
+    /// this crate exists to be.
     pub name: String,
     /// Full name (Arabic)
     #[serde(default)]
@@ -399,27 +405,31 @@ impl CategoryDto {
 
 impl OperatorDto {
     /// Converts to OperatorRow for database storage
-    pub fn to_operator_row(&self) -> pos_db::OperatorRow {
-        // Use employee_number as code, or generate from ID if not available
-        let code = self
-            .employee_number
-            .clone()
-            .unwrap_or_else(|| format!("OP-{}", &self.id[..8.min(self.id.len())]));
+    ///
+    /// Fallible, because the wire's two name fields become one domain value and the domain
+    /// rejects a blank one. Previously a server that sent `""` produced a stored operator with no
+    /// name, indistinguishable from one whose name simply had not synced yet.
+    pub fn to_operator_row(&self) -> Result<pos_db::OperatorRow, OperatorError> {
+        // Use employee_number as code, or generate from ID if not available.
+        // Taken in characters, not bytes: `&id[..8]` panics when byte 8 lands mid-codepoint.
+        let code = self.employee_number.clone().unwrap_or_else(|| {
+            let short: String = self.id.as_str().chars().take(8).collect();
+            format!("OP-{short}")
+        });
 
-        pos_db::OperatorRow {
+        Ok(pos_db::OperatorRow {
             id: self.id.clone(),
             code,
             employee_id: self.employee_id.clone(),
             employee_number: self.employee_number.clone(),
-            name: self.name.clone(),
-            name_ar: self.name_ar.clone(),
+            name: OperatorName::new(self.name.clone(), self.name_ar.clone())?,
             pin_hash: self.pin_hash.clone().unwrap_or_default(),
             role: self.role,
             department: self.department.clone(),
             position: self.position.clone(),
             permissions: self.permissions.clone(),
             is_active: self.is_active,
-        }
+        })
     }
 }
 
@@ -582,7 +592,7 @@ mod tests {
     #[test]
     fn test_operator_to_row_conversion() {
         let dto = OperatorDto {
-            id: "op1".to_string(),
+            id: OperatorId::new("op1").unwrap(),
             employee_id: Some("emp-1".to_string()),
             employee_number: Some("EMP001".to_string()),
             name: "Ahmed".to_string(),
@@ -600,14 +610,45 @@ mod tests {
             updated_at: None,
         };
 
-        let row = dto.to_operator_row();
-        assert_eq!(row.id, "op1");
+        let row = dto.to_operator_row().expect("the DTO carries a name");
+        assert_eq!(row.id.as_str(), "op1");
         assert_eq!(row.code, "EMP001");
         assert_eq!(row.employee_id, Some("emp-1".to_string()));
         assert_eq!(row.department, Some("Sales".to_string()));
+        // The wire's two name fields become one domain value at this boundary.
+        assert_eq!(row.name.latin(), "Ahmed");
+        assert_eq!(row.name.arabic(), Some("أحمد"));
         // The row now carries the domain type, not a JSON string mapped a second way.
         let permissions = row.permissions.expect("the DTO carried permissions");
         assert!(permissions.allows(pos_models::Permission::VoidTransaction));
+    }
+
+    #[test]
+    fn a_blank_name_on_the_wire_is_a_conversion_failure() {
+        // Not an operator called "". The conversion is where the wire's untidiness stops, and a
+        // server that sends a blank name has moved off the contract rather than described an
+        // operator. `sync_operators` converts the whole batch before deactivating anything, so
+        // this refusal leaves the till's existing operators in place.
+        let dto = OperatorDto {
+            id: OperatorId::new("op1").unwrap(),
+            employee_id: None,
+            employee_number: None,
+            name: String::new(),
+            name_ar: None,
+            email: None,
+            pin_hash: None,
+            role: OperatorRole::Cashier,
+            department: None,
+            position: None,
+            permissions: None,
+            is_active: true,
+            updated_at: None,
+        };
+
+        assert!(matches!(
+            dto.to_operator_row(),
+            Err(OperatorError::BlankName)
+        ));
     }
 
     #[test]

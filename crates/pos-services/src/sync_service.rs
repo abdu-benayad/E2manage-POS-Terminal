@@ -699,13 +699,21 @@ impl SyncService {
                 let _ = tx.send(SyncEvent::OperatorsNotModified);
             }
             GetResult::Data { data, etag } => {
+                // Convert before touching the store. `to_operator_row` is fallible now — the
+                // wire's name pair becomes one domain value that refuses to be blank — and
+                // deactivating first would mean one malformed operator in the batch leaves the
+                // till with every operator switched off and none saved back. Nobody could log in.
+                let operators: Vec<_> = data
+                    .operators
+                    .iter()
+                    .map(pos_api::OperatorDto::to_operator_row)
+                    .collect::<Result<_, _>>()?;
+
                 // Full replace: deactivate all existing operators, then save fresh list.
                 // This ensures operators removed on the server don't linger locally.
                 self.db.deactivate_all_operators()?;
 
                 // Save operators (INSERT OR REPLACE re-activates them)
-                let operators: Vec<_> =
-                    data.operators.iter().map(|o| o.to_operator_row()).collect();
                 self.db.save_operators(&operators)?;
 
                 // Update sync state

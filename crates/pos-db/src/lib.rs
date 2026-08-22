@@ -159,6 +159,7 @@ pub fn init_memory_database() -> SqliteResult<Database> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pos_models::{OperatorId, OperatorName, OperatorRole};
     use std::str::FromStr;
     use tempfile::TempDir;
 
@@ -203,12 +204,17 @@ mod tests {
 
         // 2. Save an operator
         let operator = OperatorRow {
-            id: "op1".to_string(),
+            id: OperatorId::new("op1").unwrap(),
             code: "C001".to_string(),
-            name: "Ahmed".to_string(),
-            name_ar: Some("أحمد".to_string()),
+            employee_id: None,
+            employee_number: None,
+            name: OperatorName::new("Ahmed", Some("أحمد")).unwrap(),
             pin_hash: "hashed".to_string(),
-            ..Default::default()
+            role: OperatorRole::Cashier,
+            department: None,
+            position: None,
+            permissions: None,
+            is_active: true,
         };
         db.save_operator(&operator).unwrap();
 

@@ -182,6 +182,20 @@ impl OperatorName {
     pub fn arabic(&self) -> Option<&str> {
         self.arabic.as_deref()
     }
+
+    /// The first letters of the first two words, for an avatar.
+    ///
+    /// Takes a script rather than assuming Latin: an Arabic-locale till showing Latin initials
+    /// beside an Arabic name is the same mismatch [`Self::in_script`] exists to prevent. Casing is
+    /// applied unconditionally because it is a no-op in scripts that have no case.
+    pub fn initials(&self, script: NameScript) -> String {
+        self.in_script(script)
+            .split_whitespace()
+            .filter_map(|word| word.chars().next())
+            .take(2)
+            .collect::<String>()
+            .to_uppercase()
+    }
 }
 
 impl fmt::Display for OperatorName {
@@ -633,9 +647,11 @@ mod tests {
         "updatedAt": "2026-08-21T10:00:00.000Z"
     }"#;
 
-    /// Mirrors the server's operator projection field for field. `pos-api`'s real DTO adopts the
-    /// domain types in `09-adopt-operator-id-and-name`; until then this proves the types accept
-    /// the shape that actually arrives.
+    /// Mirrors the server's operator projection field for field, including the two separate name
+    /// fields — which is why `name` and `name_ar` are still strings here. That pair is the wire's
+    /// shape, and [`OperatorName`] has no serde precisely so nothing gives the wire a nested shape
+    /// it does not have; the conversion happens on the way in, and the test below is where this
+    /// fixture proves it.
     #[derive(Debug, Deserialize)]
     #[serde(rename_all = "camelCase")]
     struct SyncedOperator {
@@ -656,6 +672,15 @@ mod tests {
 
         assert_eq!(synced.id.as_str(), "9f1c7a3e-2b4d-4f8a-9c6e-1d2f3a4b5c6d");
         assert_eq!(synced.role, OperatorRole::Supervisor);
+
+        // The wire's two name fields are one domain value, and this is the conversion `pos-api`
+        // performs in `OperatorDto::to_operator_row`. Asserting it here keeps the captured
+        // payload honest about the boundary rather than only about the field names.
+        let name = OperatorName::new(synced.name, synced.name_ar)
+            .expect("the captured payload carries a name");
+        assert_eq!(name.latin(), "Ahmed Hassan");
+        assert_eq!(name.arabic(), Some("أحمد حسن"));
+        assert_eq!(name.in_script(NameScript::Arabic), "أحمد حسن");
 
         let permissions = synced.permissions.expect("the payload carries permissions");
         assert!(permissions.allows(Permission::VoidTransaction));

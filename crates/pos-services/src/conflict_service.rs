@@ -424,6 +424,7 @@ mod tests {
     use pos_db::init_memory_database;
     use pos_db::operators::OperatorRow;
     use pos_db::transactions::OfflineTransactionRow;
+    use pos_models::{OperatorName, OperatorRole};
     use rust_decimal::Decimal;
 
     fn setup() -> (Arc<ApiClient>, Arc<Database>) {
@@ -432,11 +433,17 @@ mod tests {
 
         // Create test operator for foreign key reference
         let operator = OperatorRow {
-            id: "op-1".to_string(),
+            id: OperatorId::new("op-1").unwrap(),
             code: "C001".to_string(),
-            name: "Ahmed".to_string(),
+            employee_id: None,
+            employee_number: None,
+            name: OperatorName::new("Ahmed", None::<&str>).unwrap(),
             pin_hash: "hash".to_string(),
-            ..Default::default()
+            role: OperatorRole::Cashier,
+            department: None,
+            position: None,
+            permissions: None,
+            is_active: true,
         };
         db.save_operator(&operator).unwrap();
 

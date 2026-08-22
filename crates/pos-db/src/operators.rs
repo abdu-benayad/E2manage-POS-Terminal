@@ -2,11 +2,10 @@
 //!
 //! Handles operator (cashier) data storage and retrieval.
 
-use pos_models::{OperatorPermissions, OperatorRole};
+use pos_models::{OperatorId, OperatorName, OperatorPermissions, OperatorRole};
 
-use crate::column::operator_role;
+use crate::column::{operator_id, operator_name, operator_role};
 use rusqlite::{params, OptionalExtension, Result as SqliteResult};
-use serde::{Deserialize, Serialize};
 
 use super::Database;
 
@@ -48,20 +47,28 @@ fn read_permissions(
 }
 
 /// Operator row from database (HR Employee integrated)
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// **Deliberately not `Serialize`/`Deserialize`.** Nothing serialises this type — the store reads
+/// and writes it column by column — and `OperatorName` has no serde by design, because neither the
+/// wire nor the store nests the two scripts. Deriving here would have forced a nested shape on
+/// `OperatorName` to satisfy a trait no caller uses.
+#[derive(Debug, Clone)]
 pub struct OperatorRow {
     /// POS Operator Profile ID
-    pub id: String,
+    pub id: OperatorId,
     /// Operator code (for quick lookup)
     pub code: String,
     /// HR Employee ID
     pub employee_id: Option<String>,
     /// HR Employee Number (e.g., "EMP001")
     pub employee_number: Option<String>,
-    /// Full name (English)
-    pub name: String,
-    /// Full name (Arabic)
-    pub name_ar: Option<String>,
+    /// The operator's name, in both scripts the store keeps.
+    ///
+    /// One field, not two. The `name` and `name_ar` columns are one value — a row with a blank
+    /// English name and a present Arabic one is not an operator with half a name, it is a row
+    /// that should never have been written. This is the only place in the workspace holding both
+    /// scripts, so it is the only place that can answer an Arabic-locale screen.
+    pub name: OperatorName,
     /// BCrypt hashed PIN
     pub pin_hash: String,
     /// POS role, as the server's `POS_OperatorRole` enum defines it.
@@ -80,24 +87,13 @@ pub struct OperatorRow {
     pub is_active: bool,
 }
 
-impl Default for OperatorRow {
-    fn default() -> Self {
-        Self {
-            id: String::new(),
-            code: String::new(),
-            employee_id: None,
-            employee_number: None,
-            name: String::new(),
-            name_ar: None,
-            pin_hash: String::new(),
-            role: OperatorRole::Cashier,
-            department: None,
-            position: None,
-            permissions: None,
-            is_active: true,
-        }
-    }
-}
+// There is deliberately no `impl Default for OperatorRow`. It used to produce an operator whose
+// id and name were both `String::new()` — a record belonging to nobody, which every
+// `..Default::default()` then inherited and no reader could distinguish from a real one. Typing
+// the two fields made the impl unwritable without an explicit sentinel, which is the type model
+// stating the same objection. The three shift defaults task 09 met were deleted for this reason
+// and this is the fourth. Construct the row's fields; there are twelve and they all mean
+// something.
 
 impl Database {
     /// Saves or updates an operator
@@ -107,12 +103,12 @@ impl Database {
                (id, code, employee_id, employee_number, name, name_ar, pin_hash, role, department, position, permissions_json, is_active, updated_at)
                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, datetime('now'))"#,
             &[
-                &operator.id,
+                &operator.id.as_str(),
                 &operator.code,
                 &operator.employee_id,
                 &operator.employee_number,
-                &operator.name,
-                &operator.name_ar,
+                &operator.name.latin(),
+                &operator.name.arabic(),
                 &operator.pin_hash,
                 &operator.role.as_wire_str(),
                 &operator.department,
@@ -141,12 +137,12 @@ impl Database {
 
             for operator in operators {
                 stmt.execute(params![
-                    operator.id,
+                    operator.id.as_str(),
                     operator.code,
                     operator.employee_id,
                     operator.employee_number,
-                    operator.name,
-                    operator.name_ar,
+                    operator.name.latin(),
+                    operator.name.arabic(),
                     operator.pin_hash,
                     operator.role.as_wire_str(),
                     operator.department,
@@ -176,12 +172,11 @@ impl Database {
 
         let rows = stmt.query_map([], |row: &rusqlite::Row| {
             Ok(OperatorRow {
-                id: row.get(0)?,
+                id: operator_id(row, 0)?,
                 code: row.get(1)?,
                 employee_id: row.get(2)?,
                 employee_number: row.get(3)?,
-                name: row.get(4)?,
-                name_ar: row.get(5)?,
+                name: operator_name(row, 4, 5)?,
                 pin_hash: row.get(6)?,
                 role: operator_role(row, 7)?,
                 department: row.get(8)?,
@@ -195,22 +190,21 @@ impl Database {
     }
 
     /// Gets an operator by ID
-    pub fn get_operator_by_id(&self, id: &str) -> SqliteResult<Option<OperatorRow>> {
+    pub fn get_operator_by_id(&self, id: &OperatorId) -> SqliteResult<Option<OperatorRow>> {
         let conn = self.connection();
         let conn = conn.lock();
 
         conn.query_row(
             r#"SELECT id, code, employee_id, employee_number, name, name_ar, pin_hash, role, department, position, permissions_json, is_active
                FROM operators WHERE id = ?1"#,
-            [id],
+            [id.as_str()],
             |row| {
                 Ok(OperatorRow {
-                    id: row.get(0)?,
+                    id: operator_id(row, 0)?,
                     code: row.get(1)?,
                     employee_id: row.get(2)?,
                     employee_number: row.get(3)?,
-                    name: row.get(4)?,
-                    name_ar: row.get(5)?,
+                    name: operator_name(row, 4, 5)?,
                     pin_hash: row.get(6)?,
                     role: operator_role(row, 7)?,
                     department: row.get(8)?,
@@ -237,12 +231,11 @@ impl Database {
             [employee_number],
             |row| {
                 Ok(OperatorRow {
-                    id: row.get(0)?,
+                    id: operator_id(row, 0)?,
                     code: row.get(1)?,
                     employee_id: row.get(2)?,
                     employee_number: row.get(3)?,
-                    name: row.get(4)?,
-                    name_ar: row.get(5)?,
+                    name: operator_name(row, 4, 5)?,
                     pin_hash: row.get(6)?,
                     role: operator_role(row, 7)?,
                     department: row.get(8)?,
@@ -272,12 +265,11 @@ impl Database {
         let search = format!("%{}%", query);
         let rows = stmt.query_map(params![search, limit], |row: &rusqlite::Row| {
             Ok(OperatorRow {
-                id: row.get(0)?,
+                id: operator_id(row, 0)?,
                 code: row.get(1)?,
                 employee_id: row.get(2)?,
                 employee_number: row.get(3)?,
-                name: row.get(4)?,
-                name_ar: row.get(5)?,
+                name: operator_name(row, 4, 5)?,
                 pin_hash: row.get(6)?,
                 role: operator_role(row, 7)?,
                 department: row.get(8)?,
@@ -308,38 +300,22 @@ impl Database {
     }
 
     /// Deletes an operator by ID
-    pub fn delete_operator(&self, id: &str) -> SqliteResult<bool> {
-        let deleted = self.execute("DELETE FROM operators WHERE id = ?1", &[&id])?;
+    pub fn delete_operator(&self, id: &OperatorId) -> SqliteResult<bool> {
+        let deleted = self.execute("DELETE FROM operators WHERE id = ?1", &[&id.as_str()])?;
         Ok(deleted > 0)
     }
 }
 
-impl OperatorRow {
-    /// Gets the display name (Arabic if available, otherwise English)
-    pub fn display_name(&self, prefer_ar: bool) -> &str {
-        if prefer_ar {
-            self.name_ar.as_deref().unwrap_or(&self.name)
-        } else {
-            &self.name
-        }
-    }
-
-    /// Gets operator initials for avatar
-    pub fn initials(&self) -> String {
-        self.name
-            .split_whitespace()
-            .filter_map(|word| word.chars().next())
-            .take(2)
-            .collect::<String>()
-            .to_uppercase()
-    }
-}
+// `display_name(prefer_ar: bool)` and `initials()` are gone from this type; they are
+// `OperatorName::in_script(NameScript)` and `OperatorName::initials(NameScript)`. They were never
+// about the row — a name renders the same whether it came from the store or the wire — and the
+// boolean parameter was the unmarked socket `NameScript` replaced.
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::migrations::run_migrations;
-    use pos_models::{DiscountAuthority, DiscountPercent, Permission};
+    use pos_models::{DiscountAuthority, DiscountPercent, NameScript, Permission};
     use rust_decimal::Decimal;
 
     fn setup_db() -> Database {
@@ -352,25 +328,40 @@ mod tests {
         db
     }
 
+    /// A fixture operator, written out once.
+    ///
+    /// `OperatorRow` has no `Default` — the one it had produced a record belonging to nobody — so
+    /// the tests below update from a real operator with `..an_operator(…)` instead.
+    fn an_operator(id: &str, latin: &str, arabic: Option<&str>) -> OperatorRow {
+        OperatorRow {
+            id: OperatorId::new(id).unwrap(),
+            code: format!("C{id}"),
+            employee_id: None,
+            employee_number: None,
+            name: OperatorName::new(latin, arabic).unwrap(),
+            pin_hash: "$2b$12$hashedpin".to_string(),
+            role: OperatorRole::Cashier,
+            department: None,
+            position: None,
+            permissions: None,
+            is_active: true,
+        }
+    }
+
     #[test]
     fn test_save_and_get_operator() {
         let db = setup_db();
 
-        let operator = OperatorRow {
-            id: "op-1".to_string(),
-            code: "C001".to_string(),
-            name: "Ahmed Hassan".to_string(),
-            name_ar: Some("أحمد حسن".to_string()),
-            pin_hash: "$2b$12$hashedpin".to_string(),
-            role: OperatorRole::Cashier,
-            ..Default::default()
-        };
+        let operator = an_operator("op-1", "Ahmed Hassan", Some("أحمد حسن"));
 
         db.save_operator(&operator).unwrap();
 
-        let found = db.get_operator_by_id("op-1").unwrap();
-        assert!(found.is_some());
-        assert_eq!(found.unwrap().name, "Ahmed Hassan");
+        let found = db
+            .get_operator_by_id(&OperatorId::new("op-1").unwrap())
+            .unwrap()
+            .expect("the operator was saved");
+        assert_eq!(found.name.latin(), "Ahmed Hassan");
+        assert_eq!(found.name.arabic(), Some("أحمد حسن"));
     }
 
     #[test]
@@ -378,16 +369,15 @@ mod tests {
         let db = setup_db();
 
         let operator = OperatorRow {
-            id: "op-1".to_string(),
             code: "C001".to_string(),
-            name: "Ahmed Hassan".to_string(),
-            pin_hash: "$2b$12$hashedpin".to_string(),
-            ..Default::default()
+            ..an_operator("op-1", "Ahmed Hassan", None)
         };
 
         db.save_operator(&operator).unwrap();
 
-        let found = db.get_operator_by_id("op-1").unwrap();
+        let found = db
+            .get_operator_by_id(&OperatorId::new("op-1").unwrap())
+            .unwrap();
         assert!(found.is_some());
         assert_eq!(found.unwrap().code, "C001");
     }
@@ -397,20 +387,8 @@ mod tests {
         let db = setup_db();
 
         let operators = vec![
-            OperatorRow {
-                id: "op-1".to_string(),
-                code: "C001".to_string(),
-                name: "Ahmed Hassan".to_string(),
-                pin_hash: "hash1".to_string(),
-                ..Default::default()
-            },
-            OperatorRow {
-                id: "op-2".to_string(),
-                code: "C002".to_string(),
-                name: "Sara Ahmed".to_string(),
-                pin_hash: "hash2".to_string(),
-                ..Default::default()
-            },
+            an_operator("op-1", "Ahmed Hassan", None),
+            an_operator("op-2", "Sara Ahmed", None),
         ];
 
         for op in &operators {
@@ -426,17 +404,16 @@ mod tests {
 
     #[test]
     fn test_operator_initials() {
-        let operator = OperatorRow {
-            name: "Ahmed Hassan".to_string(),
-            ..Default::default()
-        };
-        assert_eq!(operator.initials(), "AH");
+        // Initials belong to the name, not to the row: `OperatorName::initials(NameScript)`.
+        let operator = an_operator("op-1", "Ahmed Hassan", Some("أحمد حسن"));
+        assert_eq!(operator.name.initials(NameScript::Latin), "AH");
+        assert_eq!(operator.name.initials(NameScript::Arabic), "أح");
 
-        let operator = OperatorRow {
-            name: "Sara".to_string(),
-            ..Default::default()
-        };
-        assert_eq!(operator.initials(), "S");
+        let operator = an_operator("op-2", "Sara", None);
+        assert_eq!(operator.name.initials(NameScript::Latin), "S");
+        // No Arabic name synced, so the Arabic script falls back to the Latin one, as
+        // `in_script` does. The absence is still reported by `arabic()`.
+        assert_eq!(operator.name.initials(NameScript::Arabic), "S");
     }
 
     #[test]
@@ -453,14 +430,13 @@ mod tests {
         );
 
         let operator = OperatorRow {
-            id: "op-1".to_string(),
             permissions: Some(permissions.clone()),
-            ..Default::default()
+            ..an_operator("op-1", "Ahmed Hassan", None)
         };
         db.save_operator(&operator).unwrap();
 
         let stored = db
-            .get_operator_by_id("op-1")
+            .get_operator_by_id(&OperatorId::new("op-1").unwrap())
             .unwrap()
             .expect("the operator was saved");
 
@@ -479,6 +455,26 @@ mod tests {
         )
         .unwrap();
 
-        assert!(db.get_operator_by_id("op-1").is_err());
+        assert!(db
+            .get_operator_by_id(&OperatorId::new("op-1").unwrap())
+            .is_err());
+    }
+
+    #[test]
+    fn an_operator_row_with_a_blank_name_is_a_read_failure() {
+        // The column pair is one value, and the domain refuses a blank one. Before `OperatorName`
+        // this row read back as an operator whose name was the empty string — which every screen
+        // would have rendered as a nameless cashier rather than as the corrupt row it is.
+        let db = setup_db();
+        db.execute(
+            "INSERT INTO operators (id, code, name, name_ar, pin_hash, role, is_active) \
+             VALUES ('op-1', 'C001', '', 'أحمد', 'hash', 'CASHIER', 1)",
+            &[],
+        )
+        .unwrap();
+
+        assert!(db
+            .get_operator_by_id(&OperatorId::new("op-1").unwrap())
+            .is_err());
     }
 }

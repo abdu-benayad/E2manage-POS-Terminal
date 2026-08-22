@@ -31,6 +31,14 @@
 //! `tests/` is out of scope. Its fixtures were migrated alongside the source, but a test may
 //! legitimately model a foreign shape — `tests/api_tests.rs` deserializes the ERP's `UserInfo`,
 //! whose `role` is a free-text string belonging to a different domain than the operator's.
+//!
+//! # Two scans, because a concept has two vocabularies
+//!
+//! A financial record names somebody else — `operator_id`, `operator_name` — and the operator's
+//! own record names itself: `id`, `name`. A scan keyed on the first spelling is blind to the
+//! second, which is exactly how `OperatorRow.id` and `OperatorDto.id` stayed `String` after the
+//! concept was declared finished. So identity is guarded twice: once by field name across the
+//! whole tree, and once across every type whose own name says it is about an operator.
 
 mod guards {
     use std::collections::BTreeSet;
@@ -432,6 +440,88 @@ mod guards {
             offences.len(),
             offences.join("\n  ")
         );
+    }
+
+    /// An operator's own record does not get to spell identity differently.
+    ///
+    /// The scan above keys on the field *names* `operator_id` and `operator_name`, which is how a
+    /// financial record refers to somebody else. The operator's own row and the wire's own DTO
+    /// call the same two concepts `id` and `name`, so neither that scan nor the grep that closed
+    /// task 09 could see them, and they stayed `String` after the concept was declared finished.
+    /// A boundary defined by a spelling is not a boundary.
+    ///
+    /// `code`, `pin_hash`, `employee_id`, `employee_number`, `department` and `position` are
+    /// deliberately not here. They are all bare strings and all mutually swappable, and they are
+    /// not identity — they belong to a later tier, and naming them as out of scope is the point.
+    #[test]
+    fn an_operator_type_never_spells_its_own_identity_as_a_string() {
+        const IDENTITY_FIELDS: [&str; 4] = ["id", "name", "name_ar", "role"];
+
+        // One allowance, two instances of it, load-bearing rather than historical: a type that
+        // *is* the wire's shape carries the wire's two name fields. The server sends `name` and
+        // `nameAr` side by side and `OperatorName` has no serde, precisely so nothing gives the
+        // wire a nested shape it does not have. Both types convert the pair into one
+        // `OperatorName` at their boundary, and the loop below retires either entry automatically
+        // if it stops needing the allowance.
+        const WIRE_SHAPED: [&str; 2] = [
+            // `pos-api`'s sync DTO; converts in `to_operator_row`.
+            "OperatorDto",
+            // `pos-models`' captured-payload fixture; converts in the test that reads it.
+            "SyncedOperator",
+        ];
+        const WIRE_SHAPED_FIELDS: [&str; 2] = ["name", "name_ar"];
+
+        let declarations = type_declarations();
+        let operator_types: Vec<&TypeDeclaration> = declarations
+            .iter()
+            .filter(|declaration| declaration.name.contains("Operator"))
+            .collect();
+
+        let offences: Vec<String> = operator_types
+            .iter()
+            .flat_map(|declaration| {
+                declaration.body.iter().flat_map(move |line| {
+                    IDENTITY_FIELDS.iter().filter_map(move |field| {
+                        let allowed = WIRE_SHAPED.contains(&declaration.name.as_str())
+                            && WIRE_SHAPED_FIELDS.contains(field);
+                        if allowed {
+                            return None;
+                        }
+                        let spelling =
+                            primitive_string_spelling(declared_type(&line.code, field)?)?;
+                        Some(format!(
+                            "{}:{} — `{}.{field}: {spelling}`",
+                            line.path, line.number, declaration.name
+                        ))
+                    })
+                })
+            })
+            .collect();
+
+        assert!(
+            offences.is_empty(),
+            "an operator type spells its own identity as a bare string in {} place(s):\n  {}",
+            offences.len(),
+            offences.join("\n  ")
+        );
+
+        // Each entry, checked on both halves, so no allowance outlives its reason. An exemption
+        // that keeps matching nothing is how a temporary one becomes permanent — the shape of
+        // every defect this issue unwound.
+        for allowed in WIRE_SHAPED {
+            let wire = operator_types
+                .iter()
+                .find(|declaration| declaration.name == allowed)
+                .unwrap_or_else(|| {
+                    panic!("`{allowed}` no longer exists; delete its allowance above")
+                });
+            assert!(
+                wire.body.iter().any(|line| declared_type(&line.code, "name")
+                    .and_then(primitive_string_spelling)
+                    .is_some()),
+                "`{allowed}` no longer carries the wire's `name` as a string; delete its allowance above"
+            );
+        }
     }
 
     /// One concept, one mapping.

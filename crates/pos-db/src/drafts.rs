@@ -285,6 +285,7 @@ mod tests {
     use super::*;
     use crate::migrations::run_migrations;
     use crate::operators::OperatorRow;
+    use pos_models::{OperatorName, OperatorRole};
 
     fn op_id(id: &str) -> OperatorId {
         OperatorId::new(id).expect("a non-blank id")
@@ -302,11 +303,17 @@ mod tests {
 
     fn create_test_operator(db: &Database, id: &str) {
         let operator = OperatorRow {
-            id: id.to_string(),
-            code: format!("C{}", id),
-            name: "Test Operator".to_string(),
+            id: OperatorId::new(id).unwrap(),
+            code: format!("C{id}"),
+            employee_id: None,
+            employee_number: None,
+            name: OperatorName::new("Test Operator", None::<&str>).unwrap(),
             pin_hash: "hash".to_string(),
-            ..Default::default()
+            role: OperatorRole::Cashier,
+            department: None,
+            position: None,
+            permissions: None,
+            is_active: true,
         };
         db.save_operator(&operator).unwrap();
     }

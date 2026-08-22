@@ -160,7 +160,10 @@ fn test_operator_create_and_read() {
     let found = db.get_operator_by_id(&operator.id).unwrap();
     assert!(found.is_some());
     let found = found.unwrap();
-    assert_eq!(found.name, "Test Operator");
+    assert_eq!(found.name.latin(), "Test Operator");
+    // The Arabic name round-trips too. `OperatorRow` is the only place in the workspace that
+    // holds it, and nothing asserted it survived the store until both columns became one value.
+    assert_eq!(found.name.arabic(), Some("مشغل تجريبي"));
     assert_eq!(found.code, "OP001");
 }
 
@@ -181,21 +184,20 @@ fn test_operator_by_code() {
     let db = setup_test_db();
 
     let operator = OperatorRow {
-        id: "op-test".to_string(),
+        id: op_id("op-test"),
         code: "CODE123".to_string(),
-        name: "Test Operator".to_string(),
-        name_ar: None,
+        name: op_latin_name("Test Operator"),
         pin_hash: "hash".to_string(),
-        role: OperatorRole::Cashier,
-        permissions: None,
-        is_active: true,
-        ..Default::default()
+        ..sample_operator_row()
     };
     db.save_operator(&operator).unwrap();
 
-    let found = db.get_operator_by_id("op-test").unwrap();
+    let found = db.get_operator_by_id(&op_id("op-test")).unwrap();
     assert!(found.is_some());
-    assert_eq!(found.unwrap().name, "Test Operator");
+    let found = found.unwrap();
+    assert_eq!(found.name.latin(), "Test Operator");
+    // An absent Arabic name comes back absent, rather than as the Latin one written twice.
+    assert_eq!(found.name.arabic(), None);
 }
 
 #[test]
@@ -205,12 +207,12 @@ fn test_operator_update() {
 
     db.save_operator(&operator).unwrap();
 
-    operator.name = "Updated Name".to_string();
+    operator.name = op_latin_name("Updated Name");
     operator.role = OperatorRole::Manager;
     db.save_operator(&operator).unwrap();
 
     let found = db.get_operator_by_id(&operator.id).unwrap().unwrap();
-    assert_eq!(found.name, "Updated Name");
+    assert_eq!(found.name.latin(), "Updated Name");
     assert_eq!(found.role, OperatorRole::Manager);
 }
 

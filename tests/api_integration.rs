@@ -921,7 +921,7 @@ mod contract_tests {
 
         let operator: OperatorDto = serde_json::from_str(backend_json).unwrap();
 
-        assert_eq!(operator.id, "op-001");
+        assert_eq!(operator.id.as_str(), "op-001");
         assert_eq!(operator.employee_number, Some("C001".to_string()));
         assert_eq!(operator.role, OperatorRole::Cashier);
         assert!(operator.is_active);

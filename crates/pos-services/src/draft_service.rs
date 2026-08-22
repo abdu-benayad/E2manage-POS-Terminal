@@ -462,6 +462,7 @@ mod tests {
     use super::*;
     use pos_db::migrations::run_migrations;
     use pos_models::product::{Product, ProductUnit};
+    use pos_models::{OperatorName, OperatorRole};
     use rust_decimal::Decimal;
 
     fn op_id(id: &str) -> OperatorId {
@@ -503,11 +504,17 @@ mod tests {
     fn create_operator(db: &Database, id: &str) {
         use pos_db::operators::OperatorRow;
         let op = OperatorRow {
-            id: id.to_string(),
-            code: format!("C{}", id),
-            name: "Test Operator".to_string(),
+            id: OperatorId::new(id).unwrap(),
+            code: format!("C{id}"),
+            employee_id: None,
+            employee_number: None,
+            name: OperatorName::new("Test Operator", None::<&str>).unwrap(),
             pin_hash: "hash".to_string(),
-            ..Default::default()
+            role: OperatorRole::Cashier,
+            department: None,
+            position: None,
+            permissions: None,
+            is_active: true,
         };
         db.save_operator(&op).unwrap();
     }
