@@ -85,6 +85,12 @@ The codebase uses a Cargo workspace with these crates in `crates/`:
 | `pos-printing` | Receipt and report printing logic |
 | `pos-services` | Business logic: auth, cart, sync, payments, shifts, returns |
 
+`crates/pos-updater` is a seventh directory that is **not** a workspace member —
+see `exclude` in the root `Cargo.toml`. It builds the `pos-launcher` executable,
+and it pulls reqwest 0.11 with default features, so it links native-tls and needs
+system OpenSSL headers nothing else here requires. `cargo check --workspace` does
+not cover it; build and check it with `cd crates/pos-updater && cargo check`.
+
 ### Root package (`src/`)
 
 - `lib.rs` - Re-exports from workspace crates for convenience

@@ -52,9 +52,17 @@ cargo build --release
 cargo test
 ```
 
-There is no POS binary yet — the terminal's entry point goes away with the view
-layer and returns with the egui rewrite. The one executable the workspace builds
-today is `pos-launcher`, the auto-updater in `crates/pos-updater`.
+There is no POS binary yet — the terminal's entry point went away with the view
+layer and returns with the egui rewrite, so the workspace builds libraries only.
+
+`crates/pos-updater` holds one executable, the `pos-launcher` auto-updater, but
+it is excluded from the workspace: it pulls reqwest 0.11 with default features,
+so it links native-tls and needs system OpenSSL headers that nothing else here
+requires. Build it on its own, with `openssl-devel` / `libssl-dev` installed:
+
+```bash
+cd crates/pos-updater && cargo build --release
+```
 
 ### Building offline
 

@@ -11,8 +11,17 @@ members = [
     "crates/pos-api",
     "crates/pos-printing",
     "crates/pos-services",
-    # "crates/pos-updater",  # Temporarily excluded - needs vendor deps
 ]
+
+# `pos-updater` sits in `crates/` but is deliberately not a member. It pulls
+# reqwest 0.11 with default features, so it links native-tls and needs system
+# OpenSSL headers, which the rest of the workspace does not. Making it a member
+# would put that requirement on every clone. Declared here rather than left as a
+# commented-out member: without an entry on either list, cargo refuses to build
+# it standalone too, so it could not be built by any command at all.
+#
+#     cd crates/pos-updater && cargo build     # builds `pos-launcher`
+exclude = ["crates/pos-updater"]
 
 # The main terminal binary
 default-members = ["."]

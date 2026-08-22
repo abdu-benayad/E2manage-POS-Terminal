@@ -12,8 +12,11 @@ pos-db.workspace = true
 pos-api.workspace = true
 pos-printing.workspace = true
 
-# Async Runtime
-tokio = { version = "1", features = ["sync", "time"] }
+# Async Runtime. `rt-multi-thread` is not optional: update_service reaches for
+# `tokio::task::block_in_place`, which only exists under it. Without it declared
+# here the crate compiles only when something else in the build turns the feature
+# on — `cargo check -p pos-services` on its own fails with E0425.
+tokio = { version = "1", features = ["sync", "time", "rt-multi-thread"] }
 
 # Serialization
 serde.workspace = true
