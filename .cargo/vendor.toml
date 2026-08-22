@@ -1,0 +1,29 @@
+# ============================================================================
+# Vendored Sources — the offline build, opted into per invocation
+# ============================================================================
+#
+# Cargo reads `.cargo/config.toml` automatically and nothing else in this
+# directory, so this file is inert until it is asked for:
+#
+#     cargo build --config .cargo/vendor.toml --offline
+#
+# It belongs here rather than in `config.toml` because `vendor/` is not in the
+# repository — it is 1.1 GB of crate sources, gitignored, and produced by
+# `cargo vendor`. While the replacement lived in the file cargo reads by
+# default, every clone inherited a build that resolved `crates-io` to a
+# directory the clone did not have, and failed before compiling one line.
+#
+# This file carries the replacement and nothing else. Its predecessor,
+# `.cargo/config.toml.vendor`, was a whole copy of the build config with the
+# replacement added, and it had drifted from the original in three places by
+# the time it was deleted — which is the argument for a delta rather than a
+# copy. Do not add build settings here; they belong in `config.toml`, where
+# both the online and the offline build pick them up.
+#
+# Relative paths resolve against the workspace root, not against `.cargo/`.
+
+[source.crates-io]
+replace-with = "vendored-sources"
+
+[source.vendored-sources]
+directory = "vendor"

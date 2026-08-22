@@ -21,6 +21,9 @@ cargo test test_add_item_to_cart         # Single test by name
 cargo test -- --nocapture                # Tests with stdout
 cargo fmt                                # Format
 cargo clippy                             # Lint
+
+# Offline build from the vendored tree (see Vendor Directory below)
+cargo build --config .cargo/vendor.toml --offline
 ```
 
 ## Build Profiles
@@ -175,4 +178,27 @@ RUST_BACKTRACE=full cargo test           # Even more detail
 
 ## Vendor Directory
 
-`vendor/` contains bundled dependencies for offline/reproducible builds. Do not modify directly.
+`vendor/` contains bundled crate sources for offline builds. It is 1.1 GB, produced by
+`cargo vendor`, gitignored, and carried by no ref — **a clone does not have it**. Do not
+modify it directly; `scripts/audit-vendor.py` verifies it against each crate's
+`.cargo-checksum.json`, which a warm `target/` otherwise hides until the next cold build.
+
+Because a clone does not have it, the registry replacement that points at it lives in
+`.cargo/vendor.toml`, which cargo reads **only when asked**:
+
+```bash
+cargo build --config .cargo/vendor.toml --offline
+```
+
+`.cargo/config.toml` — the file cargo reads on every invocation, including a fresh clone's —
+carries build settings only, and must never gain a `[source.*]` section. It did carry one, and
+every clone failed at dependency resolution before compiling a line.
+`tests/guards.rs::the_config_cargo_reads_by_default_needs_nothing_a_clone_lacks` fails the build
+if it comes back.
+
+Two consequences worth knowing:
+
+- The vendored tree is an older snapshot than crates.io, so the two modes resolve to different
+  dependency versions and switching between them re-resolves and rebuilds. `Cargo.lock` is
+  gitignored, so neither mode is pinned.
+- Adding a dependency requires re-running `cargo vendor` before the offline build sees it.

@@ -12,8 +12,9 @@ Cargo.lock
 .DS_Store
 Thumbs.db
 
-# Config (may contain secrets)
-config.toml
+# Config (may contain secrets). Anchored: unanchored, this also matched
+# `.cargo/config.toml`, which is tracked and must stay visible.
+/config.toml
 
 # Local database
 *.db

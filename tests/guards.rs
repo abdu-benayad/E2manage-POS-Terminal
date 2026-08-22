@@ -28,6 +28,11 @@
 //! nothing. An exemption with no expiry is how a temporary allowance becomes permanent, which is
 //! the shape of every defect this issue unwound.
 //!
+//! One guard does not scan Rust at all. `the_config_cargo_reads_by_default_needs_nothing_a_clone_lacks`
+//! reads `.cargo/` and `.gitignore`, because the defect it holds shut is not in the source: it is a
+//! build that cannot start. It lives here because it is the same kind of rule — one that used to be
+//! true only in somebody's head — and this is the file that runs those.
+//!
 //! `tests/` is out of scope. Its fixtures were migrated alongside the source, but a test may
 //! legitimately model a foreign shape — `tests/api_tests.rs` deserializes the ERP's `UserInfo`,
 //! whose `role` is a free-text string belonging to a different domain than the operator's.
@@ -699,6 +704,94 @@ mod guards {
                 key.split('.').next().unwrap_or(key).trim().to_string()
             })
             .filter(|key| !key.is_empty())
+            .collect()
+    }
+
+    // ========================================================================
+    // The build configuration
+    // ========================================================================
+
+    /// A clean clone can start building.
+    ///
+    /// `.cargo/config.toml` is the one file in the repository cargo reads before it does anything
+    /// else, and it replaced the `crates-io` registry with a directory source at `vendor/` — a
+    /// 1.1 GB tree that is gitignored and carried by no ref. Every clone therefore failed during
+    /// dependency resolution, before compiling a line, and failed naming a missing directory rather
+    /// than the config line that asked for it. It stayed invisible for as long as it did because
+    /// the machine that wrote the setting is the one machine that has `vendor/`.
+    ///
+    /// The offline build did not go away; it moved to `.cargo/vendor.toml`, which cargo reads only
+    /// when asked (`--config .cargo/vendor.toml`). So this guard holds both halves. Checking only
+    /// the first would let the offline path be deleted as dead weight, and checking only the second
+    /// is what the previous arrangement already did.
+    #[test]
+    fn the_config_cargo_reads_by_default_needs_nothing_a_clone_lacks() {
+        let read = |relative: &str| {
+            let path = repo_root().join(relative);
+            fs::read_to_string(&path).unwrap_or_else(|e| panic!("cannot read {relative}: {e}"))
+        };
+
+        // ---- the file cargo reads automatically ----------------------------
+        let config = read(".cargo/config.toml");
+        let sections = toml_section_headers(&config);
+
+        // A parser that returns nothing reports a clean file in the same words as a clean file.
+        for expected in ["build", "env"] {
+            assert!(
+                sections.iter().any(|s| s == expected),
+                "`.cargo/config.toml` has no [{expected}] section (parsed {sections:?}); either the build config moved or this guard's reader is broken and passing on nothing"
+            );
+        }
+
+        let replacements: Vec<&String> = sections
+            .iter()
+            .filter(|section| section.starts_with("source."))
+            .collect();
+        assert!(
+            replacements.is_empty(),
+            "`.cargo/config.toml` declares {replacements:?}. Cargo reads this file for every invocation including a fresh clone's, so a source replacement here makes the build depend on a directory the clone does not have, and it fails before compiling anything. Put the replacement in `.cargo/vendor.toml` and opt into it with `--config .cargo/vendor.toml`."
+        );
+
+        // ---- the file that carries the replacement -------------------------
+        let sidecar = read(".cargo/vendor.toml");
+        let sidecar_sections = toml_section_headers(&sidecar);
+        for expected in ["source.crates-io", "source.vendored-sources"] {
+            assert!(
+                sidecar_sections.iter().any(|s| s == expected),
+                "`.cargo/vendor.toml` no longer declares [{expected}] (parsed {sidecar_sections:?}) — the offline build is the reason the replacement was moved rather than deleted, so if it is genuinely gone, delete the file and this half of the guard together"
+            );
+        }
+        assert!(
+            sidecar.contains("directory = \"vendor\""),
+            "`.cargo/vendor.toml` no longer points at `vendor/`; the offline build and the `.gitignore` rule below disagree about where the vendored tree lives"
+        );
+
+        // ---- and the reason the two must stay apart ------------------------
+        let ignored = read(".gitignore");
+        let rules: Vec<&str> = ignored
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+            .collect();
+        assert!(
+            rules.contains(&"/vendor/"),
+            "`.gitignore` no longer ignores `/vendor/`. If the vendored tree is now committed, the split this guard enforces has no reason to exist — fold `.cargo/vendor.toml` back into `.cargo/config.toml` and delete this test."
+        );
+        assert!(
+            !rules.contains(&"config.toml"),
+            "`.gitignore` has an unanchored `config.toml` rule, which matches at any depth and so shadows the tracked `.cargo/config.toml` — a cloner who deletes and rewrites it gets a file git silently refuses to see. Anchor it as `/config.toml`."
+        );
+    }
+
+    /// Every section header in a TOML file, in the order written.
+    ///
+    /// Naive on purpose, like [`dependency_keys`]: it reads the repository's own two small config
+    /// files, not arbitrary TOML, and neither uses a quoted key containing `]`.
+    fn toml_section_headers(text: &str) -> Vec<String> {
+        text.lines()
+            .map(str::trim)
+            .filter_map(|line| line.strip_prefix('[')?.strip_suffix(']'))
+            .map(str::to_string)
             .collect()
     }
 }
