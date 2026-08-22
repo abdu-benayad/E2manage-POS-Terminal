@@ -1,0 +1,50 @@
+# .symbol-indexer.toml — Symbol Indexer configuration
+# Place in project root alongside .git/
+
+[project]
+# Override project root detection
+# root = "/path/to/project"
+
+# Override database location
+# db_path = "/custom/path/index.db"
+
+# Sub-project / module detection patterns
+module_patterns = [
+  "**/src/modules/{name}",
+  "**/packages/{name}",
+  "**/apps/{name}",
+]
+
+[indexing]
+# Files per batch (tune for available memory)
+batch_size = 2000
+
+# Skip files larger than this many bytes (guards against OOM on huge dumps)
+max_file_bytes = 5242880
+
+# Restrict indexing to matching path globs when non-empty
+include = []
+
+# Exclude patterns (in addition to defaults)
+exclude = [
+  "node_modules",
+  "dist",
+  "build",
+  ".next",
+  "target",
+  "__pycache__",
+  ".git",
+  "*.min.js",
+  "*.bundle.js",
+  "*.generated.ts",
+]
+
+# Languages to index (default: all detected)
+# languages = ["typescript", "rust", "prisma", "sql", "slint"]
+
+# Enable/disable metadata extraction
+metadata = true
+
+[performance]
+# Number of parallel parsing threads (default: num_cpus)
+# threads = 4

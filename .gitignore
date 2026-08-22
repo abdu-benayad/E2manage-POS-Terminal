@@ -16,9 +16,14 @@ Thumbs.db
 # `.cargo/config.toml`, which is tracked and must stay visible.
 /config.toml
 
-# Local database
+# Local database. SQLite writes `-wal` and `-shm` beside the `.db`, and neither
+# suffix is matched by `*.db`. `/data/` is the running till's state directory,
+# ignored as a whole so a new sidecar suffix does not have to be chased.
 *.db
+*.db-wal
+*.db-shm
 *.sqlite
+/data/
 
 # Logs
 *.log
@@ -33,3 +38,9 @@ wadi-pos-terminal-linux
 
 # Local worktrees (used by EnterWorktree)
 .worktrees/
+
+# Agent-session state. Scoped rather than a blanket `.claude/`, so shared agent
+# configuration (skills, commands) can still be tracked if it is ever wanted.
+.claude/settings.local.json
+.claude/worktrees/
+.superpowers/
