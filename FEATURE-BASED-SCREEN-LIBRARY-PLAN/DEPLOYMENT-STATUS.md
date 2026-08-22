@@ -89,7 +89,6 @@
 - [x] Disabled screens blocked
 - [x] Flow navigation works
 - [x] UI visibility callbacks added
-- [x] Slint bindings work
 
 ### Phase 10: Frontend - Feature Config UI
 - [x] Tests written

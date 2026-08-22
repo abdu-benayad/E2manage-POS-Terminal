@@ -40,7 +40,7 @@ exclude = [
 ]
 
 # Languages to index (default: all detected)
-# languages = ["typescript", "rust", "prisma", "sql", "slint"]
+# languages = ["typescript", "rust", "prisma", "sql"]
 
 # Enable/disable metadata extraction
 metadata = true

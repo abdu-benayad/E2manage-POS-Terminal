@@ -368,8 +368,8 @@ TYPE: POS Terminal (Rust)
    - navigate_next() follows next_screen chain
    - navigate_to_feature(feature_id) goes to entry point
    - Integrate Navigator into main.rs
-   - Replace direct window.set_current_screen with navigation check
-   - Add Slint callbacks: is_feature_enabled, can_navigate_to
+   - Screen state is an enum, never a string keyed through a router
+   - Expose is_feature_enabled / can_navigate_to to the view layer
    - Hide disabled features in UI
 
 5. VERIFICATION:

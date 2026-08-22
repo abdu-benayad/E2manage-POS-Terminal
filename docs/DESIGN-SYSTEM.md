@@ -4,7 +4,7 @@
 >
 > **Version**: 1.0
 > **Generated from**: 38 UI wireframe specifications
-> **Target**: Rust/Slint implementation
+> **Target**: toolkit-independent — these are values, not widgets
 
 ---
 
@@ -562,13 +562,13 @@ transition: opacity 150ms ease-out, transform 150ms ease-out;
 
 ## Usage Notes
 
-### Slint Implementation
+### Implementation
 
-1. Import this design system as globals in `theme.slint`
-2. Reference colors via `Colors.primary`, `Colors.success`, etc.
-3. Reference sizes via `Sizes.button-height`, `Spacing.md`, etc.
-4. All measurements are in logical pixels (px)
-5. Slint handles DPI scaling automatically
+1. These are tokens, not components. Install them once at the top of the view
+   layer rather than passing theme, size or locale per instance.
+2. All measurements are in logical pixels; the toolkit handles DPI scaling.
+3. The view layer is egui on `abdu-egui-ui`, whose `Environment` is where these
+   land. Read that project's conventions before adding a screen.
 
 ### RTL Implementation
 

@@ -343,56 +343,7 @@ match self.navigator.lock().unwrap().navigate_to(screen_id) {
 
 ---
 
-## 4. UI Visibility Callbacks
-
-For Slint UI, expose navigation checks:
-
-```rust
-// In UI bridge setup:
-let nav_clone = navigator.clone();
-window.on_is_feature_enabled(move |feature_id: SharedString| {
-    nav_clone.lock().unwrap()
-        .feature_service
-        .is_feature_enabled(&feature_id)
-        .unwrap_or(false)
-});
-
-let nav_clone = navigator.clone();
-window.on_can_navigate_to(move |screen_id: SharedString| {
-    nav_clone.lock().unwrap()
-        .is_screen_available(&screen_id)
-});
-```
-
----
-
-## 5. Slint Bindings (Example)
-
-**File:** `ui/main.slint`
-
-```slint
-// Add callback declarations
-export component MainWindow {
-    // Callbacks for feature checks
-    callback is_feature_enabled(string) -> bool;
-    callback can_navigate_to(string) -> bool;
-
-    // Conditional button visibility
-    if root.can_navigate_to("return-entry"): Button {
-        text: "Returns";
-        clicked => { root.navigate("return-entry"); }
-    }
-
-    if root.is_feature_enabled("drafts"): Button {
-        text: "Drafts";
-        clicked => { root.navigate("save-draft"); }
-    }
-}
-```
-
----
-
-## 6. Verification
+## 4. Verification
 
 ```bash
 cd e2manage-pos-terminal

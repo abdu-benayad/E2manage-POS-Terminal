@@ -1,8 +1,8 @@
 # CLAUDE.md
 
 E2Manage POS Terminal — offline-first Point of Sale built with **Rust 1.92** (edition 2021).
-The Slint view layer has been removed; the package currently ships no binary, and the
-replacement UI is tracked by the `egui-auth-screen` issue.
+The package currently ships no binary; the egui view layer is tracked by the
+`egui-auth-screen` issue.
 Connects to E2Manage ERP backend via REST APIs, stores data locally in SQLite, supports Arabic/RTL.
 
 ---
@@ -100,9 +100,9 @@ not cover it; build and check it with `cd crates/pos-updater && cargo check`.
 - `hardware/` - Hardware abstraction (printers, scanners)
 - `utils/` - Utility functions
 
-There is no `[[bin]]` target. `src/main.rs`, `build.rs` and the whole `ui/` Slint
-tree were deleted; recover them from git history if ever needed. Do not add a new
-UI dependency here without the `egui-auth-screen` issue.
+There is no `[[bin]]` target: `src/main.rs`, `build.rs` and the old `ui/` tree went
+with the previous view layer. Do not add a UI dependency here without the
+`egui-auth-screen` issue.
 
 ### Key Services (in `pos-services`)
 

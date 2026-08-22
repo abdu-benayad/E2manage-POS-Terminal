@@ -22,7 +22,7 @@
 //!
 //! `crates/` and `src/` — the shipped tree. **There are no exemptions**, and that is deliberate:
 //! the earlier plan for this file carried two (`src/main.rs`, `src/ui/conflict_bridge.rs`) and both
-//! premises evaporated — the Slint tree was deleted and `src/ui/` was migrated like any other
+//! premises evaporated — the old view tree was deleted and `src/ui/` was migrated like any other
 //! module. If a later task ever does need a temporary allowance, spell it as an explicit path list
 //! that **fails when a listed path stops existing**, never as a pattern that quietly keeps matching
 //! nothing. An exemption with no expiry is how a temporary allowance becomes permanent, which is
@@ -781,6 +781,105 @@ mod guards {
             !rules.contains(&"config.toml"),
             "`.gitignore` has an unanchored `config.toml` rule, which matches at any depth and so shadows the tracked `.cargo/config.toml` — a cloner who deletes and rewrites it gets a file git silently refuses to see. Anchor it as `/config.toml`."
         );
+    }
+
+    /// The retired view toolkit is not named anywhere in the tree.
+    ///
+    /// The first view layer was a mistake that cost this project two stalled attempts, and Abdu's
+    /// standing instruction is that no further effort goes into it — including reading it. It was
+    /// deleted as code long before it was gone as a word: 199 mentions survived across `docs/`,
+    /// the plan tree, `CLAUDE.md`, `README.md` and this file, because the sweep that removed it
+    /// only ever grepped `*.rs` and `*.toml`. Two of those documents were not documents *about* a
+    /// toolkit, they were 1,687 lines of documentation *for* it, describing an application that no
+    /// longer exists.
+    ///
+    /// The banned word is assembled at runtime rather than written out. A guard that spells a name
+    /// in order to forbid it is the one file that always matches, and the rule here is that the
+    /// name does not appear at all.
+    #[test]
+    fn the_retired_view_toolkit_is_not_named_anywhere_in_the_tree() {
+        let banned = ["sl", "int"].concat();
+
+        let files = text_files();
+        assert!(
+            files.len() > 40,
+            "the text walker found only {} files; it is broken and this guard is vacuous",
+            files.len()
+        );
+        assert!(
+            files
+                .iter()
+                .any(|p| p.extension().is_some_and(|e| e == "md")),
+            "the walker is not reaching Markdown, which is where every one of these hid last time"
+        );
+
+        let offences: Vec<String> = files
+            .iter()
+            .filter_map(|path| {
+                let text = fs::read_to_string(path).ok()?;
+                let hits = text
+                    .lines()
+                    .enumerate()
+                    .filter(|(_, line)| line.to_ascii_lowercase().contains(&banned))
+                    .map(|(index, _)| (index + 1).to_string())
+                    .collect::<Vec<_>>();
+                (!hits.is_empty()).then(|| format!("{} (line {})", relative(path), hits.join(", ")))
+            })
+            .collect();
+
+        assert!(
+            offences.is_empty(),
+            "the retired view toolkit is named in {} file(s); it is not coming back, so neither should the word:\n  {}",
+            offences.len(),
+            offences.join("\n  ")
+        );
+    }
+
+    /// Every text file in the working tree, skipping generated and machine-local trees.
+    ///
+    /// Broader than [`rust_sources`] on purpose: the mentions this exists to catch were all in
+    /// Markdown, and a scan restricted to code is what let them survive a deletion.
+    fn text_files() -> Vec<PathBuf> {
+        const SKIP: [&str; 9] = [
+            ".git",
+            ".claude",
+            ".superpowers",
+            ".worktrees",
+            "target",
+            "vendor",
+            "vendor.new",
+            "data",
+            "node_modules",
+        ];
+        const TEXT: [&str; 10] = [
+            "rs", "toml", "md", "sh", "py", "sql", "ts", "json", "yml", "yaml",
+        ];
+
+        fn walk(dir: &Path, skip: &[&str], text: &[&str], found: &mut Vec<PathBuf>) {
+            let Ok(entries) = fs::read_dir(dir) else {
+                return;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                if skip.contains(&name) {
+                    continue;
+                }
+                if path.is_dir() {
+                    walk(&path, skip, text, found);
+                } else if path
+                    .extension()
+                    .is_some_and(|e| e.to_str().is_some_and(|e| text.contains(&e)))
+                {
+                    found.push(path);
+                }
+            }
+        }
+
+        let mut found = Vec::new();
+        walk(&repo_root(), &SKIP, &TEXT, &mut found);
+        found.sort();
+        found
     }
 
     /// Every section header in a TOML file, in the order written.

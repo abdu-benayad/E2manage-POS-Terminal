@@ -40,8 +40,8 @@ Works with [E2Manage ERP](https://jooher.app) backend via HTTP APIs.
   build fails at the first build script without them.
   `sudo dnf install clang mold` (Fedora) or `sudo apt install clang mold` (Ubuntu)
 
-No GTK or other GUI library is needed: the Slint view layer was removed and its
-egui replacement has not landed yet, so nothing in the dependency graph draws.
+No GTK or other GUI library is needed: the egui view layer has not landed yet, so
+nothing in the dependency graph draws.
 
 ### Build
 
