@@ -32,6 +32,8 @@ exclude = [
   "build",
   ".next",
   "target",
+  # 285 third-party crates; indexing them pollutes search and costs minutes
+  "vendor",
   "__pycache__",
   ".git",
   "*.min.js",
