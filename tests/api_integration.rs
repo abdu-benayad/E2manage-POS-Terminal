@@ -736,7 +736,18 @@ mod serialization_tests {
         let json = serde_json::to_string(&request).unwrap();
 
         // Check camelCase
-        assert!(json.contains("uptimeSeconds"), "Should use camelCase");
+        //
+        // `uptime`, NOT `uptimeSeconds`: the platform's one required metric is
+        // `TerminalMetricsDto.uptime` (`fleet.dto.ts:21`), and this assertion asserted the wrong
+        // name for as long as the endpoint 404'd and nobody could tell.
+        assert!(
+            json.contains("\"uptime\""),
+            "uptime is the platform's field name"
+        );
+        assert!(
+            !json.contains("uptimeSeconds"),
+            "uptimeSeconds is what the platform ignores"
+        );
         assert!(json.contains("cpuPercent"), "Should use camelCase");
         assert!(json.contains("currentOperatorId"), "Should use camelCase");
 

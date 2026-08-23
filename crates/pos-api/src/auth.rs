@@ -45,7 +45,13 @@ pub struct LoginTerminalRequest {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HeartbeatRequest {
-    /// Terminal uptime in seconds
+    /// Terminal uptime in seconds.
+    ///
+    /// Named `uptime` on the wire, not `uptimeSeconds`: `TerminalMetricsDto.uptime`
+    /// (`fleet.dto.ts:21`) is the platform's one **required** metric, and it is the only field
+    /// here whose name disagreed. The rest — `cpuPercent`, `memoryMb`, `diskFreeMb`,
+    /// `offlineTxnCount`, `appVersion` — were checked against `fleet.dto.ts:19-40` and agree.
+    #[serde(rename = "uptime")]
     pub uptime_seconds: u64,
     /// CPU usage percentage (0-100)
     pub cpu_percent: f32,
@@ -57,12 +63,31 @@ pub struct HeartbeatRequest {
     pub offline_txn_count: u32,
     /// Current application version
     pub app_version: String,
-    /// Current shift ID (if active)
+    /// Current shift ID (if active).
+    ///
+    /// **The platform has no field for this**, nor for `current_operator_id`:
+    /// `TerminalMetricsDto` (`fleet.dto.ts:19-43`) declares neither, and the handler reads only
+    /// the fields it names. Both are sent and silently dropped. Kept rather than deleted because
+    /// the gap may be on the platform's side — a till that knows which operator is on shift is
+    /// worth a fleet view knowing it — and deleting would destroy the evidence for that. Recorded
+    /// in `till/doc/till-consumer-surface-audit`; not this issue's to resolve.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub current_shift_id: Option<String>,
-    /// Current operator ID (if logged in)
+    /// Current operator ID (if logged in). See `current_shift_id` — also dropped by the platform.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub current_operator_id: Option<OperatorId>,
+}
+
+/// The heartbeat body as the platform reads it.
+///
+/// `fleet.controller.ts:197` reads `req.body.metrics`, so a flat body leaves `metrics` undefined
+/// and the handler falls back to `{}`. There is no validator on the route and every field in
+/// `terminal-heartbeat.handler.ts` is optional-with-guard, so nothing throws: the till got a
+/// **200 recording zero telemetry**, indistinguishable from success in any manual check. This
+/// wrapper exists so the nesting is stated once, in a type, rather than assembled at the call.
+#[derive(Debug, Serialize)]
+struct HeartbeatBody<'a> {
+    metrics: &'a HeartbeatRequest,
 }
 
 /// Operator PIN verification request
@@ -191,25 +216,43 @@ pub struct ReceiptConfig {
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct HeartbeatResponse {
-    /// Status ("ok", "needs_update", etc.)
-    pub status: String,
-    /// Commands to execute on terminal
+    /// Whether the platform recorded the ping.
+    pub acknowledged: bool,
+    /// Server time, for clock comparison. ISO-8601; the platform sends a `Date`.
+    pub server_time: String,
+    /// Commands queued for this terminal.
     #[serde(default)]
     pub commands: Vec<TerminalCommand>,
-    /// Next heartbeat interval in seconds (optional override)
+    /// Cache-invalidation versions. Absent unless the platform has something newer.
     #[serde(default)]
-    pub next_interval_seconds: Option<u64>,
+    pub config_version: Option<String>,
+    #[serde(default)]
+    pub catalog_version: Option<String>,
+    #[serde(default)]
+    pub screen_version: Option<String>,
 }
 
 /// Command to execute on terminal
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct TerminalCommand {
-    /// Command type
-    pub command: String,
-    /// Command parameters
+    /// Command ID, which an acknowledgement quotes back.
+    pub id: String,
+    /// What to do — `restart`, `sync`, `update`, `config_push`, `wipe`, `log_upload`
+    /// (`fleet.dto.ts:79-86`).
+    ///
+    /// A `String` and not an enum **on purpose**. Nothing in the till branches on this yet, and a
+    /// closed enum would make a command type the platform adds tomorrow fail the whole heartbeat
+    /// rather than one command. When something does branch on it, it becomes a domain type with
+    /// its own parse error, per the crate's `FromStr` convention — a value that is merely carried
+    /// does not earn one first.
+    #[serde(rename = "type")]
+    pub command_type: String,
+    /// Command payload.
     #[serde(default)]
-    pub params: serde_json::Value,
+    pub payload: serde_json::Value,
+    /// When the platform queued it. ISO-8601.
+    pub created_at: String,
 }
 
 /// PIN verification response
@@ -413,13 +456,16 @@ impl ApiClient {
     ///
     /// Heartbeat response with any commands to execute
     pub async fn send_heartbeat(&self, metrics: &HeartbeatRequest) -> Result<HeartbeatResponse> {
-        let terminal_id = self
-            .get_terminal_id()
-            .await
-            .ok_or_else(|| anyhow::anyhow!("Terminal ID not set"))?;
-
-        let path = format!("/api/pos/fleet/{}/heartbeat", terminal_id);
-        self.post(&path, metrics).await
+        // No terminal id in the path, and none looked up here: the platform reads it from
+        // `req.terminal.terminalUuid`, which `terminalAuthMiddleware` sets from the header
+        // (`fleet.controller.ts:194-201`). The old URL carried the id as a path segment, matched
+        // no route, and matched no CSRF exemption prefix either — so it was 404 in front of a 403.
+        // Dropping the lookup deletes the "Terminal ID not set" failure with it: the header that
+        // authenticates the request is the one that identifies it.
+        let response: Enveloped<_> = self
+            .post("/api/pos/fleet/heartbeat", &HeartbeatBody { metrics })
+            .await?;
+        Ok(response.into_inner())
     }
 
     /// Verifies an operator PIN with the backend (online verification)
@@ -623,28 +669,101 @@ mod tests {
         };
 
         let json = serde_json::to_string(&request).unwrap();
-        assert!(json.contains("uptimeSeconds"));
+        assert!(json.contains("uptime"));
+        assert!(!json.contains("uptimeSeconds"));
         assert!(json.contains("3600"));
         assert!(json.contains("currentShiftId"));
         assert!(!json.contains("currentOperatorId")); // None should be skipped
     }
 
+    /// The assertion whose absence let a flat body ship.
+    ///
+    /// `fleet.controller.ts:197` reads `req.body.metrics`. A flat body leaves that undefined, the
+    /// handler falls back to `{}`, and — no validator, every field optional-with-guard — the route
+    /// answers **200 having recorded nothing**. That is invisible to a live smoke test against a
+    /// real server, which is why it needs a test that looks at the shape rather than the outcome.
+    ///
+    /// Asserted positionally, never by `json.contains("uptime")`: the broken flat body contains
+    /// that string too, so a containment check passes against exactly the defect being fixed.
     #[test]
-    fn test_heartbeat_response_deserialization() {
+    fn heartbeat_body_nests_the_metrics_where_the_platform_reads_them() {
+        let metrics = HeartbeatRequest {
+            uptime_seconds: 3600,
+            cpu_percent: 12.5,
+            memory_mb: 512,
+            disk_free_mb: 20_480,
+            offline_txn_count: 3,
+            app_version: "1.2.3".to_string(),
+            current_shift_id: None,
+            current_operator_id: None,
+        };
+
+        let body = serde_json::to_value(HeartbeatBody { metrics: &metrics })
+            .expect("the heartbeat body must serialize");
+
+        assert_eq!(
+            body["metrics"]["uptime"], 3600,
+            "uptime must sit under `metrics`, and be spelled `uptime` — it is the platform's one \
+             required metric (`fleet.dto.ts:21`)"
+        );
+        assert_eq!(body["metrics"]["appVersion"], "1.2.3");
+        assert!(
+            body["uptime"].is_null(),
+            "nothing may sit at the top level: the platform reads `req.body.metrics` and ignores \
+             the rest, so a flat body is a 200 that records nothing"
+        );
+    }
+
+    /// This test used to assert `{status, commands:[{command, params}], nextIntervalSeconds}` and
+    /// passed green against a shape **the platform has never sent**. It was a restatement of what
+    /// its author believed, so it could only ever confirm that belief.
+    ///
+    /// The real payload is `TerminalHeartbeatResponse` (`fleet.dto.ts:198-211`), returned at
+    /// `terminal-heartbeat.handler.ts:132-136`. `status` was required and absent, so the response
+    /// was undeserialisable — the same failure mode as the `tenantId` break on `terminals/login`,
+    /// on an endpoint whose 404 hid it.
+    #[test]
+    fn heartbeat_response_reads_what_the_platform_actually_sends() {
         let json = r#"{
-            "status": "ok",
+            "acknowledged": true,
+            "serverTime": "2026-08-23T10:00:00.000Z",
             "commands": [
-                {"command": "SYNC_CATALOG", "params": {}},
-                {"command": "RESTART", "params": {"delay": 60}}
+                {"id": "cmd-1", "type": "sync", "payload": {}, "createdAt": "2026-08-23T09:59:00.000Z"},
+                {"id": "cmd-2", "type": "restart", "payload": {"delay": 60}, "createdAt": "2026-08-23T09:59:30.000Z"}
             ],
-            "nextIntervalSeconds": 120
+            "catalogVersion": "v7"
         }"#;
 
-        let response: HeartbeatResponse = serde_json::from_str(json).unwrap();
-        assert_eq!(response.status, "ok");
+        let response: HeartbeatResponse =
+            serde_json::from_str(json).expect("the platform's real heartbeat payload must parse");
+
+        assert!(response.acknowledged);
+        assert_eq!(response.server_time, "2026-08-23T10:00:00.000Z");
         assert_eq!(response.commands.len(), 2);
-        assert_eq!(response.commands[0].command, "SYNC_CATALOG");
-        assert_eq!(response.next_interval_seconds, Some(120));
+        assert_eq!(response.commands[0].id, "cmd-1");
+        assert_eq!(response.commands[0].command_type, "sync");
+        assert_eq!(response.commands[1].payload["delay"], 60);
+        assert_eq!(response.commands[1].created_at, "2026-08-23T09:59:30.000Z");
+        assert_eq!(response.catalog_version.as_deref(), Some("v7"));
+        assert_eq!(response.config_version, None);
+    }
+
+    /// The three version fields and `commands` are absent unless the platform has something to
+    /// say, which is the common case — `terminal-heartbeat.handler.ts:132-136` returns only
+    /// `acknowledged`, `serverTime` and `commands`. A required field here would break every
+    /// quiet heartbeat.
+    #[test]
+    fn heartbeat_response_reads_a_quiet_acknowledgement() {
+        let json =
+            r#"{"acknowledged": true, "serverTime": "2026-08-23T10:00:00.000Z", "commands": []}"#;
+
+        let response: HeartbeatResponse =
+            serde_json::from_str(json).expect("a heartbeat with nothing to report must parse");
+
+        assert!(response.acknowledged);
+        assert!(response.commands.is_empty());
+        assert_eq!(response.catalog_version, None);
+        assert_eq!(response.screen_version, None);
     }
 
     #[test]
