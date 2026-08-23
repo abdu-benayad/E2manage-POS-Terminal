@@ -275,6 +275,14 @@ git reset --soft HEAD~1          # HEAD back, index untouched
 git commit --only -F msg -- <your paths>
 ```
 
+**The recovery above assumes the bad commit is HEAD, and that window is short.** Once anyone has
+committed on top of it — minutes, on a shared trunk with concurrent writers — it stops applying:
+`reset --soft HEAD~N` rewrites history under everyone still working in the checkout, to fix an
+attribution error in a message. Do not. At that point the swept work is **committed, not lost**;
+only the authorship and the message are wrong. Say so, name the commit so its owner can find their
+work, and leave it. Measured 2026-08-23: one such commit sits four back with three sessions' work
+on top of it.
+
 This is timing, not discipline — the same commands are clean whenever nothing else happens to be
 staged, which is why it survives review and bites later. **`git stash` is forbidden here for the
 same reason**, and so is `git clean -fd` (see Vendor Directory below).
