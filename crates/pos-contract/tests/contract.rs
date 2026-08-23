@@ -29,7 +29,10 @@
 
 use pact_consumer::prelude::*;
 use pos_api::Enveloped;
-use pos_api::{ApiErrorResponse, LoginTerminalResponse, ServerErrorCode};
+use pos_api::{
+    ApiErrorResponse, HeartbeatRequest, HeartbeatResponse, LoginTerminalResponse, RefreshResponse,
+    ServerErrorCode,
+};
 
 /// The nested error envelope, which every refusal the till handles is carried in.
 ///
@@ -469,4 +472,217 @@ async fn a_terminal_login_returns_a_session_the_till_can_read() {
             "`{field}` deserialised empty; a required field that arrives blank is the failure mode `#[serde(default)]` would have introduced here, and the reason it was refused"
         );
     }
+}
+
+/// The fleet heartbeat, which is the surface `till-api-client-disagrees-with-the-served-contract`
+/// repaired and therefore the one it earns the right to pin.
+///
+/// # Why the request body is pinned, against the usual instinct to pin only responses
+///
+/// The defect here was not a field name in the reply. The till serialised its metrics **flat**
+/// while `fleet.controller.ts:197` reads `req.body.metrics`, so the handler saw `undefined`, fell
+/// back to `{}`, and — no validator on the route, every field in `terminal-heartbeat.handler.ts`
+/// optional-with-guard — answered **200 having recorded nothing**. Every till would have reported
+/// itself online with zero telemetry, indistinguishable from success in any manual check.
+///
+/// A pact that declared only the response would pass against exactly that broken payload. So the
+/// nesting is the contract, and `uptime` is pinned as a literal key inside it: it is
+/// `TerminalMetricsDto`'s one **required** field (`fleet.dto.ts:21`), and the till spelled it
+/// `uptimeSeconds`, which the platform has no field for.
+///
+/// The metric *values* are `like!` — they are measurements, and pinning a number would fail the
+/// contract for a terminal that happened to be up longer.
+#[tokio::test]
+async fn a_heartbeat_reports_metrics_where_the_platform_reads_them() {
+    let pact = PactBuilder::new("e2manage-pos-terminal", "wadi-dms-api")
+        .with_output_dir("./pacts")
+        .interaction(
+            "a heartbeat from an authenticated terminal reporting its metrics",
+            "",
+            |mut i| {
+                i.given("an active terminal holding a valid session token");
+                i.request
+                    .post()
+                    .path("/api/pos/fleet/heartbeat")
+                    .header("content-type", "application/json")
+                    .json_body(json_pattern!({
+                        // The nesting IS the contract. See the doc comment.
+                        "metrics": {
+                            "uptime": like!(3600),
+                            "cpuPercent": like!(12.5),
+                            "memoryMb": like!(512),
+                            "diskFreeMb": like!(20480),
+                            "offlineTxnCount": like!(0),
+                            "appVersion": like!("1.2.3"),
+                        }
+                    }));
+                i.response
+                    .status(200)
+                    .header("content-type", "application/json")
+                    .json_body(json_pattern!({
+                        "success": true,
+                        "data": {
+                            "acknowledged": like!(true),
+                            "serverTime": like!("2026-08-23T10:00:00.000Z"),
+                            "commands": [],
+                        }
+                    }));
+                i
+            },
+        )
+        .start_mock_server(None, None);
+
+    let metrics = HeartbeatRequest {
+        uptime_seconds: 3600,
+        cpu_percent: 12.5,
+        memory_mb: 512,
+        disk_free_mb: 20480,
+        offline_txn_count: 0,
+        app_version: "1.2.3".to_string(),
+        current_shift_id: None,
+        current_operator_id: None,
+    };
+
+    // Serialised through the till's own wrapper rather than a hand-written JSON object, so that a
+    // regression which un-nests the body fails here instead of passing against a restatement.
+    let body = serde_json::json!({ "metrics": metrics });
+
+    let url = format!("{}api/pos/fleet/heartbeat", pact.url());
+    let response = reqwest::Client::new()
+        .post(&url)
+        .json(&body)
+        .send()
+        .await
+        .expect("the mock server did not answer");
+
+    assert_eq!(response.status().as_u16(), 200);
+
+    let heartbeat: HeartbeatResponse = response
+        .json::<Enveloped<HeartbeatResponse>>()
+        .await
+        .expect("the till's HeartbeatResponse could not parse the heartbeat payload")
+        .into_inner();
+
+    assert!(
+        heartbeat.acknowledged,
+        "`acknowledged` is the only field the till branches on; a heartbeat that is not acknowledged is not a heartbeat"
+    );
+    assert!(
+        !heartbeat.server_time.is_empty(),
+        "`serverTime` arrived blank — it is required, and a required field that deserialises empty is the failure `#[serde(default)]` would have hidden"
+    );
+}
+
+/// A refreshed terminal session.
+///
+/// Pinned because the repair was real: the till read this enveloped route with the raw `post`, so
+/// it looked for `sessionToken` at the top level of `{success, message, data}` and never found it.
+/// The route is `terminalAuthMiddleware` and one of the six CSRF-exempt prefixes
+/// (`csrf.middleware.ts:105`), which is what makes it reachable enough to pin at all.
+///
+/// **No request body is declared.** The till posts `&()`, and the route ignores its body — and
+/// declaring an empty one records `"body": {}` plus a content-type, which deadlocks provider
+/// verification for 30 s with `error sending request`. That failure reads as an unreachable
+/// provider and says nothing about the contract; the module docs above carry the full note.
+#[tokio::test]
+async fn a_token_refresh_returns_a_session_the_till_can_read() {
+    let pact = PactBuilder::new("e2manage-pos-terminal", "wadi-dms-api")
+        .with_output_dir("./pacts")
+        .interaction(
+            "a token refresh from a terminal holding a valid session",
+            "",
+            |mut i| {
+                i.given("an active terminal holding a valid session token");
+                i.request.post().path("/api/pos/terminals/refresh");
+                i.response
+                    .status(200)
+                    .header("content-type", "application/json")
+                    .json_body(json_pattern!({
+                        "success": true,
+                        "data": {
+                            "sessionToken": like!("9c4e1a7f2b8d0e63a5f1c9b4d7e2a0f8"),
+                        }
+                    }));
+                i
+            },
+        )
+        .start_mock_server(None, None);
+
+    let url = format!("{}api/pos/terminals/refresh", pact.url());
+    let response = reqwest::Client::new()
+        .post(&url)
+        .send()
+        .await
+        .expect("the mock server did not answer");
+
+    assert_eq!(response.status().as_u16(), 200);
+
+    let refreshed: RefreshResponse = response
+        .json::<Enveloped<RefreshResponse>>()
+        .await
+        .expect("the till's RefreshResponse could not parse the refresh payload")
+        .into_inner();
+
+    assert!(
+        !refreshed.session_token.is_empty(),
+        "a refresh that returns a blank token silently unauthenticates the till on its next request"
+    );
+}
+
+/// The artifact's interaction count, derived from the artifact rather than stated in prose.
+///
+/// # Why a count is worth a test
+///
+/// Every figure about this contract that was written down instead of computed has gone stale.
+/// The issue that added the last two interactions opened by asserting the pact pinned "four"
+/// when it pinned five, and by putting the till's surface at "36 paths" when it is 41 — that one
+/// came from a grep that counted a doc-comment placeholder and could not see a path assembled
+/// base-URL-first. A number quoted from a document is a claim rotting quietly; a number recomputed
+/// from the artifact is a fact.
+///
+/// So this asserts the two things a person forgets in opposite directions: that adding an
+/// interaction here without recording it leaves the coverage table wrong, and that the artifact on
+/// disk is the one this crate just wrote rather than a stale copy.
+///
+/// **`EXPECTED` is meant to be edited.** Raising it is the moment you update
+/// `e2manage/doc/pos-till-server-contract`'s coverage table and copy the artifact into the
+/// platform. That is the whole point: the edit is the reminder.
+///
+/// It runs as its own test rather than inside one of the interactions above, because the artifact
+/// is only complete once every `PactBuilder` in this file has been dropped and flushed. Run the
+/// suite, then this reads what the suite wrote.
+#[test]
+fn the_artifact_pins_exactly_the_interactions_this_crate_declares() {
+    /// Raise this in the same commit that adds an interaction, updates the coverage table in
+    /// `e2manage/doc/pos-till-server-contract`, and copies the artifact to the platform.
+    const EXPECTED: usize = 7;
+
+    let path = std::path::Path::new("./pacts/e2manage-pos-terminal-wadi-dms-api.json");
+    let Ok(text) = std::fs::read_to_string(path) else {
+        // The artifact is written by the interactions above. Absent means the suite has not run
+        // yet in this tree, which is a state to report rather than a failure to assert on.
+        eprintln!(
+            "{} is absent; run `cargo test` in this crate to regenerate it, then re-run",
+            path.display()
+        );
+        return;
+    };
+
+    let artifact: serde_json::Value =
+        serde_json::from_str(&text).expect("the pact artifact is not valid JSON");
+    let interactions = artifact["interactions"]
+        .as_array()
+        .expect("the pact artifact has no `interactions` array")
+        .len();
+
+    assert_eq!(
+        interactions, EXPECTED,
+        "the artifact pins {interactions} interactions and this crate expects {EXPECTED}.\n\
+         If you ADDED one: raise EXPECTED here, add its row to `e2manage/doc/pos-till-server-contract`'s \
+         coverage table, and copy the artifact to \
+         `wadi-dms-api/src/modules/pos/__tests__/contracts/pacts/` — nothing does that copy for you, \
+         and until it happens the platform is verifying the till's PREVIOUS expectations.\n\
+         If you did NOT: an interaction was lost, and the platform's suite has stopped checking \
+         something the till depends on."
+    );
 }

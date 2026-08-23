@@ -4,6 +4,117 @@
   },
   "interactions": [
     {
+      "description": "a heartbeat from an authenticated terminal reporting its metrics",
+      "providerStates": [
+        {
+          "name": "an active terminal holding a valid session token"
+        }
+      ],
+      "request": {
+        "body": {
+          "metrics": {
+            "appVersion": "1.2.3",
+            "cpuPercent": 12.5,
+            "diskFreeMb": 20480,
+            "memoryMb": 512,
+            "offlineTxnCount": 0,
+            "uptime": 3600
+          }
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "matchingRules": {
+          "body": {
+            "$.metrics.appVersion": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.metrics.cpuPercent": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.metrics.diskFreeMb": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.metrics.memoryMb": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.metrics.offlineTxnCount": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.metrics.uptime": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "method": "POST",
+        "path": "/api/pos/fleet/heartbeat"
+      },
+      "response": {
+        "body": {
+          "data": {
+            "acknowledged": true,
+            "commands": [],
+            "serverTime": "2026-08-23T10:00:00.000Z"
+          },
+          "success": true
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "matchingRules": {
+          "body": {
+            "$.data.acknowledged": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.data.serverTime": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      }
+    },
+    {
       "description": "a login from a paired terminal presenting its secret",
       "providerStates": [
         {
@@ -282,6 +393,42 @@
           }
         },
         "status": 401
+      }
+    },
+    {
+      "description": "a token refresh from a terminal holding a valid session",
+      "providerStates": [
+        {
+          "name": "an active terminal holding a valid session token"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/api/pos/terminals/refresh"
+      },
+      "response": {
+        "body": {
+          "data": {
+            "sessionToken": "9c4e1a7f2b8d0e63a5f1c9b4d7e2a0f8"
+          },
+          "success": true
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "matchingRules": {
+          "body": {
+            "$.data.sessionToken": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
       }
     }
   ],

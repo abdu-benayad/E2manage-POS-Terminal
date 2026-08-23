@@ -232,6 +232,23 @@ pub struct HeartbeatResponse {
     pub screen_version: Option<String>,
 }
 
+/// A refreshed terminal session.
+///
+/// Declared here rather than inside `refresh_token` so the pact can deserialise with **the till's
+/// real type**. A contract test that restates the consumer's DTO records what its author believed,
+/// not what the till does — the rule is in `crates/pos-contract/tests/contract.rs`'s module doc,
+/// and this type was unreachable from there while it lived in a function body.
+///
+/// The platform also sends `expiresAt` (`terminal.controller.ts:251-258`). It is deliberately not
+/// read: nothing in the till consumes it yet, and a field pinned but unused makes the contract
+/// fail for a change that harms nobody.
+#[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct RefreshResponse {
+    /// The new session token, which replaces the one presented.
+    pub session_token: String,
+}
+
 /// Command to execute on terminal
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -503,12 +520,6 @@ impl ApiClient {
     ///
     /// Should be called periodically to prevent token expiration
     pub async fn refresh_token(&self) -> Result<String> {
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct RefreshResponse {
-            session_token: String,
-        }
-
         // `Enveloped`, not a raw read: this route wraps its payload
         // (`terminal.controller.ts:251-258`, `data:{sessionToken, expiresAt}`), so the raw `post`
         // this used to call was deserialising the envelope into `RefreshResponse` and finding no

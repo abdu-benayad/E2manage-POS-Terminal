@@ -55,6 +55,7 @@ pub use auth::{
     PairingStatus,
     PairingStatusResponse,
     ReceiptConfig,
+    RefreshResponse,
     RegisterTerminalRequest,
     RegisterTerminalResponse,
     RequestPairingRequest,
