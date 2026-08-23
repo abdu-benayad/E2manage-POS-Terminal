@@ -69,8 +69,6 @@ pub struct OperatorRow {
     /// that should never have been written. This is the only place in the workspace holding both
     /// scripts, so it is the only place that can answer an Arabic-locale screen.
     pub name: OperatorName,
-    /// BCrypt hashed PIN
-    pub pin_hash: String,
     /// POS role, as the server's `POS_OperatorRole` enum defines it.
     pub role: OperatorRole,
     /// HR Department name
@@ -100,8 +98,8 @@ impl Database {
     pub fn save_operator(&self, operator: &OperatorRow) -> SqliteResult<()> {
         self.execute(
             r#"INSERT OR REPLACE INTO operators
-               (id, code, employee_id, employee_number, name, name_ar, pin_hash, role, department, position, permissions_json, is_active, updated_at)
-               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, datetime('now'))"#,
+               (id, code, employee_id, employee_number, name, name_ar, role, department, position, permissions_json, is_active, updated_at)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, datetime('now'))"#,
             &[
                 &operator.id.as_str(),
                 &operator.code,
@@ -109,7 +107,6 @@ impl Database {
                 &operator.employee_number,
                 &operator.name.latin(),
                 &operator.name.arabic(),
-                &operator.pin_hash,
                 &operator.role.as_wire_str(),
                 &operator.department,
                 &operator.position,
@@ -131,8 +128,8 @@ impl Database {
         {
             let mut stmt = conn.prepare(
                 r#"INSERT OR REPLACE INTO operators
-                   (id, code, employee_id, employee_number, name, name_ar, pin_hash, role, department, position, permissions_json, is_active, updated_at)
-                   VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, datetime('now'))"#,
+                   (id, code, employee_id, employee_number, name, name_ar, role, department, position, permissions_json, is_active, updated_at)
+                   VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, datetime('now'))"#,
             )?;
 
             for operator in operators {
@@ -143,7 +140,6 @@ impl Database {
                     operator.employee_number,
                     operator.name.latin(),
                     operator.name.arabic(),
-                    operator.pin_hash,
                     operator.role.as_wire_str(),
                     operator.department,
                     operator.position,
@@ -164,7 +160,7 @@ impl Database {
         let conn = conn.lock();
 
         let mut stmt = conn.prepare(
-            r#"SELECT id, code, employee_id, employee_number, name, name_ar, pin_hash, role, department, position, permissions_json, is_active
+            r#"SELECT id, code, employee_id, employee_number, name, name_ar, role, department, position, permissions_json, is_active
                FROM operators
                WHERE is_active = 1
                ORDER BY name"#,
@@ -177,12 +173,11 @@ impl Database {
                 employee_id: row.get(2)?,
                 employee_number: row.get(3)?,
                 name: operator_name(row, 4, 5)?,
-                pin_hash: row.get(6)?,
-                role: operator_role(row, 7)?,
-                department: row.get(8)?,
-                position: row.get(9)?,
-                permissions: read_permissions(row, 10)?,
-                is_active: row.get(11)?,
+                role: operator_role(row, 6)?,
+                department: row.get(7)?,
+                position: row.get(8)?,
+                permissions: read_permissions(row, 9)?,
+                is_active: row.get(10)?,
             })
         })?;
 
@@ -195,7 +190,7 @@ impl Database {
         let conn = conn.lock();
 
         conn.query_row(
-            r#"SELECT id, code, employee_id, employee_number, name, name_ar, pin_hash, role, department, position, permissions_json, is_active
+            r#"SELECT id, code, employee_id, employee_number, name, name_ar, role, department, position, permissions_json, is_active
                FROM operators WHERE id = ?1"#,
             [id.as_str()],
             |row| {
@@ -205,12 +200,11 @@ impl Database {
                     employee_id: row.get(2)?,
                     employee_number: row.get(3)?,
                     name: operator_name(row, 4, 5)?,
-                    pin_hash: row.get(6)?,
-                    role: operator_role(row, 7)?,
-                    department: row.get(8)?,
-                    position: row.get(9)?,
-                    permissions: read_permissions(row, 10)?,
-                    is_active: row.get(11)?,
+                        role: operator_role(row, 6)?,
+                    department: row.get(7)?,
+                    position: row.get(8)?,
+                    permissions: read_permissions(row, 9)?,
+                    is_active: row.get(10)?,
                 })
             },
         )
@@ -226,7 +220,7 @@ impl Database {
         let conn = conn.lock();
 
         conn.query_row(
-            r#"SELECT id, code, employee_id, employee_number, name, name_ar, pin_hash, role, department, position, permissions_json, is_active
+            r#"SELECT id, code, employee_id, employee_number, name, name_ar, role, department, position, permissions_json, is_active
                FROM operators WHERE employee_number = ?1 AND is_active = 1"#,
             [employee_number],
             |row| {
@@ -236,12 +230,11 @@ impl Database {
                     employee_id: row.get(2)?,
                     employee_number: row.get(3)?,
                     name: operator_name(row, 4, 5)?,
-                    pin_hash: row.get(6)?,
-                    role: operator_role(row, 7)?,
-                    department: row.get(8)?,
-                    position: row.get(9)?,
-                    permissions: read_permissions(row, 10)?,
-                    is_active: row.get(11)?,
+                        role: operator_role(row, 6)?,
+                    department: row.get(7)?,
+                    position: row.get(8)?,
+                    permissions: read_permissions(row, 9)?,
+                    is_active: row.get(10)?,
                 })
             },
         )
@@ -254,7 +247,7 @@ impl Database {
         let conn = conn.lock();
 
         let mut stmt = conn.prepare(
-            r#"SELECT id, code, employee_id, employee_number, name, name_ar, pin_hash, role, department, position, permissions_json, is_active
+            r#"SELECT id, code, employee_id, employee_number, name, name_ar, role, department, position, permissions_json, is_active
                FROM operators
                WHERE is_active = 1
                  AND (name LIKE ?1 OR name_ar LIKE ?1 OR employee_number LIKE ?1)
@@ -270,12 +263,11 @@ impl Database {
                 employee_id: row.get(2)?,
                 employee_number: row.get(3)?,
                 name: operator_name(row, 4, 5)?,
-                pin_hash: row.get(6)?,
-                role: operator_role(row, 7)?,
-                department: row.get(8)?,
-                position: row.get(9)?,
-                permissions: read_permissions(row, 10)?,
-                is_active: row.get(11)?,
+                role: operator_role(row, 6)?,
+                department: row.get(7)?,
+                position: row.get(8)?,
+                permissions: read_permissions(row, 9)?,
+                is_active: row.get(10)?,
             })
         })?;
 
@@ -339,7 +331,6 @@ mod tests {
             employee_id: None,
             employee_number: None,
             name: OperatorName::new(latin, arabic).unwrap(),
-            pin_hash: "$2b$12$hashedpin".to_string(),
             role: OperatorRole::Cashier,
             department: None,
             position: None,
@@ -449,8 +440,8 @@ mod tests {
         // value, which is why the camelCase/snake_case drift went unnoticed for as long as it did.
         let db = setup_db();
         db.execute(
-            "INSERT INTO operators (id, code, name, pin_hash, role, permissions_json, is_active) \
-             VALUES ('op-1', 'C001', 'Ahmed', 'hash', 'CASHIER', '{\"canVoid\": ', 1)",
+            "INSERT INTO operators (id, code, name, role, permissions_json, is_active) \
+             VALUES ('op-1', 'C001', 'Ahmed', 'CASHIER', '{\"canVoid\": ', 1)",
             &[],
         )
         .unwrap();
@@ -467,8 +458,8 @@ mod tests {
         // would have rendered as a nameless cashier rather than as the corrupt row it is.
         let db = setup_db();
         db.execute(
-            "INSERT INTO operators (id, code, name, name_ar, pin_hash, role, is_active) \
-             VALUES ('op-1', 'C001', '', 'أحمد', 'hash', 'CASHIER', 1)",
+            "INSERT INTO operators (id, code, name, name_ar, role, is_active) \
+             VALUES ('op-1', 'C001', '', 'أحمد', 'CASHIER', 1)",
             &[],
         )
         .unwrap();

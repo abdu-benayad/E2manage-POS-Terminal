@@ -6,8 +6,8 @@ use rusqlite::{Connection, Result as SqliteResult};
 use tracing::{debug, info};
 
 use super::schema::{
-    CURRENT_SCHEMA_VERSION, SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6,
-    SCHEMA_V7, SCHEMA_V8, SCHEMA_V9,
+    CURRENT_SCHEMA_VERSION, SCHEMA_V1, SCHEMA_V13, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5,
+    SCHEMA_V6, SCHEMA_V7, SCHEMA_V8, SCHEMA_V9,
 };
 
 /// Runs all pending migrations on the database
@@ -92,6 +92,11 @@ pub fn run_migrations(conn: &Connection) -> SqliteResult<()> {
     if current_version < 12 {
         info!("Applying migration v12: Product type awareness");
         apply_v12(conn)?;
+    }
+
+    if current_version < 13 {
+        info!("Applying migration v13: the operator PIN hash leaves the till");
+        apply_v13(conn)?;
     }
 
     Ok(())
@@ -378,6 +383,39 @@ fn apply_v11(conn: &Connection) -> SqliteResult<()> {
 }
 
 /// Applies version 12 schema (Product type awareness - Phase 3 Track H)
+/// Drops `operators.pin_hash`.
+///
+/// The platform stopped sending `pinHash`, so every synced row held `""` — and
+/// `bcrypt::verify(pin, "")` fails, was read as a **wrong PIN**, and was charged to the operator's
+/// lockout budget. A shop with no network could not open, and every cashier who tried was locked
+/// out for it. See [`SCHEMA_V13`] for the whole story.
+///
+/// Guarded on `pragma_table_info` like the migrations above it, for two reasons rather than one:
+/// a database created fresh from `SCHEMA_V1` never had the column (it left the `CREATE TABLE` in
+/// the same change), and re-running a migration must not be an error.
+fn apply_v13(conn: &Connection) -> SqliteResult<()> {
+    let column_exists: i32 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('operators') WHERE name = 'pin_hash'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+
+    if column_exists > 0 {
+        conn.execute_batch(SCHEMA_V13)?;
+    }
+
+    conn.execute(
+        "INSERT INTO schema_version (version, description) \
+         VALUES (13, 'The operator PIN hash leaves the till')",
+        [],
+    )?;
+
+    info!("Migration v13 applied successfully");
+    Ok(())
+}
+
 fn apply_v12(conn: &Connection) -> SqliteResult<()> {
     // Add product type columns if they don't exist
     let columns_to_add = vec![
@@ -459,6 +497,89 @@ mod tests {
         // Should still be current version
         let version = get_schema_version(&conn).unwrap();
         assert_eq!(version, CURRENT_SCHEMA_VERSION);
+    }
+
+    /// A till that already holds operators loses their PIN hashes, and keeps everything else.
+    ///
+    /// The migration that matters most on a real device: `pin_hash` was `NOT NULL`, so the drop
+    /// has to work against rows that already exist rather than only against a fresh schema. The
+    /// row below is inserted the way v12 wrote them, with a hash, and read back afterwards to
+    /// prove the operator survived the column.
+    #[test]
+    fn v13_drops_the_pin_hash_column_from_a_populated_table() {
+        let conn = Connection::open_in_memory().unwrap();
+
+        // Build the table as it stood at v12, hash column and all.
+        conn.execute_batch(
+            r#"CREATE TABLE operators (
+                   id TEXT PRIMARY KEY,
+                   code TEXT NOT NULL,
+                   name TEXT NOT NULL,
+                   name_ar TEXT,
+                   pin_hash TEXT NOT NULL,
+                   role TEXT DEFAULT 'CASHIER',
+                   avatar_url TEXT,
+                   permissions_json TEXT,
+                   is_active INTEGER DEFAULT 1,
+                   updated_at TEXT DEFAULT (datetime('now'))
+               );
+               INSERT INTO operators (id, code, name, pin_hash, role)
+               VALUES ('op-1', 'C001', 'Ahmed', '$2b$12$averyrealbcrypthashindeed', 'MANAGER');
+               CREATE TABLE schema_version (
+                   version INTEGER PRIMARY KEY,
+                   description TEXT,
+                   applied_at TEXT DEFAULT (datetime('now'))
+               );"#,
+        )
+        .unwrap();
+
+        apply_v13(&conn).unwrap();
+
+        let has_column: i32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('operators') WHERE name = 'pin_hash'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(has_column, 0, "the PIN hash must be gone from the table");
+
+        // The operator is still there, with everything that is not a secret.
+        let (name, role): (String, String) = conn
+            .query_row(
+                "SELECT name, role FROM operators WHERE id = 'op-1'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(name, "Ahmed");
+        assert_eq!(role, "MANAGER");
+
+        // And the hash is not merely hidden — the column does not exist, so a query naming it is
+        // an error rather than a value. `unwrap_or(false)` on this would be the same defect as
+        // the one v13 exists to remove.
+        assert!(conn
+            .query_row("SELECT pin_hash FROM operators", [], |row| row
+                .get::<_, String>(0))
+            .is_err());
+    }
+
+    /// A database created fresh never had the column, and v13 must still record itself.
+    #[test]
+    fn v13_is_a_no_op_on_a_schema_that_never_had_the_column() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+
+        let has_column: i32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('operators') WHERE name = 'pin_hash'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(has_column, 0);
+        assert_eq!(get_schema_version(&conn).unwrap(), CURRENT_SCHEMA_VERSION);
+        assert_eq!(CURRENT_SCHEMA_VERSION, 13);
     }
 
     #[test]

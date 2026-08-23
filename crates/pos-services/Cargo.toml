@@ -40,8 +40,6 @@ parking_lot.workspace = true
 
 # Random (for generating IDs)
 rand = "0.8"
-# Password hashing
-bcrypt = "0.16"
 
 # Database (matching pos-db version)
 rusqlite = { version = "0.32", features = ["bundled"] }

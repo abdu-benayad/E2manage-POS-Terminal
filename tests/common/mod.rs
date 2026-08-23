@@ -123,7 +123,6 @@ pub fn sample_operator_row() -> OperatorRow {
         employee_id: None,
         employee_number: None,
         name: op_full_name("Test Operator", "مشغل تجريبي"),
-        pin_hash: "$2b$10$testhashedpin".to_string(),
         role: OperatorRole::Cashier,
         department: None,
         position: None,
@@ -138,7 +137,6 @@ pub fn create_test_operator(db: &Database, id: &str, name: &str) {
         id: op_id(id),
         code: format!("C{id}"),
         name: op_full_name(name, &format!("مشغل {id}")),
-        pin_hash: "testhash".to_string(),
         ..sample_operator_row()
     };
     db.save_operator(&op).expect("Failed to save operator");
@@ -282,14 +280,16 @@ impl TestApp {
     /// Seeds test data with proper foreign key order.
     ///
     /// Creates:
-    /// - 1 test operator (op-001 with PIN "1234")
+    /// - 1 test operator (op-001; the till stores no PIN — see schema v13)
     /// - 20 test products (prod-001 through prod-020)
     pub fn seed_test_data(&self) {
         // 1. Create operator FIRST (required for foreign keys)
-        let pin_hash = AuthService::hash_pin("1234").expect("Failed to hash PIN");
+        //
+        // No PIN. The till holds no credential to verify one against — the platform withdrew
+        // `pinHash` and schema v13 dropped the column — so a fixture that seeded a hash would be
+        // seeding a shape the store no longer has.
         let operator = OperatorRow {
             name: op_full_name("أحمد محمد", "أحمد محمد"),
-            pin_hash,
             ..sample_operator_row()
         };
         self.db
@@ -321,12 +321,8 @@ impl TestApp {
 
     /// Seeds minimal test data (1 operator, 5 products).
     pub fn seed_minimal_data(&self) {
-        // Create operator
-        let pin_hash = AuthService::hash_pin("1234").expect("Failed to hash PIN");
-        let operator = OperatorRow {
-            pin_hash,
-            ..sample_operator_row()
-        };
+        // Create operator. No PIN — see `seed_test_data`.
+        let operator = sample_operator_row();
         self.db
             .save_operator(&operator)
             .expect("Failed to save operator");

@@ -488,9 +488,14 @@ mod guards {
     /// task 09 could see them, and they stayed `String` after the concept was declared finished.
     /// A boundary defined by a spelling is not a boundary.
     ///
-    /// `code`, `pin_hash`, `employee_id`, `employee_number`, `department` and `position` are
-    /// deliberately not here. They are all bare strings and all mutually swappable, and they are
-    /// not identity — they belong to a later tier, and naming them as out of scope is the point.
+    /// `code`, `employee_id`, `employee_number`, `department` and `position` are deliberately not
+    /// here. They are all bare strings and all mutually swappable, and they are not identity —
+    /// they belong to a later tier, and naming them as out of scope is the point.
+    ///
+    /// `pin_hash` was on that list until schema v13 deleted it. It is named here rather than
+    /// silently dropped, because "not identity" was the wrong reason to have excluded it: it was
+    /// a bcrypt hash of every operator's PIN, sent to every enrolled terminal, and the fix was
+    /// deletion rather than a newtype.
     #[test]
     fn an_operator_type_never_spells_its_own_identity_as_a_string() {
         const IDENTITY_FIELDS: [&str; 4] = ["id", "name", "name_ar", "role"];

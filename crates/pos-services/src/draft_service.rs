@@ -509,7 +509,6 @@ mod tests {
             employee_id: None,
             employee_number: None,
             name: OperatorName::new("Test Operator", None::<&str>).unwrap(),
-            pin_hash: "hash".to_string(),
             role: OperatorRole::Cashier,
             department: None,
             position: None,

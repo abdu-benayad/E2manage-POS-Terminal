@@ -48,7 +48,6 @@ CREATE TABLE IF NOT EXISTS operators (
     code TEXT NOT NULL,
     name TEXT NOT NULL,
     name_ar TEXT,
-    pin_hash TEXT NOT NULL,
     role TEXT DEFAULT 'CASHIER',
     avatar_url TEXT,
     permissions_json TEXT,
@@ -632,5 +631,24 @@ ALTER TABLE products ADD COLUMN product_nature TEXT DEFAULT 'TANGIBLE';
 CREATE INDEX IF NOT EXISTS idx_products_type ON products(product_type);
 "#;
 
+/// Version 13 Schema - the operator PIN hash leaves the till
+///
+/// The platform withdrew `pinHash` from `GET /api/pos/sync/operators` and asserts the negative on
+/// the wire (`11-sync-endpoints.e2e.test.ts:234`). Every synced operator therefore carried `""`
+/// in this column, and every offline PIN comparison ran `bcrypt::verify(pin, "")` — which fails,
+/// was read as a **wrong PIN**, and was charged to that operator's lockout budget. A shop with no
+/// network could not open, and every cashier who tried was locked out for it.
+///
+/// A column whose every value is `""` is not data. It is dropped rather than defaulted, so that
+/// nothing can read it and believe it. `DROP COLUMN` needs SQLite 3.35+; `rusqlite` is built with
+/// `features = ["bundled"]`, so the engine ships with the binary and every device has it.
+///
+/// What replaces it is `offline-pin-verification-has-no-credential`: a signed, terminal-bound
+/// credential the platform issues. Until that lands, a till with no network cannot verify a PIN —
+/// and says so, instead of locking people out while claiming they typed it wrong.
+pub const SCHEMA_V13: &str = r#"
+ALTER TABLE operators DROP COLUMN pin_hash;
+"#;
+
 /// Returns the current schema version
-pub const CURRENT_SCHEMA_VERSION: i32 = 12;
+pub const CURRENT_SCHEMA_VERSION: i32 = 13;

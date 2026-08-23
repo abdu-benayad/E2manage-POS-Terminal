@@ -243,9 +243,6 @@ pub struct OperatorDto {
     pub name_ar: Option<String>,
     #[serde(default)]
     pub email: Option<String>,
-    /// BCrypt hashed PIN
-    #[serde(default)]
-    pub pin_hash: Option<String>,
     /// POS role, as the server's `POS_OperatorRole` enum defines it.
     ///
     /// No serde default. The server's column is non-null and `getOperators` always emits it, so
@@ -423,7 +420,6 @@ impl OperatorDto {
             employee_id: self.employee_id.clone(),
             employee_number: self.employee_number.clone(),
             name: OperatorName::new(self.name.clone(), self.name_ar.clone())?,
-            pin_hash: self.pin_hash.clone().unwrap_or_default(),
             role: self.role,
             department: self.department.clone(),
             position: self.position.clone(),
@@ -637,7 +633,6 @@ mod tests {
             name: "Ahmed".to_string(),
             name_ar: Some("أحمد".to_string()),
             email: None,
-            pin_hash: Some("$2b$hash".to_string()),
             role: OperatorRole::Cashier,
             department: Some("Sales".to_string()),
             position: Some("Cashier".to_string()),
@@ -675,7 +670,6 @@ mod tests {
             name: String::new(),
             name_ar: None,
             email: None,
-            pin_hash: None,
             role: OperatorRole::Cashier,
             department: None,
             position: None,

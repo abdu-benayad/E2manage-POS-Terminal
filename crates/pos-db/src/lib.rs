@@ -209,7 +209,6 @@ mod tests {
             employee_id: None,
             employee_number: None,
             name: OperatorName::new("Ahmed", Some("أحمد")).unwrap(),
-            pin_hash: "hashed".to_string(),
             role: OperatorRole::Cashier,
             department: None,
             position: None,

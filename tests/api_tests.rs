@@ -1050,9 +1050,17 @@ mod p2_sync_apis {
         pub id: String,
         pub code: String,
         pub name: String,
-        #[serde(default)]
-        pub pin_hash: String,
         pub role: OperatorRole,
+        /// A **tripwire**, not a field the till uses.
+        ///
+        /// `getOperators` used to answer with a bcrypt PIN hash for every operator in the
+        /// company, to every enrolled terminal. It was withdrawn server-side, and the till
+        /// stopped storing it in schema v13 — so this deserialises the wire purely to assert it
+        /// stays absent. `Option`, so its presence is a failed assertion rather than a failed
+        /// parse: a parse failure here would read as "the endpoint is broken" and send whoever
+        /// sees it looking in the wrong place.
+        #[serde(default)]
+        pub pin_hash: Option<String>,
         #[serde(default)]
         pub is_active: bool,
     }
@@ -1319,14 +1327,15 @@ mod p2_sync_apis {
 
                 println!("✓ Operators synced: {}", data.operators.len());
 
-                // Validate bcrypt format for PIN hashes
+                // The negative, against a live backend — the till's side of
+                // `11-sync-endpoints.e2e.test.ts:234`. If a PIN hash ever comes back on this
+                // route, the till must find out from a failing test and not from a support call.
                 for op in &data.operators {
-                    if !op.pin_hash.is_empty() {
-                        assert!(
-                            op.pin_hash.starts_with("$2"),
-                            "PIN hash should be bcrypt format"
-                        );
-                    }
+                    assert!(
+                        op.pin_hash.is_none(),
+                        "the platform must not send a PIN hash to a till (operator {})",
+                        op.id
+                    );
                 }
 
                 // Store first operator ID

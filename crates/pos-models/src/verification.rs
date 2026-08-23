@@ -187,6 +187,13 @@ pub enum Authority {
     /// The platform verified the PIN.
     Platform,
     /// The till verified the PIN against a locally stored credential, valid until `not_after`.
+    ///
+    /// **Unconstructible in production as of schema v13**, which deleted `operators.pin_hash` —
+    /// the till holds no credential to verify a PIN against, so no PIN is decided locally. That
+    /// is a deliberate, temporary state of the world and not dead code: it is
+    /// `offline-pin-verification-has-no-credential`'s target, and this variant is what stops the
+    /// credential work from being able to journal a local decision as a platform one. **Do not
+    /// tidy it away.**
     OfflineCredential {
         /// When the credential that authorised this stops being usable.
         not_after: CredentialExpiry,
@@ -299,9 +306,20 @@ pub enum PinRefusal {
     /// The stored credential could not be read. **Consumes no attempt** — this is the till's
     /// fault, not the operator's, and spending their budget on it would lock people out of a
     /// terminal because of a corrupt row.
+    ///
+    /// **Nothing constructs this today, and that is correct rather than dead code.** Schema v13
+    /// deleted `operators.pin_hash`, so there is no stored credential to be unreadable. This
+    /// variant is `offline-pin-verification-has-no-credential`'s target: the moment a signed,
+    /// terminal-bound credential exists, so does the state of holding a corrupt one. **Do not
+    /// tidy it away** — deleting it would mean the next author has to re-derive that a corrupt
+    /// credential must not cost an operator an attempt.
     CredentialUnreadable,
     /// The stored credential is past its expiry. **Consumes no attempt** — the operator must
     /// reach the platform, which no amount of retyping achieves.
+    ///
+    /// Unconstructed today, for the same reason as [`Self::CredentialUnreadable`] and kept for the
+    /// same reason. See [`CredentialExpiry`] for why an expiry is safe here and not on
+    /// [`LockState`].
     CredentialExpired,
     /// The stored credential was enrolled under a different PIN length than the tenant now
     /// requires. **Consumes no attempt**, and this is the variant that matters most: a tenant

@@ -187,7 +187,6 @@ fn test_operator_by_code() {
         id: op_id("op-test"),
         code: "CODE123".to_string(),
         name: op_latin_name("Test Operator"),
-        pin_hash: "hash".to_string(),
         ..sample_operator_row()
     };
     db.save_operator(&operator).unwrap();

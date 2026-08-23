@@ -29,8 +29,6 @@ anyhow.workspace = true
 # Logging
 tracing.workspace = true
 
-# Cryptography (for PIN hashing)
-bcrypt = "0.15"
 parking_lot.workspace = true
 
 # Decimal Numbers (for currency)

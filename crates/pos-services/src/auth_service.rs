@@ -3,9 +3,7 @@
 //! Handles terminal login, operator PIN verification, and session management.
 //! Supports both online verification (via API) and offline verification (via local DB).
 
-use anyhow::{anyhow, Result};
-use bcrypt::{hash, verify, DEFAULT_COST};
-use chrono::{DateTime, NaiveDateTime, Utc};
+use anyhow::Result;
 use pos_api::{
     ApiClient, ApiFailure, HeartbeatRequest, HeartbeatResponse, LoginTerminalResponse,
     RefusalDetails, ServerErrorCode, VerifyPinResponse,
@@ -13,9 +11,9 @@ use pos_api::{
 use pos_db::column::{operator_name, operator_role};
 use pos_db::Database;
 use pos_models::{
-    Authority, CredentialExpiry, EnrolmentState, OperatorId, OperatorName, OperatorPermissions,
-    OperatorRole, Pin, PinPolicy, PinRefusal, PinVerification, StoreFailure, StoreFailureKind,
-    UndeterminedCause, VerifiedOperator,
+    Authority, OperatorId, OperatorName, OperatorPermissions, OperatorRole, Pin, PinPolicy,
+    PinRefusal, PinVerification, StoreFailure, StoreFailureKind, UndeterminedCause,
+    VerifiedOperator,
 };
 use rusqlite::params;
 use std::sync::Arc;
@@ -44,7 +42,7 @@ pub struct TerminalSession {
     pub features: Vec<String>,
 }
 
-/// The seven columns the offline PIN check reads, named rather than positional at the call.
+/// The five columns the offline path reads, named rather than positional at the call.
 ///
 /// A positional `row.get(n)` beside a tuple of the same arity is structurally blind to a dropped
 /// column: remove one from the `SELECT` and every subsequent index silently shifts by one, with
@@ -52,25 +50,19 @@ pub struct TerminalSession {
 /// `the_offline_read_takes_every_column_from_its_own_position` does, with a distinct value per
 /// column — but it makes the shift visible in the diff instead of invisible in an index.
 ///
+/// **There is no `pin_hash` here any more**, and that is the point of schema v13. See
+/// [`AuthService::verify_pin_offline`].
+///
 /// `name` and `role` arrive as domain types because `pos_db::column` reads them that way, which is
 /// what its helpers exist for: a role this till does not recognise means the contract moved, and
 /// reading it as `Cashier` would be a privilege decision made by a fallback. Holding them as
 /// `String` here would also re-open what
 /// `tests/guards.rs::operator_identity_never_survives_as_a_bare_string` closes.
-struct StoredCredential {
-    pin_hash: String,
+struct StoredOperator {
     name: OperatorName,
     role: OperatorRole,
     permissions_json: Option<String>,
     is_active: bool,
-    updated_at: String,
-}
-
-/// A stored credential that parsed into the domain, with the two raw fields still needed.
-struct ReadableCredential {
-    verified: VerifiedOperator,
-    pin_hash: String,
-    updated_at: String,
 }
 
 /// A column that held something outside the domain type it maps to.
@@ -82,13 +74,16 @@ struct ReadableCredential {
 #[error("{0}")]
 struct UnreadableRow(String);
 
-impl StoredCredential {
+impl StoredOperator {
     /// Reads the row into the domain, fail-closed.
     ///
-    /// A role the server's enum does not admit, or a blank name, is a broken row — and refusing to
-    /// authenticate against a broken row is the safe direction. Parsing **before** the PIN
-    /// comparison keeps that true for a wrong PIN too.
-    fn into_verified(self, operator_id: &OperatorId) -> Result<ReadableCredential, StoreFailure> {
+    /// The result is currently discarded by the one caller: with no credential to check a PIN
+    /// against, a well-formed row still cannot produce a [`VerifiedOperator`]. It is called
+    /// anyway, because a row this till cannot read is a different answer from one it can — the
+    /// first is the till's own fault and reports as `Undetermined(StoreUnavailable)`, the second
+    /// reports as `Undetermined(ServerUnreachable)`, and an operator staring at a till deserves to
+    /// be told which. `offline-pin-verification-has-no-credential` is what starts using the value.
+    fn into_verified(self, operator_id: &OperatorId) -> Result<VerifiedOperator, StoreFailure> {
         // Absent is a real state and means this operator holds nothing beyond ringing a sale. A
         // column that is present and unreadable is not: that is a broken row, and reading it as
         // "no permissions" would be a privilege decision made by a fallback.
@@ -96,40 +91,20 @@ impl StoredCredential {
             None => OperatorPermissions::none(),
             Some(json) => serde_json::from_str(&json).map_err(|e| {
                 StoreFailure::new(
-                    "reading the operator's stored credential",
+                    "reading the operator's row",
                     StoreFailureKind::RowUnreadable,
                 )
                 .caused_by(UnreadableRow(format!("the `permissions_json` column: {e}")))
             })?,
         };
 
-        Ok(ReadableCredential {
-            verified: VerifiedOperator::from_verified_pin(
-                operator_id.clone(),
-                self.name,
-                self.role,
-                permissions,
-            ),
-            pin_hash: self.pin_hash,
-            updated_at: self.updated_at,
-        })
+        Ok(VerifiedOperator::from_verified_pin(
+            operator_id.clone(),
+            self.name,
+            self.role,
+            permissions,
+        ))
     }
-}
-
-/// Reads the instant SQLite's `datetime('now')` writes: `YYYY-MM-DD HH:MM:SS`, in UTC.
-///
-/// RFC 3339 is accepted too, because a row written by anything other than that default carries a
-/// `T` and an offset. Anything else is a row the till cannot date, and a credential it will not
-/// authenticate against.
-fn parse_store_instant(raw: &str) -> Option<DateTime<Utc>> {
-    NaiveDateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S")
-        .map(|naive| naive.and_utc())
-        .ok()
-        .or_else(|| {
-            DateTime::parse_from_rfc3339(raw)
-                .map(|dt| dt.with_timezone(&Utc))
-                .ok()
-        })
 }
 
 impl AuthService {
@@ -522,56 +497,67 @@ impl AuthService {
         }
     }
 
-    /// Verifies a PIN against what this till has stored, with the platform unreachable.
+    /// What this till can say about a PIN with the platform unreachable, which is no longer *is
+    /// it correct*.
     ///
-    /// # Three things this used to say that were not true
+    /// # The till holds no credential to check a PIN against, and has not for some time
     ///
-    /// - **An unknown operator and an inactive one were the same answer.** The query read
-    ///   `WHERE id = ?1 AND is_active = 1`, so both produced no rows and both reported "operator
-    ///   not found". The predicate is gone and the column is branched on. Neither consumes an
-    ///   attempt.
-    /// - **A bcrypt failure read as a wrong PIN.** `verify(pin, &hash).unwrap_or(false)` is the
-    ///   anti-pattern the till conventions name outright: it *"reports a corrupt credential store
-    ///   as a wrong PIN, silently and forever"*. An unreadable hash is the till's fault, not the
-    ///   operator's, and charging their budget for it locks people out of a terminal over a
-    ///   corrupt row.
-    /// - **A wrong PIN was reported as a wrong PIN, with nothing counting it.** See below.
+    /// The platform withdrew `pinHash` from `GET /api/pos/sync/operators` and asserts the negative
+    /// on the wire. The till kept declaring the field and defaulting it, so every synced operator
+    /// carried `""` as their bcrypt hash, and every offline attempt ran `bcrypt::verify(pin, "")`
+    /// — which fails, was read as a **wrong PIN**, and was charged to that operator's lockout
+    /// budget. A shop with no network could not open, and each cashier who tried was locked out
+    /// for trying. Design v8's thesis in one line: *offline is a fallback for unreachable, never
+    /// for rejected*, and line 334 rejected.
     ///
-    /// # Why a local mismatch is `Undetermined` and not `WrongPin`
+    /// So `pin_hash` is **deleted**, not repaired — a column whose every value is `""` is not
+    /// data — and this function stops claiming to verify anything.
     ///
-    /// [`PinRefusal::WrongPin`] is defined as *the only refusal that spends the retry budget*, and
-    /// it carries the count that remains. Offline, this till has **no ledger** — `pos-db` has no
-    /// lockout table, column or query — so there is no budget to spend and no count to report.
-    /// Answering `WrongPin` here would mean either fabricating a figure a cashier then reads, or
-    /// asserting a budget nothing enforces, which is precisely the bypass this issue is named for.
+    /// # The trade, stated where it is made
     ///
-    /// So the honest answer is that the till could not settle it, which is what
-    /// [`UndeterminedCause::ServerUnreachable`] already says: *"the platform could not be reached,
-    /// and no local credential could settle the PIN."* It consumes no attempt by construction.
-    /// Task 08 replaces this leg with a named outcome.
+    /// A till with no network **cannot verify any PIN at all** until
+    /// `offline-pin-verification-has-no-credential` lands. That is a real regression in
+    /// capability. It is not a regression in behaviour: offline verification did not work before
+    /// this either — it lied about why, and locked people out permanently while doing so. A
+    /// refusal a shop can act on beats a lockout it cannot.
+    ///
+    /// # What it can still answer, and why that is worth keeping
+    ///
+    /// `operators` still carries identity and `is_active`, so an operator this till has never
+    /// heard of and one whose employment ended are still distinguishable — and telling a cashier
+    /// "no such operator here" with the network down is strictly better than telling them nothing.
+    /// Neither consumes an attempt. [`UndeterminedCause::ServerUnreachable`] is reserved for a
+    /// known, active operator whose PIN simply cannot be checked; its own doc already reads *"the
+    /// platform could not be reached, and no local credential could settle the PIN"*, which is
+    /// exactly this world, and both halves are true because this leg runs only when the first is.
+    ///
+    /// # Nothing here can spend the lockout budget, and no guard enforces that
+    ///
+    /// `consumes_an_attempt` exists only on [`PinRefusal`]. An `Undetermined` is not one, so it is
+    /// *structurally incapable* of spending an attempt — there is no method to call. That is the
+    /// fix. A check that the outcome does not consume an attempt would be a rule someone could
+    /// forget to run; a type that has no such method is a rule nobody can break.
     pub fn verify_pin_offline(
         &self,
         operator_id: &OperatorId,
-        pin: &Pin,
-        policy: &PinPolicy,
+        _pin: &Pin,
+        _policy: &PinPolicy,
     ) -> PinVerification {
         let stored = {
             let conn = self.db.connection();
             let conn = conn.lock();
             conn.query_row(
-                "SELECT pin_hash, name, name_ar, role, permissions_json, is_active, updated_at \
-                 FROM operators WHERE id = ?1",
+                "SELECT name, name_ar, role, permissions_json, is_active FROM operators \
+                 WHERE id = ?1",
                 [operator_id.as_str()],
                 |row| {
-                    Ok(StoredCredential {
-                        pin_hash: row.get(0)?,
+                    Ok(StoredOperator {
                         // Two indices, because `name` and `name_ar` are one value: read
                         // separately they can drift into a row the domain says cannot exist.
-                        name: operator_name(row, 1, 2)?,
-                        role: operator_role(row, 3)?,
-                        permissions_json: row.get(4)?,
-                        is_active: row.get(5)?,
-                        updated_at: row.get(6)?,
+                        name: operator_name(row, 0, 1)?,
+                        role: operator_role(row, 2)?,
+                        permissions_json: row.get(3)?,
+                        is_active: row.get(4)?,
                     })
                 },
             )
@@ -587,11 +573,10 @@ impl AuthService {
                 return PinVerification::Refused(PinRefusal::OperatorUnknown);
             }
             Err(error) => {
-                // A column the domain type does not admit arrives as
-                // `FromSqlConversionFailure` from `pos_db::column`, which is a broken **row**
-                // rather than a failed query. Distinguishing them is what lets an operator with a
-                // corrupt role be told apart from a database that is down.
-                return Self::store_failed("reading the operator's stored credential", error);
+                // A column the domain type does not admit arrives as `FromSqlConversionFailure`
+                // from `pos_db::column` — a broken row rather than a failed query. Both are the
+                // till's fault, and neither is the operator's.
+                return Self::store_failed("reading the operator's row", error);
             }
         };
 
@@ -601,59 +586,18 @@ impl AuthService {
             return PinVerification::Refused(PinRefusal::OperatorInactive);
         }
 
-        let operator = match stored.into_verified(operator_id) {
-            Ok(operator) => operator,
-            Err(failure) => return PinVerification::Undetermined(failure.into()),
-        };
-
-        // `updated_at` is when the platform last confirmed this row, and the tenant's offline
-        // window is how long the till may act on a confirmation. That is the design's
-        // `not_after = issued_at + maxOfflineHours`, with the only issuance instant this till
-        // actually records. A row the till cannot date is a row it will not authenticate against.
-        let confirmed_at = match parse_store_instant(&operator.updated_at) {
-            Some(instant) => instant,
-            None => {
-                return Self::row_unreadable(
-                    "dating the operator's stored credential",
-                    UnreadableRow(format!("`updated_at` held `{}`", operator.updated_at)),
-                );
-            }
-        };
-        let not_after = CredentialExpiry::at(confirmed_at + policy.offline_window().as_duration());
-        if not_after.has_passed(Utc::now()) {
-            // Consumes no attempt: the operator must reach the platform, and no amount of
-            // retyping achieves that.
-            return PinVerification::Refused(PinRefusal::CredentialExpired);
+        // The row parses and the operator is real and active. There is simply nothing here to
+        // check a PIN against. `_pin` is not compared, and is named with a leading underscore so
+        // that stays obvious rather than being something a reader has to notice by its absence.
+        if let Err(failure) = stored.into_verified(operator_id) {
+            return PinVerification::Undetermined(failure.into());
         }
 
-        match verify(pin.expose_digits(), &operator.pin_hash) {
-            Ok(true) => {
-                // `offline_authority` is the only route to an offline `Authority`, so "fell back
-                // to a repudiated credential because the network was down" has to be written on
-                // purpose rather than reached by accident. Enrolment state is task 09's; until it
-                // is read from the store, a row this till holds is a row the platform last
-                // confirmed at `updated_at`.
-                match EnrolmentState::Active.offline_authority(not_after) {
-                    Some(decided_by) => PinVerification::Accepted {
-                        operator: operator.verified,
-                        decided_by,
-                    },
-                    None => PinVerification::Refused(PinRefusal::CredentialUnreadable),
-                }
-            }
-            Ok(false) => {
-                // Not `WrongPin` — see the doc comment. Nothing counts offline.
-                warn!("a locally stored credential did not match, and this till counts nothing");
-                PinVerification::Undetermined(UndeterminedCause::ServerUnreachable)
-            }
-            Err(error) => {
-                // The anti-pattern this replaces answered `false` here, reporting a corrupt
-                // credential store as a wrong PIN — silently, forever, and against the operator's
-                // budget.
-                error!("the stored credential for {operator_id} could not be read: {error}");
-                Self::store_failed("comparing the stored credential", error)
-            }
-        }
+        warn!(
+            "the platform is unreachable and this till holds no credential for {operator_id}: \
+             no PIN can be verified until one is issued"
+        );
+        PinVerification::Undetermined(UndeterminedCause::ServerUnreachable)
     }
 
     /// Verifies a PIN against local storage without an async runtime.
@@ -676,51 +620,6 @@ impl AuthService {
         PinVerification::Undetermined(UndeterminedCause::StoreUnavailable(
             StoreFailure::new(operation, StoreFailureKind::QueryFailed).caused_by(error),
         ))
-    }
-
-    /// The same, for a query that ran and returned a row nobody could read.
-    fn row_unreadable(
-        operation: &'static str,
-        error: impl std::error::Error + Send + Sync + 'static,
-    ) -> PinVerification {
-        PinVerification::Undetermined(UndeterminedCause::StoreUnavailable(
-            StoreFailure::new(operation, StoreFailureKind::RowUnreadable).caused_by(error),
-        ))
-    }
-
-    // ========================================================================
-    // PIN HASHING UTILITIES
-    // ========================================================================
-
-    /// Hashes a PIN for storage
-    ///
-    /// # Arguments
-    ///
-    /// * `pin` - Plain text PIN
-    ///
-    /// # Returns
-    ///
-    /// Bcrypt hash of the PIN
-    pub fn hash_pin(pin: &str) -> Result<String> {
-        hash(pin, DEFAULT_COST).map_err(|e| anyhow!("Failed to hash PIN: {}", e))
-    }
-
-    /// Compares a PIN against a stored bcrypt hash.
-    ///
-    /// # `Result<bool>`, not `bool`
-    ///
-    /// This read `verify(pin, hash).unwrap_or(false)`, which the till's conventions name as an
-    /// anti-pattern in those words: *"No `unwrap_or(false)` on a fallible verification.
-    /// `bcrypt::verify(...).unwrap_or(false)` reports a corrupt credential store as a wrong PIN,
-    /// silently and forever."* The two answers it folded together — *this is not the PIN* and
-    /// *this is not a hash* — are the operator's fault and the till's respectively, and only one
-    /// of them should ever cost somebody an attempt.
-    ///
-    /// A `bool` return has nowhere to put the second answer, so the signature is what had to
-    /// change. It has no production callers; it exists for the tests and for
-    /// [`Self::hash_pin`]'s round trip.
-    pub fn verify_pin_hash(pin: &str, hash: &str) -> Result<bool> {
-        verify(pin, hash).map_err(|e| anyhow!("the stored credential could not be read: {e}"))
     }
 
     // ========================================================================
@@ -759,8 +658,7 @@ mod tests {
     use super::*;
     use pos_db::init_memory_database;
     use pos_models::{
-        LockoutPeriod, MaxAttempts, OfflineWindow, Permission, PinLength, RequiredPinLength,
-        SessionLifetime,
+        LockoutPeriod, MaxAttempts, OfflineWindow, PinLength, RequiredPinLength, SessionLifetime,
     };
 
     fn op_id(id: &str) -> OperatorId {
@@ -771,49 +669,6 @@ mod tests {
         let db = init_memory_database().unwrap();
         let api = ApiClient::new("https://api.example.com");
         AuthService::new(Arc::new(api), Arc::new(db))
-    }
-
-    #[test]
-    fn test_hash_pin() {
-        let pin = "1234";
-        let hashed = AuthService::hash_pin(pin).unwrap();
-
-        // Hash should not equal plain PIN
-        assert_ne!(hashed, pin);
-
-        // Should be verifiable
-        assert!(AuthService::verify_pin_hash(pin, &hashed).expect("a hash this call just made"));
-
-        // Wrong PIN should not verify
-        assert!(!AuthService::verify_pin_hash("5678", &hashed).expect("still a readable hash"));
-    }
-
-    #[test]
-    fn test_verify_pin_hash() {
-        // Test with known bcrypt hash of "1234"
-        let pin = "1234";
-        let hash = AuthService::hash_pin(pin).unwrap();
-
-        assert!(AuthService::verify_pin_hash("1234", &hash).expect("a readable hash"));
-        assert!(!AuthService::verify_pin_hash("0000", &hash).expect("a readable hash"));
-        assert!(!AuthService::verify_pin_hash("", &hash).expect("a readable hash"));
-    }
-
-    /// A hash that is not a hash is the till's problem, not the operator's.
-    ///
-    /// This is the whole reason the signature is a `Result`. `unwrap_or(false)` answered "wrong
-    /// PIN" for every string below, which sends a corrupt credential store through the operator's
-    /// lockout budget — silently, and forever.
-    #[test]
-    fn an_unreadable_hash_is_not_a_wrong_pin() {
-        for not_a_hash in ["", "   ", "1234", "$2b$notactuallyahash", "\u{0}"] {
-            let outcome = AuthService::verify_pin_hash("1234", not_a_hash);
-
-            assert!(
-                outcome.is_err(),
-                "`{not_a_hash}` is not a bcrypt hash and must not read as a wrong PIN"
-            );
-        }
     }
 
     #[test]
@@ -945,7 +800,7 @@ mod tests {
     #[test]
     fn an_inactive_operator_is_not_an_unknown_one() {
         let service = create_test_service();
-        insert_operator(&service, "op-inactive", "1234", false);
+        insert_operator(&service, "op-inactive", false);
 
         let outcome = service.verify_pin_offline(&op_id("op-inactive"), &pin("1234"), &policy());
 
@@ -964,59 +819,57 @@ mod tests {
         }
     }
 
-    /// A credential the till cannot date is a credential it will not authenticate against.
+    /// The outcome for a known, active operator: the till holds nothing to check a PIN against.
+    ///
+    /// Not `WrongPin`, which is what this answered for every operator on every till from the
+    /// moment the platform withdrew `pinHash` — `bcrypt::verify(pin, "")` fails, and
+    /// `unwrap_or(false)` reported that as a mistyped PIN and charged it to the lockout budget.
+    /// A shop with no network could not open, and every cashier who tried was locked out for it.
     #[test]
-    fn a_credential_past_the_offline_window_is_refused_without_spending_an_attempt() {
+    fn a_known_active_operator_offline_is_undetermined_because_nothing_can_check_the_pin() {
         let service = create_test_service();
-        insert_operator(&service, "op-stale", "1234", true);
-        {
-            let conn = service.db.connection();
-            let conn = conn.lock();
-            conn.execute(
-                "UPDATE operators SET updated_at = '2020-01-01 00:00:00' WHERE id = 'op-stale'",
-                [],
-            )
-            .unwrap();
+        insert_operator(&service, "op1", true);
+
+        // Any PIN, correct or not: there is no credential, so the digits are never compared.
+        for entered in ["1234", "9999"] {
+            let outcome = service.verify_pin_offline(&op_id("op1"), &pin(entered), &policy());
+
+            assert!(
+                matches!(
+                    outcome,
+                    PinVerification::Undetermined(UndeterminedCause::ServerUnreachable)
+                ),
+                "`{entered}` offline: got {outcome:?}"
+            );
         }
-
-        let outcome = service.verify_pin_offline(&op_id("op-stale"), &pin("1234"), &policy());
-
-        assert!(
-            matches!(
-                outcome,
-                PinVerification::Refused(PinRefusal::CredentialExpired)
-            ),
-            "got {outcome:?}"
-        );
-        assert!(!PinRefusal::CredentialExpired.consumes_an_attempt());
     }
 
-    /// A stored hash that is not a hash answers `Undetermined`, never "wrong PIN".
+    /// **The assertion that matters.** No offline outcome can spend the lockout budget.
     ///
-    /// The end-to-end form of `an_unreadable_hash_is_not_a_wrong_pin`, through the query. This is
-    /// the exact row every operator on this till has today: `getOperators` stopped sending
-    /// `pinHash`, and the DTO defaults the missing field to `""`.
+    /// `consumes_an_attempt` exists only on [`PinRefusal`], so an `Undetermined` is structurally
+    /// incapable of it — this test cannot even ask. What it can assert is the other half: every
+    /// refusal the offline leg *can* produce answers false. Together with the type, that is the
+    /// whole of "a network outage never locks anybody out".
     #[test]
-    fn a_credential_store_that_cannot_be_read_is_undetermined_and_costs_nothing() {
+    fn no_offline_outcome_spends_an_attempt() {
         let service = create_test_service();
-        insert_operator(&service, "op-corrupt", "1234", true);
-        {
-            let conn = service.db.connection();
-            let conn = conn.lock();
-            conn.execute(
-                "UPDATE operators SET pin_hash = '' WHERE id = 'op-corrupt'",
-                [],
-            )
-            .unwrap();
+        insert_operator(&service, "op-active", true);
+        insert_operator(&service, "op-inactive", false);
+
+        for operator in ["op-active", "op-inactive", "op-never-heard-of"] {
+            let outcome = service.verify_pin_offline(&op_id(operator), &pin("1234"), &policy());
+
+            match outcome {
+                PinVerification::Refused(refusal) => assert!(
+                    !refusal.consumes_an_attempt(),
+                    "{operator} offline produced {refusal:?}, which spends the budget"
+                ),
+                // The other two arms cannot spend an attempt: `Undetermined` has no such method,
+                // and `Accepted` is not a refusal. Listed rather than wildcarded so a new outcome
+                // has to be considered here.
+                PinVerification::Undetermined(_) | PinVerification::Accepted { .. } => {}
+            }
         }
-
-        let outcome = service.verify_pin_offline(&op_id("op-corrupt"), &pin("1234"), &policy());
-
-        let PinVerification::Undetermined(UndeterminedCause::StoreUnavailable(failure)) = outcome
-        else {
-            panic!("an unreadable credential store is not a decision about the PIN: {outcome:?}");
-        };
-        assert_eq!(failure.operation(), "comparing the stored credential");
     }
 
     /// Every column the offline read selects carries a **distinct** value, and every field that
@@ -1028,159 +881,29 @@ mod tests {
     /// `String`. Reading the SQL beside the indices is structurally blind to that; only distinct
     /// values catch it.
     ///
-    /// The NULL pass below is the other half: `name_ar` and `permissions_json` are nullable, and a
-    /// shift that lands a NULL where a NOT NULL column was expected fails differently.
+    /// The row is read even though nothing can verify a PIN against it, and the assertions reach
+    /// it through the *failure* modes rather than through an `Accepted`: a row this till cannot
+    /// read is `StoreUnavailable`, and a row it can read is `ServerUnreachable`. That distinction
+    /// is what the read is still for, and it is what these tests hold in place until
+    /// `offline-pin-verification-has-no-credential` gives the parsed operator a consumer again.
     #[test]
     fn the_offline_read_takes_every_column_from_its_own_position() {
         let service = create_test_service();
-        let hash = AuthService::hash_pin("4321").unwrap();
         {
             let conn = service.db.connection();
             let conn = conn.lock();
             conn.execute(
                 r#"INSERT INTO operators
-                   (id, code, name, name_ar, pin_hash, role, permissions_json, is_active,
-                    updated_at)
-                   VALUES ('op-distinct', 'CODE-DISTINCT', 'Sara Haddad', 'سارة حداد', ?1,
+                   (id, code, name, name_ar, role, permissions_json, is_active, updated_at)
+                   VALUES ('op-distinct', 'CODE-DISTINCT', 'Sara Haddad', 'سارة حداد',
                            'MANAGER', '{"canVoid":true}', 1, '2026-08-23 09:00:00')"#,
-                [&hash],
-            )
-            .unwrap();
-        }
-
-        let outcome = service.verify_pin_offline(&op_id("op-distinct"), &pin("4321"), &policy());
-
-        let PinVerification::Accepted {
-            operator,
-            decided_by,
-        } = outcome
-        else {
-            panic!("the fixture's PIN is the fixture's hash: {outcome:?}");
-        };
-        assert_eq!(operator.id().as_str(), "op-distinct");
-        assert_eq!(operator.name().latin(), "Sara Haddad");
-        assert_eq!(operator.name().arabic(), Some("سارة حداد"));
-        assert_eq!(operator.role(), OperatorRole::Manager);
-        assert!(operator.permissions().allows(Permission::VoidTransaction));
-        // `updated_at` reached the authority, not just the row: 09:00 plus the policy's 24 hours.
-        let Authority::OfflineCredential { not_after } = decided_by else {
-            panic!("a locally decided PIN is not a platform decision: {decided_by:?}");
-        };
-        assert!(not_after.has_passed(
-            "2026-08-24T09:00:01Z"
-                .parse::<chrono::DateTime<Utc>>()
-                .unwrap()
-        ));
-        assert!(!not_after.has_passed(
-            "2026-08-24T08:59:59Z"
-                .parse::<chrono::DateTime<Utc>>()
-                .unwrap()
-        ));
-    }
-
-    /// The NULL pass. Both nullable columns absent, and the row still reads correctly.
-    #[test]
-    fn the_offline_read_survives_its_two_nullable_columns_being_null() {
-        let service = create_test_service();
-        let hash = AuthService::hash_pin("4321").unwrap();
-        {
-            let conn = service.db.connection();
-            let conn = conn.lock();
-            conn.execute(
-                r#"INSERT INTO operators
-                   (id, code, name, name_ar, pin_hash, role, permissions_json, is_active)
-                   VALUES ('op-nulls', 'CODE-NULLS', 'Sara Haddad', NULL, ?1, 'CASHIER', NULL, 1)"#,
-                [&hash],
-            )
-            .unwrap();
-        }
-
-        let outcome = service.verify_pin_offline(&op_id("op-nulls"), &pin("4321"), &policy());
-
-        let PinVerification::Accepted { operator, .. } = outcome else {
-            panic!("two NULLs in nullable columns are not a broken row: {outcome:?}");
-        };
-        assert_eq!(operator.name().arabic(), None);
-        // Absent permissions mean this operator holds nothing beyond ringing a sale — constructed
-        // at a site that means it, never a `Default`.
-        assert!(!operator.permissions().allows(Permission::VoidTransaction));
-    }
-
-    /// A `role` column outside the server's enum is a broken row, and a broken row is refused —
-    /// before the PIN is compared, so a wrong PIN does not get a different answer.
-    #[test]
-    fn a_role_the_server_does_not_admit_is_a_broken_row_and_not_a_cashier() {
-        let service = create_test_service();
-        insert_operator(&service, "op-badrole", "1234", true);
-        {
-            let conn = service.db.connection();
-            let conn = conn.lock();
-            conn.execute(
-                "UPDATE operators SET role = 'AUDITOR' WHERE id = 'op-badrole'",
                 [],
             )
             .unwrap();
         }
 
-        for entered in ["1234", "9999"] {
-            let outcome =
-                service.verify_pin_offline(&op_id("op-badrole"), &pin(entered), &policy());
-            assert!(
-                matches!(
-                    outcome,
-                    PinVerification::Undetermined(UndeterminedCause::StoreUnavailable(_))
-                ),
-                "`{entered}` against a broken row: got {outcome:?}"
-            );
-        }
-    }
-
-    fn insert_operator(service: &AuthService, id: &str, pin: &str, active: bool) {
-        let conn = service.db.connection();
-        let conn = conn.lock();
-        let hash = AuthService::hash_pin(pin).unwrap();
-        conn.execute(
-            r#"INSERT INTO operators (id, code, name, pin_hash, role, is_active)
-               VALUES (?1, ?2, 'Ahmed', ?3, 'CASHIER', ?4)"#,
-            params![id, format!("C-{id}"), hash, active],
-        )
-        .unwrap();
-    }
-
-    #[test]
-    fn a_correct_pin_offline_is_accepted_on_the_local_credential_authority() {
-        let service = create_test_service();
-        insert_operator(&service, "op1", "1234", true);
-
-        let outcome = service.verify_pin_offline(&op_id("op1"), &pin("1234"), &policy());
-
-        let PinVerification::Accepted {
-            operator,
-            decided_by,
-        } = outcome
-        else {
-            panic!("got {outcome:?}");
-        };
-        assert_eq!(operator.name().latin(), "Ahmed");
-        assert_eq!(operator.role(), OperatorRole::Cashier);
-        // Never `Authority::Platform`: a shift opened against a locally verified PIN is a
-        // different audit record, and the till uploads shifts.
-        assert!(matches!(decided_by, Authority::OfflineCredential { .. }));
-    }
-
-    /// A local mismatch is `Undetermined`, **not** `WrongPin`.
-    ///
-    /// `WrongPin` is defined as the only refusal that spends the retry budget, and it carries the
-    /// count that remains. This till keeps no ledger — `pos-db` has no lockout table, column or
-    /// query — so answering `WrongPin` would mean fabricating a figure a cashier reads, or
-    /// asserting a budget nothing enforces. The second is the bypass this issue is named for.
-    #[test]
-    fn a_local_mismatch_is_undetermined_because_nothing_counts_it() {
-        let service = create_test_service();
-        insert_operator(&service, "op1", "1234", true);
-
-        let outcome = service.verify_pin_offline(&op_id("op1"), &pin("9999"), &policy());
-
+        // Read correctly: a well-formed, active row reaches the "nothing to check against" answer.
+        let outcome = service.verify_pin_offline(&op_id("op-distinct"), &pin("4321"), &policy());
         assert!(
             matches!(
                 outcome,
@@ -1188,6 +911,110 @@ mod tests {
             ),
             "got {outcome:?}"
         );
+
+        // Now each column in turn, corrupted where it sits. A shifted index reads a *different*
+        // column, so a corruption planted in one and reported from another is exactly the failure
+        // distinct values expose.
+        for (column, value, expected) in [
+            // `name` blank: the domain refuses a nameless operator.
+            ("name", "''", Corrupted::Unreadable),
+            // `role` outside the server's enum: a broken row, never a `Cashier` by fallback.
+            ("role", "'AUDITOR'", Corrupted::Unreadable),
+            // `permissions_json` present and unparseable: a broken row, never "no permissions".
+            (
+                "permissions_json",
+                "'{\"canVoid\": '",
+                Corrupted::Unreadable,
+            ),
+            // `is_active` false: a *refusal*, and a different one from unknown.
+            ("is_active", "0", Corrupted::Inactive),
+        ] {
+            let service = create_test_service();
+            {
+                let conn = service.db.connection();
+                let conn = conn.lock();
+                conn.execute(
+                    r#"INSERT INTO operators
+                       (id, code, name, name_ar, role, permissions_json, is_active, updated_at)
+                       VALUES ('op-distinct', 'CODE-DISTINCT', 'Sara Haddad', 'سارة حداد',
+                               'MANAGER', '{"canVoid":true}', 1, '2026-08-23 09:00:00')"#,
+                    [],
+                )
+                .unwrap();
+                conn.execute(
+                    &format!("UPDATE operators SET {column} = {value} WHERE id = 'op-distinct'"),
+                    [],
+                )
+                .unwrap();
+            }
+
+            let outcome =
+                service.verify_pin_offline(&op_id("op-distinct"), &pin("4321"), &policy());
+            match expected {
+                Corrupted::Unreadable => assert!(
+                    matches!(
+                        outcome,
+                        PinVerification::Undetermined(UndeterminedCause::StoreUnavailable(_))
+                    ),
+                    "a corrupt `{column}` must read as a broken row: got {outcome:?}"
+                ),
+                Corrupted::Inactive => assert!(
+                    matches!(
+                        outcome,
+                        PinVerification::Refused(PinRefusal::OperatorInactive)
+                    ),
+                    "`is_active = 0` is a refusal, not a broken row: got {outcome:?}"
+                ),
+            }
+        }
+    }
+
+    /// What a corrupted column should produce.
+    enum Corrupted {
+        Unreadable,
+        Inactive,
+    }
+
+    /// The NULL pass. Both nullable columns absent, and the row still reads correctly.
+    ///
+    /// A shift that lands a NULL where a NOT NULL column was expected fails differently from one
+    /// that lands a value — which is why this is a separate case and not a variation of the one
+    /// above.
+    #[test]
+    fn the_offline_read_survives_its_two_nullable_columns_being_null() {
+        let service = create_test_service();
+        {
+            let conn = service.db.connection();
+            let conn = conn.lock();
+            conn.execute(
+                r#"INSERT INTO operators
+                   (id, code, name, name_ar, role, permissions_json, is_active)
+                   VALUES ('op-nulls', 'CODE-NULLS', 'Sara Haddad', NULL, 'CASHIER', NULL, 1)"#,
+                [],
+            )
+            .unwrap();
+        }
+
+        let outcome = service.verify_pin_offline(&op_id("op-nulls"), &pin("4321"), &policy());
+
+        assert!(
+            matches!(
+                outcome,
+                PinVerification::Undetermined(UndeterminedCause::ServerUnreachable)
+            ),
+            "two NULLs in nullable columns are not a broken row: got {outcome:?}"
+        );
+    }
+
+    fn insert_operator(service: &AuthService, id: &str, active: bool) {
+        let conn = service.db.connection();
+        let conn = conn.lock();
+        conn.execute(
+            r#"INSERT INTO operators (id, code, name, role, is_active)
+               VALUES (?1, ?2, 'Ahmed', 'CASHIER', ?3)"#,
+            params![id, format!("C-{id}"), active],
+        )
+        .unwrap();
     }
 
     #[test]

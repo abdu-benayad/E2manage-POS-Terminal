@@ -9,9 +9,10 @@
 mod common;
 
 use common::{op_id, op_name, TestApp};
+use e2manage_pos_terminal::db::OperatorRow;
 use e2manage_pos_terminal::models::{
-    Authority, LockoutPeriod, MaxAttempts, NameScript, OfflineWindow, Pin, PinLength, PinPolicy,
-    PinVerification, RequiredPinLength, SessionLifetime, VerifiedOperator,
+    LockoutPeriod, MaxAttempts, NameScript, OfflineWindow, Pin, PinLength, PinPolicy,
+    PinVerification, RequiredPinLength, SessionLifetime, UndeterminedCause,
 };
 use rust_decimal::Decimal;
 
@@ -33,27 +34,40 @@ fn fixture_policy() -> PinPolicy {
     )
 }
 
-/// The operator a correct PIN identifies, or a failure naming the outcome that arrived instead.
-fn verified_operator(app: &TestApp, id: &str) -> VerifiedOperator {
+/// The operator this till holds, after asserting what a PIN entry offline now answers.
+///
+/// **These workflows used to begin by logging in offline, and they no longer can.** The platform
+/// withdrew `pinHash`, schema v13 dropped the column, and a till with no network holds nothing to
+/// check a PIN against until `offline-pin-verification-has-no-credential` lands. So the login step
+/// asserts the honest outcome instead of a fabricated success — and asserts that it costs the
+/// operator nothing, which is the whole point: the same situation previously answered `WrongPin`
+/// and locked the cashier out for trying.
+///
+/// The identity these tests need comes from the store, which still holds it. What is gone is the
+/// *verification*, not the operator.
+fn operator_after_an_offline_pin_entry(app: &TestApp, id: &str) -> OperatorRow {
     let outcome = app
         .auth_service
         .verify_pin_sync(&op_id(id), &fixture_pin(), &fixture_policy());
 
     match outcome {
-        PinVerification::Accepted {
-            operator,
-            decided_by,
-        } => {
-            // Locally decided, never `Authority::Platform`: this test never reaches a server, and
-            // a shift opened on a local decision is a different audit record.
-            assert!(
-                matches!(decided_by, Authority::OfflineCredential { .. }),
-                "an offline verification is not a platform decision: {decided_by:?}"
-            );
-            operator
-        }
-        other => panic!("the fixture's PIN is the fixture's hash, got {other:?}"),
+        PinVerification::Undetermined(UndeterminedCause::ServerUnreachable) => {}
+        PinVerification::Refused(refusal) => panic!(
+            "a synced, active operator is not refused offline, and {refusal:?} \
+             {} spend their budget",
+            if refusal.consumes_an_attempt() {
+                "would"
+            } else {
+                "would not"
+            }
+        ),
+        other => panic!("this till cannot verify a PIN offline any more, got {other:?}"),
     }
+
+    app.db
+        .get_operator_by_id(&op_id(id))
+        .expect("the store answers")
+        .expect("the fixture seeded this operator")
 }
 
 // ============================================================================
@@ -66,9 +80,9 @@ fn test_complete_shift_workflow_sync() {
     app.seed_test_data();
 
     // 1. LOGIN (verify PIN)
-    let operator = verified_operator(&app, "op-001");
-    let operator_id = operator.id().clone();
-    let operator_name = operator.name().recorded_in(NameScript::Arabic);
+    let operator = operator_after_an_offline_pin_entry(&app, "op-001");
+    let operator_id = operator.id.clone();
+    let operator_name = operator.name.recorded_in(NameScript::Arabic);
 
     // 2. START SHIFT with opening float (direct DB for sync test)
     let opening_cash = Decimal::from(500);

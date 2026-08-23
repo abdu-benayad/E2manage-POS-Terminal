@@ -269,14 +269,16 @@ async fn a_terminal_route_without_a_token_says_the_token_is_missing() {
     let detail = refusal
         .error
         .expect("the refusal carried no `error` object");
-    assert_eq!(
-        detail.code,
-        ServerErrorCode::Unrecognised("POS_TERMINAL_TOKEN_MISSING".to_string()),
-        "the till carries POS_* codes verbatim until it models them"
-    );
+    // Modelled as of `auth-outcome-and-offline-lockout` task 03. This assertion read
+    // `Unrecognised("POS_TERMINAL_TOKEN_MISSING")` with the note "the till carries POS_* codes
+    // verbatim until it models them" — which was true when it was written and stopped being true
+    // the day the till modelled all 32. `crates/pos-contract` is `[workspace] exclude`d, so
+    // `cargo test --workspace` could not report it; `cd crates/pos-contract && cargo test` is
+    // what answers.
+    assert_eq!(detail.code, ServerErrorCode::PosTerminalTokenMissing);
     assert!(
-        !detail.code.is_recognised(),
-        "an unmodelled code must read as `no information`, never as a particular refusal"
+        detail.code.is_recognised(),
+        "a code the till models must not read as `no information`"
     );
 }
 
@@ -334,10 +336,9 @@ async fn a_terminal_route_with_an_unverifiable_token_says_the_token_is_invalid()
     let detail = refusal
         .error
         .expect("the refusal carried no `error` object");
-    assert_eq!(
-        detail.code,
-        ServerErrorCode::Unrecognised("POS_TERMINAL_TOKEN_INVALID".to_string())
-    );
+    // See the note on the missing-token case above: modelled as of task 03.
+    assert_eq!(detail.code, ServerErrorCode::PosTerminalTokenInvalid);
+    assert!(detail.code.is_recognised());
 }
 
 /// A terminal logging in, and the payload it gets back.
