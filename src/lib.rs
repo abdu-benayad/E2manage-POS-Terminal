@@ -32,8 +32,8 @@
 //! // Create auth service
 //! let auth = AuthService::new(Arc::clone(&api), Arc::clone(&db));
 //!
-//! // Verify PIN offline
-//! let result = auth.verify_pin_sync("op1", "1234")?;
+//! // Verify a PIN. Total — see `pos_models::PinVerification`.
+//! let outcome = auth.verify_pin(&operator_id, &pin, &policy).await;
 //! ```
 
 // Local modules (not split into workspace crates yet)
@@ -67,7 +67,7 @@ pub use pos_api::{
 
 // Re-export commonly used types from services
 pub use pos_services::SystemService;
-pub use pos_services::{AuthService, PinVerificationResult, TerminalSession};
+pub use pos_services::{AuthService, TerminalSession};
 pub use pos_services::{CardPaymentResult, EmvEvent, EmvService};
 pub use pos_services::{CartError, CartResult, CartService};
 pub use pos_services::{CompleteResult, TransactionError, TransactionResult, TransactionService};

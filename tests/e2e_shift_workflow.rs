@@ -9,7 +9,52 @@
 mod common;
 
 use common::{op_id, op_name, TestApp};
+use e2manage_pos_terminal::models::{
+    Authority, LockoutPeriod, MaxAttempts, NameScript, OfflineWindow, Pin, PinLength, PinPolicy,
+    PinVerification, RequiredPinLength, SessionLifetime, VerifiedOperator,
+};
 use rust_decimal::Decimal;
+
+/// The fixtures' PIN and the tenant policy they run under.
+///
+/// `Pin::parse` takes no policy — a tenant's length rule governs minting, and the till has no
+/// minting door — so the two are separate concerns and are built separately here.
+fn fixture_pin() -> Pin {
+    Pin::parse("1234").expect("four ASCII digits are a platform-legal PIN")
+}
+
+fn fixture_policy() -> PinPolicy {
+    PinPolicy::new(
+        RequiredPinLength::Exactly(PinLength::Four),
+        MaxAttempts::new(3).expect("three is not zero"),
+        LockoutPeriod::from_minutes(30).expect("thirty is not negative"),
+        SessionLifetime::from_hours(12).expect("twelve is positive"),
+        OfflineWindow::from_hours(24).expect("twenty-four is not negative"),
+    )
+}
+
+/// The operator a correct PIN identifies, or a failure naming the outcome that arrived instead.
+fn verified_operator(app: &TestApp, id: &str) -> VerifiedOperator {
+    let outcome = app
+        .auth_service
+        .verify_pin_sync(&op_id(id), &fixture_pin(), &fixture_policy());
+
+    match outcome {
+        PinVerification::Accepted {
+            operator,
+            decided_by,
+        } => {
+            // Locally decided, never `Authority::Platform`: this test never reaches a server, and
+            // a shift opened on a local decision is a different audit record.
+            assert!(
+                matches!(decided_by, Authority::OfflineCredential { .. }),
+                "an offline verification is not a platform decision: {decided_by:?}"
+            );
+            operator
+        }
+        other => panic!("the fixture's PIN is the fixture's hash, got {other:?}"),
+    }
+}
 
 // ============================================================================
 // Complete Shift Workflow (Sync DB Operations)
@@ -21,15 +66,9 @@ fn test_complete_shift_workflow_sync() {
     app.seed_test_data();
 
     // 1. LOGIN (verify PIN)
-    let pin_result = app
-        .auth_service
-        .verify_pin_sync(&op_id("op-001"), "1234")
-        .unwrap();
-    assert!(pin_result.valid);
-    let operator_id = pin_result.operator_id;
-    let operator_name = pin_result
-        .operator_name
-        .expect("a verified PIN reports the operator's name");
+    let operator = verified_operator(&app, "op-001");
+    let operator_id = operator.id().clone();
+    let operator_name = operator.name().recorded_in(NameScript::Arabic);
 
     // 2. START SHIFT with opening float (direct DB for sync test)
     let opening_cash = Decimal::from(500);

@@ -10,8 +10,52 @@ mod common;
 
 use common::{op_id, op_name, TestApp};
 use e2manage_pos_terminal::models::transaction::TransactionStatus;
-use e2manage_pos_terminal::models::OperatorRole;
+use e2manage_pos_terminal::models::{
+    Authority, LockoutPeriod, MaxAttempts, NameScript, OfflineWindow, OperatorRole, Pin, PinLength,
+    PinPolicy, PinVerification, RequiredPinLength, SessionLifetime, VerifiedOperator,
+};
 use rust_decimal::Decimal;
+
+/// The fixtures' PIN and the tenant policy they run under.
+///
+/// `Pin::parse` takes no policy — a tenant's length rule governs minting, and the till has no
+/// minting door — so the two are separate concerns and are built separately here.
+fn fixture_pin() -> Pin {
+    Pin::parse("1234").expect("four ASCII digits are a platform-legal PIN")
+}
+
+fn fixture_policy() -> PinPolicy {
+    PinPolicy::new(
+        RequiredPinLength::Exactly(PinLength::Four),
+        MaxAttempts::new(3).expect("three is not zero"),
+        LockoutPeriod::from_minutes(30).expect("thirty is not negative"),
+        SessionLifetime::from_hours(12).expect("twelve is positive"),
+        OfflineWindow::from_hours(24).expect("twenty-four is not negative"),
+    )
+}
+
+/// The operator a correct PIN identifies, or a failure naming the outcome that arrived instead.
+fn verified_operator(app: &TestApp, id: &str) -> VerifiedOperator {
+    let outcome = app
+        .auth_service
+        .verify_pin_sync(&op_id(id), &fixture_pin(), &fixture_policy());
+
+    match outcome {
+        PinVerification::Accepted {
+            operator,
+            decided_by,
+        } => {
+            // Locally decided, never `Authority::Platform`: this test never reaches a server, and
+            // a shift opened on a local decision is a different audit record.
+            assert!(
+                matches!(decided_by, Authority::OfflineCredential { .. }),
+                "an offline verification is not a platform decision: {decided_by:?}"
+            );
+            operator
+        }
+        other => panic!("the fixture's PIN is the fixture's hash, got {other:?}"),
+    }
+}
 
 // ============================================================================
 // Complete Cash Sale Workflow
@@ -23,12 +67,12 @@ fn test_complete_cash_sale_workflow() {
     app.seed_test_data();
 
     // 1. VERIFY OPERATOR PIN (simulates login)
-    let pin_result = app.auth_service.verify_pin_sync(&op_id("op-001"), "1234");
-    assert!(pin_result.is_ok());
-    let pin_result = pin_result.unwrap();
-    assert!(pin_result.valid);
-    assert_eq!(pin_result.operator_name, Some(op_name("أحمد محمد")));
-    assert_eq!(pin_result.operator_role, Some(OperatorRole::Cashier));
+    let operator = verified_operator(&app, "op-001");
+    assert_eq!(
+        operator.name().recorded_in(NameScript::Arabic),
+        op_name("أحمد محمد")
+    );
+    assert_eq!(operator.role(), OperatorRole::Cashier);
 
     // 2. CREATE SHIFT (using direct DB to avoid async)
     let shift_id = app.create_shift("shift-001", &op_id("op-001"), Decimal::from(500));
@@ -101,11 +145,7 @@ fn test_split_payment_workflow() {
     app.seed_test_data();
 
     // Setup: Login and create shift
-    let pin_result = app
-        .auth_service
-        .verify_pin_sync(&op_id("op-001"), "1234")
-        .unwrap();
-    assert!(pin_result.valid);
+    let _operator = verified_operator(&app, "op-001");
 
     let shift_id = app.create_shift("shift-002", &op_id("op-001"), Decimal::from(500));
 

@@ -351,6 +351,33 @@ pub enum UndeterminedCause {
     /// standing to ask the platform anything.
     #[error("the terminal session was rejected and could not be renewed")]
     ReauthFailed,
+
+    /// The platform answered, and the till could not read the answer.
+    ///
+    /// **Never fold this into [`Self::ServerUnreachable`].** A response that arrived and did not
+    /// match the contract means the two systems disagree about the shape of an endpoint — one of
+    /// them has a bug, and treating it as a network blip is how that disagreement survives to
+    /// production, retried forever by a caller that thinks it is weather. It is the same
+    /// distinction `pos_api::ApiFailure` draws between `Unreachable` and `Unreadable`, carried
+    /// into the outcome so it survives the mapping.
+    #[error("the platform answered, and the till could not read the answer")]
+    ContractBreach {
+        /// What could not be read. Kept as an error rather than flattened into a message.
+        #[source]
+        source: Box<dyn Error + Send + Sync>,
+    },
+}
+
+impl UndeterminedCause {
+    /// Records that the platform's answer could not be read.
+    ///
+    /// A constructor rather than a `From`, so the widening is written on purpose: almost every
+    /// error in reach could be boxed into this, and only a contract breach belongs here.
+    pub fn contract_breach(source: impl Error + Send + Sync + 'static) -> Self {
+        Self::ContractBreach {
+            source: Box::new(source),
+        }
+    }
 }
 
 /// What happened when an operator entered their PIN.

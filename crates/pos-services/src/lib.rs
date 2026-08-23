@@ -28,9 +28,14 @@
 //!
 //! // Authentication
 //! let auth = AuthService::new(Arc::new(api.clone()), Arc::new(db.clone()));
-//! let result = auth.verify_pin_sync("op1", "1234")?;
-//! if result.valid {
-//!     println!("Welcome, {}!", result.operator_name);
+//! // Total: accepted, refused for a stated reason, or undecided for a stated reason. There is
+//! // no `valid` boolean and no `?` — "the till could not find out" is a case, not an error.
+//! match auth.verify_pin(&operator_id, &pin, &policy).await {
+//!     PinVerification::Accepted { operator, decided_by } => {
+//!         println!("Welcome, {} (decided by {decided_by:?})", operator.name().latin());
+//!     }
+//!     PinVerification::Refused(refusal) => println!("refused: {refusal:?}"),
+//!     PinVerification::Undetermined(cause) => println!("could not decide: {cause}"),
 //! }
 //!
 //! // Sync service
@@ -111,7 +116,7 @@ pub use pos_escpos::{Alignment, BarcodeFormat, BarcodeTextPosition, CodePage, Es
 pub use pos_printing::{PrintService, PrinterConfig, ShiftReport};
 
 // Re-export main types
-pub use auth_service::{AuthService, PinVerificationResult, TerminalSession};
+pub use auth_service::{AuthService, TerminalSession};
 pub use cart_service::{CartError, CartResult, CartService};
 pub use conflict_service::{
     ConflictError, ConflictResult, ConflictService, ConflictSummary, ResolutionResult,
