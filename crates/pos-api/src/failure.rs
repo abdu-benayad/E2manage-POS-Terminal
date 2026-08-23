@@ -66,6 +66,180 @@ pub enum ServerErrorCode {
     ValidationError,
     /// `INTERNAL_ERROR` — HTTP 500.
     InternalError,
+
+    // ---- PIN and operator ----
+    /// `POS_PIN_REQUEST_INVALID` — HTTP 400.
+    ///
+    /// The request body was not a PIN verification request.
+    PosPinRequestInvalid,
+    /// `POS_OPERATOR_NOT_FOUND` — HTTP 404.
+    ///
+    /// No operator with that id in this company.
+    PosOperatorNotFound,
+    /// `POS_OPERATOR_INACTIVE` — HTTP 401.
+    ///
+    /// The employee behind the operator profile is not `ACTIVE`.
+    PosOperatorInactive,
+    /// `POS_OPERATOR_LOCKED` — HTTP 401.
+    ///
+    /// Locked out; no PIN was compared and no attempt spent.
+    ///
+    /// Carries a `details` payload (`OperatorLockedDetails`) — see task 04.
+    PosOperatorLocked,
+    /// `POS_PIN_INVALID` — HTTP 401.
+    ///
+    /// Wrong PIN. The only refusal on this path that spends the budget.
+    ///
+    /// Carries a `details` payload (`PinInvalidDetails`) — see task 04.
+    PosPinInvalid,
+    /// `POS_PIN_ROTATION_REQUIRED` — HTTP 403.
+    ///
+    /// The PIN was CORRECT and is the wrong length for the rule now in force.
+    ///
+    /// 403 rather than 401 because the credential is right and nonetheless disallowed. The verdict
+    /// is computed only after bcrypt succeeds, deliberately: deciding it earlier is a free oracle
+    /// on the required length.
+    ///
+    /// Carries a `details` payload (`PinRotationRequiredDetails`) — see task 04.
+    PosPinRotationRequired,
+    /// `POS_PIN_POLICY_VIOLATION` — HTTP 400.
+    ///
+    /// A PIN being MINTED breaks the tenant's length rule.
+    ///
+    /// A minting door, so enforcement here is correct — unlike verification, which compares and
+    /// nothing else.
+    ///
+    /// Carries a `details` payload (`PinPolicyViolationDetails`) — see task 04.
+    PosPinPolicyViolation,
+    /// `POS_PIN_UNCHANGED` — HTTP 400.
+    ///
+    /// A rotation offered the PIN that is already set.
+    PosPinUnchanged,
+
+    // ---- operator session — the credential a verified PIN mints ----
+    /// `POS_OPERATOR_SESSION_REQUIRED` — HTTP 401.
+    ///
+    /// No `X-Operator-Token` was presented to a route that requires one.
+    PosOperatorSessionRequired,
+    /// `POS_OPERATOR_SESSION_INVALID` — HTTP 401.
+    ///
+    /// Unknown token, **or one bound to another terminal**.
+    ///
+    /// Folded server-side on purpose: telling the two apart would let a refusal confirm that a
+    /// stolen token is live. Do not add a till-side heuristic that tries.
+    PosOperatorSessionInvalid,
+    /// `POS_OPERATOR_SESSION_EXPIRED` — HTTP 401.
+    ///
+    /// Twelve hours elapsed. The server decides this; the till's clock is not authoritative.
+    PosOperatorSessionExpired,
+    /// `POS_OPERATOR_SESSION_REVOKED` — HTTP 401.
+    ///
+    /// Taken away — a PIN reset, a deactivation, a rotation. Tested before expiry server-side.
+    PosOperatorSessionRevoked,
+
+    // ---- capability — which principal may do what at a till ----
+    /// `POS_SUPERVISOR_APPROVAL_REQUIRED` — HTTP 403.
+    ///
+    /// Some operator role holds this capability, so a person at this till can supply it.
+    ///
+    /// Carries a `details` payload (`SupervisorApprovalRequiredDetails`) — see task 04.
+    PosSupervisorApprovalRequired,
+    /// `POS_OPERATOR_CAPABILITY_DENIED` — HTTP 403.
+    ///
+    /// No operator role holds it, so escalating at the till cannot help.
+    ///
+    /// Carries a `details` payload (`OperatorCapabilityDeniedDetails`) — see task 04.
+    PosOperatorCapabilityDenied,
+
+    // ---- terminal — the device credential ----
+    /// `POS_TERMINAL_TOKEN_MISSING` — HTTP 401.
+    ///
+    /// No `X-Terminal-Token` at all.
+    PosTerminalTokenMissing,
+    /// `POS_TERMINAL_TOKEN_INVALID` — HTTP 401.
+    ///
+    /// A terminal token that does not resolve.
+    PosTerminalTokenInvalid,
+    /// `POS_TERMINAL_SESSION_EXPIRED` — HTTP 401.
+    ///
+    /// The terminal session lapsed. Refresh once and retry.
+    PosTerminalSessionExpired,
+    /// `POS_TERMINAL_SESSION_REVOKED` — HTTP 401.
+    ///
+    /// The terminal session was revoked.
+    PosTerminalSessionRevoked,
+    /// `POS_TERMINAL_NOT_ACTIVE` — HTTP 403.
+    ///
+    /// The terminal is enrolled and not active. Recoverable by an administrator.
+    PosTerminalNotActive,
+    /// `POS_TERMINAL_GONE` — HTTP 403.
+    ///
+    /// The device was taken away. Distinct from `NOT_ACTIVE`: only one has a remedy at the till.
+    PosTerminalGone,
+    /// `POS_TERMINAL_NOT_PROVISIONED` — HTTP 409.
+    ///
+    /// No `secretHash`, so no offline credential can be sealed for it. Re-pair.
+    PosTerminalNotProvisioned,
+    /// `POS_TERMINAL_AUTH_FAILED` — HTTP 401.
+    ///
+    /// Terminal authentication failed.
+    PosTerminalAuthFailed,
+    /// `POS_TERMINAL_AUTH_REQUIRED` — HTTP 401.
+    ///
+    /// The route needs a terminal credential and none was offered.
+    PosTerminalAuthRequired,
+    /// `POS_COMPANY_INACTIVE` — HTTP 401.
+    ///
+    /// The tenant this terminal belongs to is not active.
+    PosCompanyInactive,
+    /// `POS_TERMINAL_NOT_FOUND` — HTTP 404.
+    ///
+    /// Fleet administration: the named terminals do not exist.
+    ///
+    /// Carries a `details` payload (`TerminalsNotFoundDetails`) — see task 04.
+    PosTerminalNotFound,
+    /// `POS_TERMINAL_ACTION_NOT_ALLOWED` — HTTP 409.
+    ///
+    /// Fleet administration: the action does not apply in the terminal's current state.
+    PosTerminalActionNotAllowed,
+
+    // ---- offline failure reports ----
+    /// `POS_OFFLINE_REPORT_NO_CREDENTIAL` — HTTP 403.
+    ///
+    /// No live credential for this (operator, terminal) pair.
+    ///
+    /// **A revoked credential and one that never existed answer identically.** Deliberate
+    /// server-side; do not try to tell them apart here.
+    PosOfflineReportNoCredential,
+    /// `POS_OFFLINE_REPORT_EXPIRED` — HTTP 403.
+    ///
+    /// The credential the report is charged against is past its `notAfter`.
+    ///
+    /// Carries a `details` payload (`OfflineReportExpiredDetails`) — see task 04.
+    PosOfflineReportExpired,
+    /// `POS_OFFLINE_REPORT_OVER_BUDGET` — HTTP 400.
+    ///
+    /// More failures claimed than the credential's own budget allowed.
+    ///
+    /// Carries a `details` payload (`OfflineReportOverBudgetDetails`) — see task 04.
+    PosOfflineReportOverBudget,
+
+    // ---- fleet commands ----
+    /// `POS_COMMAND_TYPE_INVALID` — HTTP 400.
+    ///
+    /// Fleet administration: unknown command type.
+    PosCommandTypeInvalid,
+    /// `POS_COMMAND_NOT_PENDING` — HTTP 409.
+    ///
+    /// Fleet administration: the command is no longer pending.
+    ///
+    /// Carries a `details` payload (`CommandNotPendingDetails`) — see task 04.
+    PosCommandNotPending,
+    /// `POS_COMMAND_NOT_FOR_TERMINAL` — HTTP 404.
+    ///
+    /// Fleet administration: the command belongs to a different terminal.
+    PosCommandNotForTerminal,
+
     /// A code this till does not model, carried verbatim.
     ///
     /// Includes the platform's own `UNKNOWN_ERROR`. Treat it as "no information", never as a
@@ -84,6 +258,38 @@ impl ServerErrorCode {
             Self::Conflict => "CONFLICT",
             Self::ValidationError => "VALIDATION_ERROR",
             Self::InternalError => "INTERNAL_ERROR",
+            Self::PosPinRequestInvalid => "POS_PIN_REQUEST_INVALID",
+            Self::PosOperatorNotFound => "POS_OPERATOR_NOT_FOUND",
+            Self::PosOperatorInactive => "POS_OPERATOR_INACTIVE",
+            Self::PosOperatorLocked => "POS_OPERATOR_LOCKED",
+            Self::PosPinInvalid => "POS_PIN_INVALID",
+            Self::PosPinRotationRequired => "POS_PIN_ROTATION_REQUIRED",
+            Self::PosPinPolicyViolation => "POS_PIN_POLICY_VIOLATION",
+            Self::PosPinUnchanged => "POS_PIN_UNCHANGED",
+            Self::PosOperatorSessionRequired => "POS_OPERATOR_SESSION_REQUIRED",
+            Self::PosOperatorSessionInvalid => "POS_OPERATOR_SESSION_INVALID",
+            Self::PosOperatorSessionExpired => "POS_OPERATOR_SESSION_EXPIRED",
+            Self::PosOperatorSessionRevoked => "POS_OPERATOR_SESSION_REVOKED",
+            Self::PosSupervisorApprovalRequired => "POS_SUPERVISOR_APPROVAL_REQUIRED",
+            Self::PosOperatorCapabilityDenied => "POS_OPERATOR_CAPABILITY_DENIED",
+            Self::PosTerminalTokenMissing => "POS_TERMINAL_TOKEN_MISSING",
+            Self::PosTerminalTokenInvalid => "POS_TERMINAL_TOKEN_INVALID",
+            Self::PosTerminalSessionExpired => "POS_TERMINAL_SESSION_EXPIRED",
+            Self::PosTerminalSessionRevoked => "POS_TERMINAL_SESSION_REVOKED",
+            Self::PosTerminalNotActive => "POS_TERMINAL_NOT_ACTIVE",
+            Self::PosTerminalGone => "POS_TERMINAL_GONE",
+            Self::PosTerminalNotProvisioned => "POS_TERMINAL_NOT_PROVISIONED",
+            Self::PosTerminalAuthFailed => "POS_TERMINAL_AUTH_FAILED",
+            Self::PosTerminalAuthRequired => "POS_TERMINAL_AUTH_REQUIRED",
+            Self::PosCompanyInactive => "POS_COMPANY_INACTIVE",
+            Self::PosTerminalNotFound => "POS_TERMINAL_NOT_FOUND",
+            Self::PosTerminalActionNotAllowed => "POS_TERMINAL_ACTION_NOT_ALLOWED",
+            Self::PosOfflineReportNoCredential => "POS_OFFLINE_REPORT_NO_CREDENTIAL",
+            Self::PosOfflineReportExpired => "POS_OFFLINE_REPORT_EXPIRED",
+            Self::PosOfflineReportOverBudget => "POS_OFFLINE_REPORT_OVER_BUDGET",
+            Self::PosCommandTypeInvalid => "POS_COMMAND_TYPE_INVALID",
+            Self::PosCommandNotPending => "POS_COMMAND_NOT_PENDING",
+            Self::PosCommandNotForTerminal => "POS_COMMAND_NOT_FOR_TERMINAL",
             Self::Unrecognised(code) => code,
         }
     }
@@ -107,6 +313,38 @@ impl From<String> for ServerErrorCode {
             "CONFLICT" => Self::Conflict,
             "VALIDATION_ERROR" => Self::ValidationError,
             "INTERNAL_ERROR" => Self::InternalError,
+            "POS_PIN_REQUEST_INVALID" => Self::PosPinRequestInvalid,
+            "POS_OPERATOR_NOT_FOUND" => Self::PosOperatorNotFound,
+            "POS_OPERATOR_INACTIVE" => Self::PosOperatorInactive,
+            "POS_OPERATOR_LOCKED" => Self::PosOperatorLocked,
+            "POS_PIN_INVALID" => Self::PosPinInvalid,
+            "POS_PIN_ROTATION_REQUIRED" => Self::PosPinRotationRequired,
+            "POS_PIN_POLICY_VIOLATION" => Self::PosPinPolicyViolation,
+            "POS_PIN_UNCHANGED" => Self::PosPinUnchanged,
+            "POS_OPERATOR_SESSION_REQUIRED" => Self::PosOperatorSessionRequired,
+            "POS_OPERATOR_SESSION_INVALID" => Self::PosOperatorSessionInvalid,
+            "POS_OPERATOR_SESSION_EXPIRED" => Self::PosOperatorSessionExpired,
+            "POS_OPERATOR_SESSION_REVOKED" => Self::PosOperatorSessionRevoked,
+            "POS_SUPERVISOR_APPROVAL_REQUIRED" => Self::PosSupervisorApprovalRequired,
+            "POS_OPERATOR_CAPABILITY_DENIED" => Self::PosOperatorCapabilityDenied,
+            "POS_TERMINAL_TOKEN_MISSING" => Self::PosTerminalTokenMissing,
+            "POS_TERMINAL_TOKEN_INVALID" => Self::PosTerminalTokenInvalid,
+            "POS_TERMINAL_SESSION_EXPIRED" => Self::PosTerminalSessionExpired,
+            "POS_TERMINAL_SESSION_REVOKED" => Self::PosTerminalSessionRevoked,
+            "POS_TERMINAL_NOT_ACTIVE" => Self::PosTerminalNotActive,
+            "POS_TERMINAL_GONE" => Self::PosTerminalGone,
+            "POS_TERMINAL_NOT_PROVISIONED" => Self::PosTerminalNotProvisioned,
+            "POS_TERMINAL_AUTH_FAILED" => Self::PosTerminalAuthFailed,
+            "POS_TERMINAL_AUTH_REQUIRED" => Self::PosTerminalAuthRequired,
+            "POS_COMPANY_INACTIVE" => Self::PosCompanyInactive,
+            "POS_TERMINAL_NOT_FOUND" => Self::PosTerminalNotFound,
+            "POS_TERMINAL_ACTION_NOT_ALLOWED" => Self::PosTerminalActionNotAllowed,
+            "POS_OFFLINE_REPORT_NO_CREDENTIAL" => Self::PosOfflineReportNoCredential,
+            "POS_OFFLINE_REPORT_EXPIRED" => Self::PosOfflineReportExpired,
+            "POS_OFFLINE_REPORT_OVER_BUDGET" => Self::PosOfflineReportOverBudget,
+            "POS_COMMAND_TYPE_INVALID" => Self::PosCommandTypeInvalid,
+            "POS_COMMAND_NOT_PENDING" => Self::PosCommandNotPending,
+            "POS_COMMAND_NOT_FOR_TERMINAL" => Self::PosCommandNotForTerminal,
             _ => Self::Unrecognised(code),
         }
     }
@@ -207,10 +445,169 @@ impl From<serde_json::Error> for ApiFailure {
 // Tests
 // ============================================================================
 
+// ============================================================================
+// Every recognised code, for the round-trip guard
+// ============================================================================
+
+impl ServerErrorCode {
+    /// Every variant except [`Self::Unrecognised`], which is not a code but the absence of one.
+    ///
+    /// **Extend this when you add a variant.** `as_wire_str` is exhaustive with no catch-all, so a
+    /// new variant already fails to compile there — that is the reminder. This list is what gives
+    /// `the_three_spellings_agree` something to iterate, and the honest limitation is that a
+    /// variant added to the enum and to both matches but *not* here is simply untested rather than
+    /// reported. Rust has no reflection to close that without a derive dependency.
+    #[cfg(test)]
+    const ALL_RECOGNISED: &'static [Self] = &[
+        Self::BadRequest,
+        Self::Unauthorized,
+        Self::Forbidden,
+        Self::NotFound,
+        Self::Conflict,
+        Self::ValidationError,
+        Self::InternalError,
+        Self::PosPinRequestInvalid,
+        Self::PosOperatorNotFound,
+        Self::PosOperatorInactive,
+        Self::PosOperatorLocked,
+        Self::PosPinInvalid,
+        Self::PosPinRotationRequired,
+        Self::PosPinPolicyViolation,
+        Self::PosPinUnchanged,
+        Self::PosOperatorSessionRequired,
+        Self::PosOperatorSessionInvalid,
+        Self::PosOperatorSessionExpired,
+        Self::PosOperatorSessionRevoked,
+        Self::PosSupervisorApprovalRequired,
+        Self::PosOperatorCapabilityDenied,
+        Self::PosTerminalTokenMissing,
+        Self::PosTerminalTokenInvalid,
+        Self::PosTerminalSessionExpired,
+        Self::PosTerminalSessionRevoked,
+        Self::PosTerminalNotActive,
+        Self::PosTerminalGone,
+        Self::PosTerminalNotProvisioned,
+        Self::PosTerminalAuthFailed,
+        Self::PosTerminalAuthRequired,
+        Self::PosCompanyInactive,
+        Self::PosTerminalNotFound,
+        Self::PosTerminalActionNotAllowed,
+        Self::PosOfflineReportNoCredential,
+        Self::PosOfflineReportExpired,
+        Self::PosOfflineReportOverBudget,
+        Self::PosCommandTypeInvalid,
+        Self::PosCommandNotPending,
+        Self::PosCommandNotForTerminal,
+    ];
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::client::ApiErrorResponse;
+
+
+    /// `as_wire_str`, `From<String>`, `From<ServerErrorCode> for String` and serde must agree.
+    ///
+    /// Hand-written matches over the same 39 codes are that many chances to typo one, and a typo
+    /// is invisible: the code simply stops being recognised and starts arriving as
+    /// `Unrecognised`, which reads exactly like a code the platform added and this till has not
+    /// modelled yet. That is the failure this test exists to make loud.
+    ///
+    /// **Serde is asserted rather than inferred.** `#[serde(from = "String", into = "String")]`
+    /// means deserialisation currently routes through the same two impls — but that is one
+    /// attribute away from not being true, and serde is the spelling that runs in production:
+    /// `ApiErrorDetail.code` is deserialised, never parsed by hand.
+    #[test]
+    fn the_spellings_agree_including_the_one_serde_uses() {
+        for code in ServerErrorCode::ALL_RECOGNISED {
+            let wire = code.as_wire_str();
+
+            assert_eq!(
+                ServerErrorCode::from(wire.to_string()),
+                *code,
+                "`{wire}` does not parse back to the variant that spells it — `From<String>` is \
+                 missing an arm, so this code arrives as `Unrecognised` and reads like one the \
+                 platform invented"
+            );
+
+            assert_eq!(
+                String::from(code.clone()),
+                wire,
+                "`{wire}` does not survive `From<ServerErrorCode> for String`"
+            );
+
+            assert!(
+                code.is_recognised(),
+                "`{wire}` is in ALL_RECOGNISED and reports itself unrecognised"
+            );
+
+            let json = format!("\"{wire}\"");
+            assert_eq!(
+                serde_json::from_str::<ServerErrorCode>(&json).expect("a code is a JSON string"),
+                *code,
+                "`{wire}` does not deserialise to the variant that spells it — and serde is the \
+                 path a real refusal takes"
+            );
+            assert_eq!(
+                serde_json::to_string(code).expect("a code serialises as its wire string"),
+                json
+            );
+        }
+    }
+
+    /// No two variants claim the same wire spelling.
+    ///
+    /// A duplicate would make `From<String>` silently pick whichever arm comes first, so one of
+    /// the two variants could be constructed by name and never by parsing — a difference nothing
+    /// else here would notice.
+    #[test]
+    fn no_two_codes_share_a_spelling() {
+        let mut seen = std::collections::BTreeSet::new();
+        for code in ServerErrorCode::ALL_RECOGNISED {
+            assert!(
+                seen.insert(code.as_wire_str()),
+                "two variants both spell themselves `{}`",
+                code.as_wire_str()
+            );
+        }
+    }
+
+    /// The whole point of the task: POS codes stop landing in `Unrecognised`.
+    ///
+    /// Acceptance row 13's other half is below — an unmodelled code still lands there and is still
+    /// reported as carrying no information.
+    #[test]
+    fn the_pos_codes_are_no_longer_unrecognised() {
+        for wire in [
+            "POS_PIN_INVALID",
+            "POS_OPERATOR_LOCKED",
+            "POS_PIN_ROTATION_REQUIRED",
+            "POS_OPERATOR_SESSION_REQUIRED",
+            "POS_TERMINAL_GONE",
+            "POS_TERMINAL_NOT_PROVISIONED",
+            "POS_SUPERVISOR_APPROVAL_REQUIRED",
+            "POS_OFFLINE_REPORT_OVER_BUDGET",
+        ] {
+            let code = ServerErrorCode::from(wire.to_string());
+            assert!(code.is_recognised(), "`{wire}` still lands in `Unrecognised`");
+            assert_eq!(code.as_wire_str(), wire);
+        }
+    }
+
+    /// Acceptance row 13. A code this till does not model is carried verbatim and reports itself
+    /// as no information — never as a particular refusal.
+    ///
+    /// `Unrecognised` stays for a measured reason: the platform's catalog is explicitly not an
+    /// inventory of every code the API emits, and 35+ more live in hand-rolled responses.
+    #[test]
+    fn an_unmodelled_code_is_carried_and_never_read_as_a_refusal() {
+        let code = ServerErrorCode::from("POS_SOMETHING_SHIPPED_ON_TUESDAY".to_string());
+
+        assert!(!code.is_recognised());
+        assert_eq!(code.as_wire_str(), "POS_SOMETHING_SHIPPED_ON_TUESDAY");
+        assert!(!ServerErrorCode::ALL_RECOGNISED.contains(&code));
+    }
 
     /// The envelope `respondWithApiError` writes, captured verbatim.
     const REFUSAL_ENVELOPE: &str = r#"{
@@ -251,8 +648,14 @@ mod tests {
     }
 
     #[test]
-    fn server_error_code_round_trips_every_code_the_platform_emits() {
+    fn server_error_code_round_trips_the_status_derived_codes() {
         // `errorCodeFor` (`api-error.type.ts:75-86`) emits exactly these, plus UNKNOWN_ERROR.
+        //
+        // Named for what it covers. It used to be called "every code the platform emits", which
+        // was true while these seven were the only ones modelled and stopped being true the day
+        // the POS catalogue's 32 were added — a test whose name overstates its scope is how a gap
+        // stays invisible. `the_spellings_agree_including_the_one_serde_uses` is the exhaustive
+        // one.
         for wire in [
             "BAD_REQUEST",
             "UNAUTHORIZED",
