@@ -284,7 +284,27 @@ work, and leave it. Measured 2026-08-23: one such commit sits four back with thr
 on top of it.
 
 This is timing, not discipline — the same commands are clean whenever nothing else happens to be
-staged, which is why it survives review and bites later. **`git stash` is forbidden here for the
+staged, which is why it survives review and bites later.
+
+## Verifying while other sessions edit the same tree
+
+**Verify what you touched.** `cargo test --workspace` and `cargo clippy --workspace -- -D warnings`
+share one `target/` with every other session here, and switching between the vendored and crates.io
+modes re-resolves and rebuilds the lot (see Vendor Directory). Prefer `cargo test -p pos-services`,
+`cargo clippy -p pos-api`. The full sweep runs once, against a known tree, before a push — and push
+is Abdu's lever, so that gate already exists.
+
+**A failure in a crate you did not touch is probably not yours.** The tree changes while you verify
+it. Re-run and `stat -c %y` the file before investigating, and check `git status` for another lane's
+in-flight work.
+
+**Do not conclude from an exit code or an absence.** A run that prints nothing and exits non-zero is
+consistent with OOM, a bad path, and a real failure. The only reliable signal is a plausible error
+*total*. Measured 2026-08-23 across both repos: three separate wrong diagnoses in one day, each from
+a check that returned a plausible answer for the wrong question.
+
+Cross-repo, the broker that would make this mechanical is
+`e2manage/issue/every-session-runs-the-whole-suite-against-a-tree-others-are-editing`. **`git stash` is forbidden here for the
 same reason**, and so is `git clean -fd` (see Vendor Directory below).
 
 **`git checkout -- <path>` is forbidden for a stronger reason: it is not "undo my change", it is
