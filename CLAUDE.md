@@ -24,6 +24,9 @@ cargo clippy                             # Lint
 
 # Offline build from the vendored tree (see Vendor Directory below)
 cargo build --config .cargo/vendor.toml --offline
+
+# Regenerate the pact this till publishes (see The contract against the platform)
+cd crates/pos-contract && cargo test
 ```
 
 ## Build Profiles
@@ -91,6 +94,12 @@ and it pulls reqwest 0.11 with default features, so it links native-tls and need
 system OpenSSL headers nothing else here requires. `cargo check --workspace` does
 not cover it; build and check it with `cd crates/pos-updater && cargo check`.
 
+`crates/pos-contract` is an eighth directory and also **not** a workspace member,
+for the same kind of reason: `pact_consumer` pulls `onig`/`onig_sys`, which needs
+a C toolchain and is not in the vendored tree. Excluding it keeps
+`cargo test --workspace` and the offline build discipline untouched. See
+**The contract against the platform** below.
+
 ### Root package (`src/`)
 
 - `lib.rs` - Re-exports from workspace crates for convenience
@@ -127,6 +136,64 @@ with the previous view layer. Do not add a UI dependency here without the
 2. **Sync**: Poll backend every 10 minutes for catalog/operator updates
 3. **Offline**: All operations work offline, queue transactions for sync
 4. **Transactions**: Create from cart → Add payments → Complete → Print receipt
+
+## The contract against the platform
+
+`crates/pos-contract` publishes a **pact** — a machine-readable record of what this
+till reads from the E2Manage API. The platform replays it against its real app and
+a real database, so a change there that moves a shape this till depends on fails
+*that* repository's suite, in the pull request making the change.
+
+It pins **four interactions** out of the 36 `/api/pos/*` paths the till calls: the
+nested error envelope, two terminal-auth refusals, and the pairing-request 200.
+Coverage is small on purpose — a surface where the two sides already disagree
+cannot be pinned without failing the platform's suite for a change it made
+correctly. Coverage grows one interaction per repaired surface.
+
+### Working with it
+
+```bash
+cd crates/pos-contract
+cargo test                    # regenerates pacts/e2manage-pos-terminal-wadi-dms-api.json
+```
+
+Regeneration is **byte-stable** (which is why this crate commits its `Cargo.lock`,
+against the repo-wide rule — the artifact embeds resolver versions). A non-empty
+diff on that file means an expectation genuinely changed.
+
+**The copy to the platform is manual and nothing does it for you.** After changing
+what the till expects, copy the artifact to
+`wadi-dms-api/src/modules/pos/__tests__/contracts/pacts/` and let the platform's
+`npm run test:contracts:till` confirm it still holds. Until that copy happens, the
+platform is verifying the till's *previous* expectations.
+
+### Three rules that are not obvious
+
+- **Never declare an empty JSON request body in an interaction.**
+  `json_body(json_pattern!({}))` records `"body": {}` plus a content-type and
+  deadlocks verification for 30 s with "error sending request", while the same
+  route answers in milliseconds otherwise. There is a note at the top of
+  `tests/contract.rs`.
+- **Deserialise with the till's real types** (`pos_api::ApiErrorResponse` and
+  friends), never a restatement of them. A contract test that restates the
+  consumer's types tests itself.
+- **A pact detects a field *moving*, never one *appearing*.** It cannot police data
+  exposure. Expressing absence needs a V4 `eachKey` whitelist, and defining an
+  each-key matcher at a node disables missing-key detection at that same node —
+  trading away removal detection, which is the pact's primary job here.
+
+### The interface with the platform is a document, not an issue board
+
+`e2manage/doc/pos-till-server-contract` (taskum) is the contract of record: what is
+pinned, what is excluded and why, and every till-facing surface. **Neither side
+reads the other's issue board to learn a contract fact.** An issue that changes a
+till-facing surface updates that document in the same issue, and amends the pact
+interaction if the surface is pinned.
+
+`till/doc/till-consumer-surface-audit` (taskum) carries the per-endpoint verdicts —
+`accurate` / `drifted` / `no route` / `unverified` — measured 2026-08-23. Read it
+before assuming an endpoint works: several do not, and the open ones are on the
+till roadmap.
 
 ## Configuration
 
