@@ -32,7 +32,8 @@ pub use operator::{
 };
 pub use parse::ParseError;
 pub use pin::{
-    MaxAttempts, OfflineWindow, Pin, PinFormatError, PinLength, PinPolicy, PinPolicyError,
+    LockoutPeriod, MaxAttempts, OfflineWindow, Pin, PinFormatError, PinLength, PinPolicy,
+    PinPolicyError, RequiredPinLength, SessionLifetime, UninterpretablePinLength,
 };
 pub use product::{
     Category, Product, ProductNature, ProductSearchResult, ProductType, ProductUnit,

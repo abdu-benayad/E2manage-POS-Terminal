@@ -55,7 +55,7 @@ mod guards {
     use std::fs;
     use std::path::{Path, PathBuf};
 
-    use e2manage_pos_terminal::models::{Pin, PinLength};
+    use e2manage_pos_terminal::models::Pin;
 
     /// The shipped tree. See the module docs on why there is nothing else and no exemption list.
     const SCANNED_ROOTS: [&str; 2] = ["crates", "src"];
@@ -630,8 +630,10 @@ mod guards {
     fn a_live_pin_never_reaches_a_derived_debug() {
         // The behaviour the structural scan below depends on. If this ever changed, a `pin: Pin`
         // field would start leaking and the scan would still call the tree clean.
-        let pin =
-            Pin::parse("1234", PinLength::Four).expect("four digits are a valid four-digit PIN");
+        // `Pin::parse` takes no policy: a tenant's required length governs minting, and the till
+        // has no minting door. Four digits are a shape the platform accepts, which is all this
+        // function judges.
+        let pin = Pin::parse("1234").expect("four ASCII digits are a platform-legal PIN");
         assert_eq!(format!("{pin:?}"), "Pin(****)");
         assert_eq!(format!("{pin:#?}"), "Pin(****)");
 
