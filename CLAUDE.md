@@ -287,6 +287,20 @@ This is timing, not discipline — the same commands are clean whenever nothing 
 staged, which is why it survives review and bites later. **`git stash` is forbidden here for the
 same reason**, and so is `git clean -fd` (see Vendor Directory below).
 
+**`git checkout -- <path>` is forbidden for a stronger reason: it is not "undo my change", it is
+"undo everyone's uncommitted work under this path".** Measured 2026-08-23 in the sibling platform
+repo: a session ran a tree-wide probe, reverted it with `git checkout -- src`, and took another
+session's unstaged edit with it. What makes this worse than the staging hazard is how it surfaces.
+It does not print anything. It reappears as a **runtime error in a different session's process, in
+a file the reverting session never touched** — there, a constant vanished mid-edit and the app
+began answering `500 Cannot read properties of undefined` on a route that had been fine. The
+session hit by it diagnosed a peer deliberately backing out a change, and wrote that wrong
+conclusion into a message.
+
+**To undo your own work on a shared checkout: commit first, then revert to your own SHA.** That
+scopes the undo to what you actually changed and stamps ownership on it. Copy-then-restore also
+works but fails silently into a *stale* version, which is the one failure mode nothing catches.
+
 ## Vendor Directory
 
 `vendor/` contains bundled crate sources for offline builds. It is 1.1 GB, produced by
