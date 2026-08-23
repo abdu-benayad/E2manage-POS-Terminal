@@ -294,6 +294,19 @@ modes re-resolves and rebuilds the lot (see Vendor Directory). Prefer `cargo tes
 `cargo clippy -p pos-api`. The full sweep runs once, against a known tree, before a push — and push
 is Abdu's lever, so that gate already exists.
 
+**Two holes in that rule, both measured, both the "the command cannot observe what I am claiming"
+shape:**
+
+- **`--workspace` does not mean everything.** `Cargo.toml:35` excludes `crates/pos-updater` **and
+  `crates/pos-contract`**, so no workspace command can see either. `pos-contract` was red from
+  `040d0c1` and stayed invisible through **five consecutive task verifications**. Any change to
+  `ServerErrorCode`, `RefusalDetails`, or a shared DTO must also run
+  `cd crates/pos-contract && cargo test`.
+- **`-p <crate>` does not build the root package's `tests/`**, which is where `tests/guards.rs`
+  lives — and `guards.rs` scans `crates/`. So a green per-crate run can bless a change the guards
+  refuse. That has fired twice. Run `cargo test -p e2manage-pos-terminal` too when you touch
+  anything the guards inspect.
+
 **A failure in a crate you did not touch is probably not yours.** The tree changes while you verify
 it. Re-run and `stat -c %y` the file before investigating, and check `git status` for another lane's
 in-flight work.
