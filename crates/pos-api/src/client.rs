@@ -3,14 +3,14 @@
 //! Provides a reqwest-based HTTP client for communicating with the E2Manage backend.
 //! Handles authentication tokens, timeouts, and basic error handling.
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use reqwest::{
     header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE, IF_NONE_MATCH},
     Client, Response, StatusCode,
 };
 use serde::{de, de::DeserializeOwned, Deserialize, Deserializer, Serialize};
 
-use crate::failure::ServerErrorCode;
+use crate::failure::{ApiFailure, ServerErrorCode};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
@@ -300,7 +300,7 @@ impl ApiClient {
             .await
             .map_err(|e| self.handle_request_error(e))?;
 
-        self.handle_response(response).await
+        Ok(self.handle_response(response).await?)
     }
 
     /// Makes a GET request with ETag support for caching
@@ -383,7 +383,7 @@ impl ApiClient {
             .await
             .map_err(|e| self.handle_request_error(e))?;
 
-        self.handle_response(response).await
+        Ok(self.handle_response(response).await?)
     }
 
     /// Makes a DELETE request whose response body carries nothing the caller reads.
@@ -415,7 +415,7 @@ impl ApiClient {
 
         let request_url = response.url().to_string();
         let body = response.text().await.unwrap_or_default();
-        Err(self.response_error(status, &request_url, body))
+        Err(self.refusal_from_body(status, &request_url, &body).into())
     }
 
     /// Checks if the backend is reachable and the terminal session is valid.
@@ -481,68 +481,108 @@ impl ApiClient {
         }
     }
 
-    /// Handles request errors (connection issues, timeouts, etc.)
-    fn handle_request_error(&self, error: reqwest::Error) -> anyhow::Error {
+    /// The request never produced an answer.
+    ///
+    /// One outcome, three log lines. Timeout, connect-failure and everything else are worth
+    /// telling apart in a log and are **not** a distinction a caller acts on: all three mean "ask
+    /// again later", which is what [`ApiFailure::Unreachable`] says and what `is_transient()`
+    /// answers. Encoding it in the return type would hand every caller a decision none of them
+    /// makes.
+    ///
+    /// Built through [`ApiFailure::unreachable`] by name rather than a `From` impl, because this
+    /// is the one place that knows the error came from a request that never got a reply. A blanket
+    /// conversion would also swallow reqwest's *decode* failures, which is the conflation the type
+    /// exists to end — see that constructor's own doc comment.
+    fn handle_request_error(&self, error: reqwest::Error) -> ApiFailure {
         if error.is_timeout() {
             warn!("Request timeout: {}", error);
-            anyhow!("Request timeout - server not responding")
         } else if error.is_connect() {
             warn!("Connection error: {}", error);
-            anyhow!("Connection error - unable to reach server")
         } else {
             error!("Request error: {}", error);
-            anyhow!("Request failed: {}", error)
         }
+
+        ApiFailure::unreachable(error)
     }
 
-    /// Handles response status and deserialization
-    async fn handle_response<T: DeserializeOwned>(&self, response: Response) -> Result<T> {
+    /// Reads a response into `T`, or says which of the three ways it failed.
+    ///
+    /// This replaces a body that flattened every non-2xx **and** every parse failure into one
+    /// `anyhow!("API Error ({}): {}")`. A flattened string cannot be branched on, which is why
+    /// `pos-services::sync_service::is_auth_error` substring-matches `"401"` to recover what was
+    /// thrown away.
+    ///
+    /// **The body is taken as text and decoded with `serde_json`, never with `response.json()`.**
+    /// `reqwest` folds decode failures into the same `Error` type as connection failures — only
+    /// `is_decode()` separates them — so `response.json()` would route "the body arrived and did
+    /// not match the contract" into the same value as "the server was not there".
+    async fn handle_response<T: DeserializeOwned>(
+        &self,
+        response: Response,
+    ) -> std::result::Result<T, ApiFailure> {
         let status = response.status();
         let url = response.url().to_string();
 
+        // Taking the body as text is what keeps the two failures apart, so a body that cannot be
+        // read at all has to be resolved here. It is `Unreachable`: the transfer was cut off part
+        // way, which is a network event rather than a disagreement about shape.
+        let body = response.text().await.map_err(|e| {
+            warn!("response body could not be read from {}: {}", url, e);
+            ApiFailure::unreachable(e)
+        })?;
+
         if status.is_success() {
-            let data = response
-                .json()
-                .await
-                .map_err(|e| anyhow!("Failed to parse response: {}", e))?;
-            Ok(data)
-        } else {
-            let error_text = response.text().await.unwrap_or_default();
-            Err(self.response_error(status, &url, error_text))
+            return serde_json::from_str(&body).map_err(|e| self.unreadable(&url, status, e));
+        }
+
+        Err(self.refusal_from_body(status, &url, &body))
+    }
+
+    /// Turns a non-2xx body into the failure it actually is.
+    ///
+    /// Shared by [`ApiClient::handle_response`] and [`ApiClient::delete_discard`], so that
+    /// discarding a success body does not also mean discarding a refusal.
+    ///
+    /// **An unparseable error body is [`ApiFailure::Unreadable`], not a `Refused` with a guessed
+    /// code.** The server said something this client cannot read; claiming to know which refusal
+    /// it was would be a fabrication the caller then branches on. The known case that lands here
+    /// is a CSRF 403 — `{success, error: "..."}` is flat, while [`ApiErrorResponse`] requires a
+    /// top-level `message` and reads `error` as an object — and calling that a contract breach is
+    /// correct, because it is one.
+    fn refusal_from_body(&self, status: StatusCode, url: &str, body: &str) -> ApiFailure {
+        match serde_json::from_str::<ApiErrorResponse>(body) {
+            Ok(envelope) => {
+                let (code, message) = match envelope.error {
+                    Some(detail) => (detail.code, detail.message),
+                    // The envelope parsed and carries no `error` object — a shape the platform
+                    // really does emit. So it is a refusal, not a breach; the code is *absent*
+                    // rather than unknown, and an empty `Unrecognised` says exactly that without
+                    // inventing one. `is_recognised()` answers false either way.
+                    None => (ServerErrorCode::from(String::new()), envelope.message),
+                };
+
+                error!("API refused {} at {}: {} ({})", status, url, message, code);
+                ApiFailure::Refused {
+                    status,
+                    code,
+                    message,
+                }
+            }
+            Err(e) => self.unreadable(url, status, e),
         }
     }
 
-    /// Turns a non-2xx response into an error, through the platform's error envelope when the body
-    /// parses as one and through the raw text when it does not.
+    /// A body arrived and did not match the contract.
     ///
-    /// Shared by [`ApiClient::handle_response`] and [`ApiClient::delete_discard`] so that a
-    /// discarded success body does not also mean a discarded refusal. The raw-text branch is what
-    /// a CSRF 403 lands in: `{success, error: "..."}` is flat, and [`ApiErrorResponse`] requires a
-    /// top-level `message` and reads `error` as an object, so it cannot parse that shape at all.
-    fn response_error(&self, status: StatusCode, url: &str, error_text: String) -> anyhow::Error {
-        match serde_json::from_str::<ApiErrorResponse>(&error_text) {
-            Ok(api_error) => {
-                error!(
-                    "API error {} at {}: {}",
-                    status.as_u16(),
-                    url,
-                    api_error.message
-                );
-                anyhow!("API Error ({}): {}", status.as_u16(), api_error.message)
-            }
-            Err(_) => {
-                error!("HTTP error {} at {}: {}", status.as_u16(), url, error_text);
-                anyhow!(
-                    "HTTP Error {}: {}",
-                    status.as_u16(),
-                    if error_text.is_empty() {
-                        status.canonical_reason().unwrap_or("Unknown error")
-                    } else {
-                        &error_text
-                    }
-                )
-            }
-        }
+    /// Logged at `error!` deliberately: this is never weather. It means the till and the platform
+    /// disagree about the shape of an endpoint, so one of them has a bug — and a level people
+    /// filter out is how such a disagreement survives to production.
+    fn unreadable(&self, url: &str, status: StatusCode, error: serde_json::Error) -> ApiFailure {
+        error!(
+            "contract breach: {} answered {} with a body this client cannot read: {}",
+            url, status, error
+        );
+        ApiFailure::Unreadable(error)
     }
 }
 
