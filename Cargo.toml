@@ -21,7 +21,18 @@ members = [
 # it standalone too, so it could not be built by any command at all.
 #
 #     cd crates/pos-updater && cargo build     # builds `pos-launcher`
-exclude = ["crates/pos-updater"]
+
+# `pos-contract` is excluded for the same kind of reason, measured rather than
+# assumed: `pact_consumer` with default features off resolves 80 crates the rest
+# of the till does not vendor — a 32% increase on a 253-crate tree — and among
+# them `onig_sys`, which compiles Oniguruma from C source. `pact_matching` and
+# `pact_models` both depend on it and neither makes it optional. Nothing in the
+# workspace depends on `pos-contract`, so none of that has to be anyone's
+# problem; membership would make it everyone's. It is also outside the
+# vendored-offline discipline on purpose and needs network to build.
+#
+#     cd crates/pos-contract && cargo test    # writes pacts/*.json
+exclude = ["crates/pos-updater", "crates/pos-contract"]
 
 # The main terminal binary
 default-members = ["."]

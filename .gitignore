@@ -44,3 +44,13 @@ wadi-pos-terminal-linux
 .claude/settings.local.json
 .claude/worktrees/
 .superpowers/
+
+# The pact consumer crate resolves its own graph outside the workspace.
+# `pacts/` is deliberately NOT ignored: the artifact is the reviewable record of
+# what the till expects, and it is copied into the platform repository from here.
+/crates/pos-contract/target/
+# The lock IS committed, against the repo-wide `Cargo.lock` rule three lines up.
+# The generated pact embeds its resolver versions (`metadata.pactRust`), so an
+# unpinned graph makes the artifact change without anyone changing an expectation
+# — and a diff that is noisy every time is a diff nobody reads.
+!/crates/pos-contract/Cargo.lock
