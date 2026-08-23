@@ -28,7 +28,8 @@
 //! provider being unreachable, not as anything about the contract.
 
 use pact_consumer::prelude::*;
-use pos_api::{ApiErrorResponse, ServerErrorCode};
+use pos_api::client::ApiEnvelope;
+use pos_api::{ApiErrorResponse, LoginTerminalResponse, ServerErrorCode};
 
 /// The nested error envelope, which every refusal the till handles is carried in.
 ///
@@ -323,4 +324,150 @@ async fn a_terminal_route_with_an_unverifiable_token_says_the_token_is_invalid()
         detail.code,
         ServerErrorCode::Unrecognised("POS_TERMINAL_TOKEN_INVALID".to_string())
     );
+}
+
+/// A terminal logging in, and the payload it gets back.
+///
+/// **This is the interaction the repair exists to make possible.** `POST
+/// /api/pos/terminals/login` was undeserialisable by the till for an unknown length of
+/// time: `LoginTerminalResponse` required `tenantId` and the platform stopped sending it,
+/// so serde refused the whole body across four production call sites. A drifted surface
+/// cannot be pinned — an interaction would have failed this contract for a change the
+/// platform made correctly — so `till-consumer-contract-against-the-platform` excluded it
+/// deliberately and `terminal-login-requires-a-tenant-id-the-platform-never-sends` deleted
+/// the field. This is the pin that stops it happening again silently.
+///
+/// It is reachable at all for two reasons, both measured rather than assumed:
+///
+/// - `terminals/login` is one of the six CSRF-exempt prefixes (`csrf.middleware.ts:105`),
+///   so a cookieless POST from the till is real traffic and not a 403. Almost nothing else
+///   the till writes is.
+/// - `/login` is an alias for `/authenticate` on the same handler
+///   (`terminal.controller.ts:76-77`), and `authenticateTerminalSchema` is a non-strict
+///   `z.object`, so the `terminalCode` the till sends alongside `hardwareId` and `secret`
+///   is stripped rather than refused.
+///
+/// # What is pinned, and the one omission worth explaining
+///
+/// Exactly the fields `LoginTerminalResponse` requires — `sessionToken`, `terminalId`,
+/// `terminalCode`, `companyId`, `config` — plus the two `config` values the till actually
+/// consumes. All of them `like!`: every one is minted per login or comes from the fixture's
+/// own company, and the till carries rather than branches on them. `locale` is hardcoded
+/// `'ar'` server-side and `currency` is resolved from the company, so pinning either
+/// literally would pin a property of the fixture instead of a property of the contract.
+///
+/// **`expiresAt` is deliberately not pinned, and it is the omission a later reader will try
+/// to correct.** It is `#[serde(default)] Option<String>` and nothing reads it:
+/// `AuthService::login` builds `TerminalSession` without it and `save_terminal_config` has
+/// no column for it. Pinning a field the till never consumes is this issue's own defect
+/// running the other way — a value carried for nobody. The pin arrives *with* its consumer,
+/// when `auth-outcome-and-offline-lockout` gives `SessionToken` a real expiry.
+///
+/// `features`, `branchId` and `receiptConfig` are out for the same reason plus their own:
+/// `features` depends on what the fixture's company has seeded, and `branchId` is `null`
+/// for a terminal with no location, so both would pin the fixture.
+///
+/// # Why it needs a fixture, when nothing else here does
+///
+/// The four interactions above establish absences — an unknown code, a missing token, a
+/// token that resolves to nothing. This one needs a company and an `ACTIVE` terminal whose
+/// `secret_hash` is the bcrypt of a secret the request presents, which makes its provider
+/// state the first create-shaped handler on the other side. That is the cost of pinning a
+/// success payload, and it is the reason the audit's `logout` 200 stays unpinned: a fixture
+/// is worth building for a route the till actually calls in production.
+///
+/// The secret is 16 characters at minimum because `authenticateTerminalSchema`
+/// (`terminal.validator.ts:43-53`) refuses a shorter one at 400 — which would pin a
+/// validation error while looking like a login.
+#[tokio::test]
+async fn a_terminal_login_returns_a_session_the_till_can_read() {
+    const HARDWARE_ID: &str = "pact-login-hardware-id";
+    const TERMINAL_CODE: &str = "TERM-PACT-LOGIN";
+    // At least 16 characters, or the request never reaches the handler under test.
+    const SECRET: &str = "pact-terminal-secret-0001";
+
+    let pact = PactBuilder::new("e2manage-pos-terminal", "wadi-dms-api")
+        .with_output_dir("./pacts")
+        .interaction(
+            "a login from a paired terminal presenting its secret",
+            "",
+            |mut i| {
+                i.given(format!(
+                    "a paired terminal with the hardware id {HARDWARE_ID} and a known secret"
+                ));
+                i.request
+                    .post()
+                    .path("/api/pos/terminals/login")
+                    .header("content-type", "application/json")
+                    .json_body(json_pattern!({
+                        "terminalCode": TERMINAL_CODE,
+                        "hardwareId": HARDWARE_ID,
+                        "secret": SECRET,
+                    }));
+                i.response
+                    .status(200)
+                    .header("content-type", "application/json")
+                    .json_body(json_pattern!({
+                        "success": true,
+                        "data": {
+                            "sessionToken": like!("2f8a1c9e4b7d0a63f5e2c8b1a4d7e0f3"),
+                            "terminalId": like!("TERM-E2E-123456"),
+                            "terminalCode": like!("TERM-E2E-123456"),
+                            "companyId": like!("3f1b9c02-5d7e-4a18-9c3b-2e6f8a10d45c"),
+                            "config": {
+                                "locale": like!("ar"),
+                                "currency": like!("LYD"),
+                                "taxConfig": {
+                                    "defaultRate": like!(0.0),
+                                    "taxInclusive": like!(false),
+                                },
+                            },
+                        }
+                    }));
+                i
+            },
+        )
+        .start_mock_server(None, None);
+
+    let url = format!("{}api/pos/terminals/login", pact.url());
+    let response = reqwest::Client::new()
+        .post(&url)
+        .json(&serde_json::json!({
+            "terminalCode": TERMINAL_CODE,
+            "hardwareId": HARDWARE_ID,
+            "secret": SECRET,
+        }))
+        .send()
+        .await
+        .expect("the mock server did not answer");
+
+    assert_eq!(response.status().as_u16(), 200);
+
+    // The exact pair `post_envelope` uses (`client.rs:387-404`), rather than hand-written
+    // JSON assertions: this is the deserialisation that was failing in production, so the
+    // contract is only meaningful if it is the one being exercised here.
+    let envelope: ApiEnvelope<LoginTerminalResponse> = response
+        .json()
+        .await
+        .expect("the till's LoginTerminalResponse could not parse the login payload");
+
+    assert!(
+        envelope.success,
+        "`post_envelope` refuses to unwrap `data` unless `success` is present and true"
+    );
+    let login = envelope
+        .data
+        .expect("the envelope carried no `data`, so the till gets no session at all");
+
+    for (field, value) in [
+        ("sessionToken", &login.session_token),
+        ("terminalId", &login.terminal_id),
+        ("terminalCode", &login.terminal_code),
+        ("companyId", &login.company_id),
+    ] {
+        assert!(
+            !value.is_empty(),
+            "`{field}` deserialised empty; a required field that arrives blank is the failure mode `#[serde(default)]` would have introduced here, and the reason it was refused"
+        );
+    }
 }

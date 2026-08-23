@@ -4,6 +4,117 @@
   },
   "interactions": [
     {
+      "description": "a login from a paired terminal presenting its secret",
+      "providerStates": [
+        {
+          "name": "a paired terminal with the hardware id pact-login-hardware-id and a known secret"
+        }
+      ],
+      "request": {
+        "body": {
+          "hardwareId": "pact-login-hardware-id",
+          "secret": "pact-terminal-secret-0001",
+          "terminalCode": "TERM-PACT-LOGIN"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "method": "POST",
+        "path": "/api/pos/terminals/login"
+      },
+      "response": {
+        "body": {
+          "data": {
+            "companyId": "3f1b9c02-5d7e-4a18-9c3b-2e6f8a10d45c",
+            "config": {
+              "currency": "LYD",
+              "locale": "ar",
+              "taxConfig": {
+                "defaultRate": 0.0,
+                "taxInclusive": false
+              }
+            },
+            "sessionToken": "2f8a1c9e4b7d0a63f5e2c8b1a4d7e0f3",
+            "terminalCode": "TERM-E2E-123456",
+            "terminalId": "TERM-E2E-123456"
+          },
+          "success": true
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "matchingRules": {
+          "body": {
+            "$.data.companyId": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.data.config.currency": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.data.config.locale": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.data.config.taxConfig.defaultRate": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.data.config.taxConfig.taxInclusive": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.data.sessionToken": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.data.terminalCode": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.data.terminalId": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      }
+    },
+    {
       "description": "a pairing request from an unpaired terminal",
       "providerStates": [
         {
