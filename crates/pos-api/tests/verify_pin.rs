@@ -14,7 +14,7 @@
 //! future edit that shortens it fails here rather than in a shop.
 
 use pos_api::{ApiClient, ApiFailure, RefusalDetails, ServerErrorCode};
-use pos_models::{OperatorId, OperatorRole};
+use pos_models::{OperatorId, OperatorRole, Pin};
 use wiremock::matchers::{body_json, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -32,6 +32,10 @@ async fn server_answering(status: u16, body: serde_json::Value) -> MockServer {
 
 fn operator() -> OperatorId {
     OperatorId::new("op-001").expect("a non-blank id")
+}
+
+fn pin() -> Pin {
+    Pin::parse("1234").expect("four ASCII digits are a platform-legal PIN")
 }
 
 /// A refusal envelope as `respondWithApiError` writes it, with its typed `details`.
@@ -70,7 +74,7 @@ async fn a_correct_pin_reads_as_the_affirmative_answer_a_200_already_is() {
     .await;
 
     let verified = ApiClient::new(&server.uri())
-        .verify_operator_pin(&operator(), "1234")
+        .verify_operator_pin(&operator(), &pin())
         .await
         .expect("a 200 is the affirmative answer");
 
@@ -110,7 +114,7 @@ async fn the_request_names_the_operator_and_the_pin_in_camel_case() {
         .await;
 
     ApiClient::new(&server.uri())
-        .verify_operator_pin(&operator(), "1234")
+        .verify_operator_pin(&operator(), &pin())
         .await
         .expect("the body must match what the controller's validator reads");
 
@@ -163,7 +167,7 @@ async fn the_refusals_this_route_can_answer_stay_distinguishable() {
     let mut seen = Vec::new();
     for server in [&wrong_pin, &locked, &rotation] {
         let failure = ApiClient::new(&server.uri())
-            .verify_operator_pin(&operator(), "1234")
+            .verify_operator_pin(&operator(), &pin())
             .await
             .expect_err("each of these fixtures refuses");
 

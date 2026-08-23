@@ -468,6 +468,35 @@ impl E2EClient {
         Ok((status, text))
     }
 
+    /// DELETE returning the status and the raw body, for the guards that need the status itself.
+    pub async fn delete_raw(
+        &self,
+        path: &str,
+        token: &str,
+        csrf_token: Option<&str>,
+    ) -> Result<(StatusCode, String), String> {
+        let url = format!("{}{}", self.base_url, path);
+
+        let mut request = self
+            .client
+            .delete(&url)
+            .header("Authorization", format!("Bearer {}", token));
+
+        if let Some(csrf) = csrf_token {
+            request = request.header("x-csrf-token", csrf);
+        }
+
+        let response = request
+            .send()
+            .await
+            .map_err(|e| format!("Request failed: {}", e))?;
+
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+
+        Ok((status, text))
+    }
+
     // =========================================================================
     // Terminal-Authenticated Requests (using X-Terminal-Token header)
     // =========================================================================
@@ -511,6 +540,35 @@ impl E2EClient {
             .map_err(|e| format!("Request failed: {}", e))?;
 
         self.parse_response(response).await
+    }
+
+    /// GET with terminal auth, returning the status and the **raw body**.
+    ///
+    /// Deliberately not deserialized. Two of the guards below assert things a typed read cannot
+    /// see: that a field is absent at *any depth* under a name nothing in this file declares, and
+    /// that a status is what it is rather than what a `Result` flattened it into.
+    pub async fn get_terminal_raw(
+        &self,
+        path: &str,
+        terminal_token: &str,
+    ) -> Result<(StatusCode, String), String> {
+        let url = format!("{}{}", self.base_url, path);
+
+        let response = self
+            .client
+            .get(&url)
+            .header("x-terminal-token", terminal_token)
+            .send()
+            .await
+            .map_err(|e| format!("Request failed: {}", e))?;
+
+        let status = response.status();
+        let body = response
+            .text()
+            .await
+            .map_err(|e| format!("Body read failed: {}", e))?;
+
+        Ok((status, body))
     }
 
     /// Check if backend is reachable
@@ -5481,6 +5539,153 @@ mod p16_terminal_extended {
             Err(e) => {
                 panic!("Delete terminal request failed: {}", e);
             }
+        }
+    }
+}
+
+// ============================================================================
+// LIVE-BACKEND GUARDS FOR PLATFORM BEHAVIOUR THAT IS REAL AND UNSPECIFIED
+// ============================================================================
+
+/// Two things the till now depends on that no contract records.
+///
+/// Both are `#[ignore]`d, like every test in this file, and both need a running backend and a
+/// terminal this test can de-enrol. They are here rather than in the pact because a pact pins the
+/// **shape** of an interaction the till makes; neither of these is a shape. One is a status code
+/// the platform reaches by re-reading a row on every request, and the other is the *absence* of a
+/// field — and a pact detects a field moving, never one appearing.
+///
+/// ```bash
+/// cargo test --test api_tests -- --ignored --test-threads=1 platform_behaviour
+/// ```
+mod platform_behaviour_the_till_now_relies_on {
+    use super::*;
+
+    /// **Acceptance row 14.** A de-enrolled terminal is refused 403, not 401.
+    ///
+    /// The till reads 403 `POS_TERMINAL_GONE` as `TerminalStanding::Repudiated` and stops
+    /// permanently; it reads a 401 as a session that lapsed and renews once. So the distinction
+    /// decides whether a withdrawn device quietly keeps trying.
+    ///
+    /// **Nothing on the platform records this as a contract.** It holds only because
+    /// `terminal-auth.middleware.ts` re-reads terminal status on every request and de-enrolment
+    /// does not revoke the session — so the request reaches the status check with an unrevoked
+    /// token and answers 403. If the platform ever starts revoking sessions on de-enrolment, the
+    /// same device will answer 401 (`revokedAt` is tested at `:76`, before `terminal.status` at
+    /// `:81`), the till will renew and retry forever, and nothing else in either repository will
+    /// notice. This test is the notice.
+    #[tokio::test]
+    #[ignore = "Requires running backend and a terminal this test may de-enrol"]
+    async fn a_de_enrolled_terminal_is_refused_403_and_not_401() {
+        let client = E2EClient::new();
+        ensure_setup(&client).await.expect("Setup should succeed");
+
+        let state = get_test_state().lock().await;
+        let terminal_token = state
+            .terminal_token
+            .clone()
+            .expect("Should have terminal token");
+        let user_token = state
+            .session_token
+            .clone()
+            .expect("Should have session token");
+        let terminal_id = state.terminal_id.clone().expect("Should have terminal ID");
+        drop(state);
+
+        // The token works before the de-enrolment. Asserted first, so a 403 below cannot be the
+        // token having been bad all along — which is the reading that would make this test pass
+        // for the wrong reason.
+        let (before, _) = client
+            .get_terminal_raw("/api/pos/sync/operators", &terminal_token)
+            .await
+            .expect("the request reaches the backend");
+        assert_eq!(
+            before,
+            StatusCode::OK,
+            "the terminal token must work before the terminal is withdrawn"
+        );
+
+        let csrf = client
+            .fetch_csrf_token()
+            .await
+            .expect("the backend issues a CSRF token");
+        let (deleted, body) = client
+            .delete_raw(
+                &format!("/api/pos/terminals/{terminal_id}"),
+                &user_token,
+                Some(&csrf),
+            )
+            .await
+            .expect("the delete request reaches the backend");
+        assert!(
+            deleted.is_success(),
+            "the de-enrolment itself must succeed for this test to mean anything: {deleted} {body}"
+        );
+
+        let (after, body) = client
+            .get_terminal_raw("/api/pos/sync/operators", &terminal_token)
+            .await
+            .expect("the request reaches the backend");
+
+        assert_eq!(
+            after,
+            StatusCode::FORBIDDEN,
+            "a de-enrolled terminal must answer 403, not {after}. The till reads 401 as a session \
+             it can renew, so a 401 here means a withdrawn device retries forever. Body: {body}"
+        );
+        assert!(
+            body.contains("POS_TERMINAL_GONE") || body.contains("POS_TERMINAL_NOT_ACTIVE"),
+            "the 403 must name which repudiation it is; the till says different things to the \
+             cashier for each. Body: {body}"
+        );
+    }
+
+    /// A PIN hash must not appear anywhere in the operators payload, at any depth.
+    ///
+    /// **On the wire, not on the type.** `test_07_sync_operators` already asserts
+    /// `op.pin_hash.is_none()`, and that is a weaker claim than it looks: it checks one field name
+    /// at one nesting level on a struct this file declares. A `private` field still serialises, a
+    /// nested `credential: { pinHash }` would pass it, and so would a rename to `pinHash` on a
+    /// type with `rename_all`. This one reads the raw text.
+    ///
+    /// The stake is higher since schema v13: the till has **no local secret at all**, so a hash
+    /// reappearing on this route is the platform silently reversing the decision this whole issue
+    /// was built around — and the till would happily store it again the moment anyone added a
+    /// column.
+    #[tokio::test]
+    #[ignore = "Requires running backend"]
+    async fn no_pin_hash_appears_anywhere_in_the_operators_payload() {
+        let client = E2EClient::new();
+        ensure_setup(&client).await.expect("Setup should succeed");
+
+        let state = get_test_state().lock().await;
+        let terminal_token = state
+            .terminal_token
+            .clone()
+            .expect("Should have terminal token");
+        drop(state);
+
+        let (status, body) = client
+            .get_terminal_raw("/api/pos/sync/operators", &terminal_token)
+            .await
+            .expect("the request reaches the backend");
+        assert_eq!(status, StatusCode::OK, "body: {body}");
+
+        // The positive control. A body that contains no operators contains no `pinHash` either,
+        // and would pass the assertion below without having looked at anything.
+        assert!(
+            body.contains("\"operators\""),
+            "this scan is only meaningful over a payload that carries operators: {body}"
+        );
+
+        let lowered = body.to_lowercase();
+        for spelling in ["pinhash", "pin_hash", "\"pin\":"] {
+            assert!(
+                !lowered.contains(spelling),
+                "the platform sent `{spelling}` to a till. Since schema v13 the till holds no PIN \
+                 material at all, and this route asserting the negative \
+                 (`11-sync-endpoints.e2e.test.ts:234`) is what that rests on. Body: {body}"
+            );
         }
     }
 }

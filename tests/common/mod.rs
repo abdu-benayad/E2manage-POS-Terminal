@@ -61,9 +61,25 @@ pub fn setup_test_db_arc() -> Arc<Database> {
     Arc::new(setup_test_db())
 }
 
-/// Creates a mock API client for testing.
+/// Creates an API client pointed at a port nothing is listening on.
+///
+/// **Not `http://localhost:3000`**, which is the dev backend: a test run on a machine where it
+/// happens to be up made real requests against a real database, and one where it was down made
+/// none — the same test, two different subjects, decided by what else was running. Since the
+/// workflows below now drive the async `verify_pin` rather than a sync local-only path, that
+/// difference reaches the assertions.
+///
+/// Binding to port 0 lets the OS assign a free one, and dropping the listener closes it
+/// synchronously, so "nobody answered" is a fact about this process rather than a hope about the
+/// machine. Picking a number by hand would occasionally hit something real.
 pub fn setup_mock_api() -> ApiClient {
-    ApiClient::new("http://localhost:3000")
+    let listener =
+        std::net::TcpListener::bind("127.0.0.1:0").expect("the OS can assign a loopback port");
+    let addr = listener
+        .local_addr()
+        .expect("a bound listener has an address");
+    drop(listener);
+    ApiClient::new(&format!("http://{addr}"))
 }
 
 /// Creates an Arc-wrapped mock API client.

@@ -72,8 +72,6 @@ pub use auth::{
     PairingStatusResponse,
     ReceiptConfig,
     RefreshResponse,
-    RegisterTerminalRequest,
-    RegisterTerminalResponse,
     RequestPairingRequest,
     RequestPairingResponse,
     TaxConfig,

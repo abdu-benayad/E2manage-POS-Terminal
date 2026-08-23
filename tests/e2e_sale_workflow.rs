@@ -46,10 +46,15 @@ fn fixture_policy() -> PinPolicy {
 ///
 /// The identity these tests need comes from the store, which still holds it. What is gone is the
 /// *verification*, not the operator.
-fn operator_after_an_offline_pin_entry(app: &TestApp, id: &str) -> OperatorRow {
+async fn operator_after_an_offline_pin_entry(app: &TestApp, id: &str) -> OperatorRow {
+    // Through the real entry point, against a port nothing is listening on. `verify_pin_sync` —
+    // the sync local-only delegate this used to call — is gone, and its absence is the point: the
+    // outcome asserted below is now the one a till actually reaches, decided by the whole path
+    // rather than by a shortcut into its last leg.
     let outcome = app
         .auth_service
-        .verify_pin_sync(&op_id(id), &fixture_pin(), &fixture_policy());
+        .verify_pin(&op_id(id), &fixture_pin(), &fixture_policy())
+        .await;
 
     match outcome {
         PinVerification::Undetermined(UndeterminedCause::ServerUnreachable) => {}
@@ -75,13 +80,13 @@ fn operator_after_an_offline_pin_entry(app: &TestApp, id: &str) -> OperatorRow {
 // Complete Cash Sale Workflow
 // ============================================================================
 
-#[test]
-fn test_complete_cash_sale_workflow() {
+#[tokio::test]
+async fn test_complete_cash_sale_workflow() {
     let app = TestApp::new();
     app.seed_test_data();
 
     // 1. VERIFY OPERATOR PIN (simulates login)
-    let operator = operator_after_an_offline_pin_entry(&app, "op-001");
+    let operator = operator_after_an_offline_pin_entry(&app, "op-001").await;
     assert_eq!(
         operator.name.recorded_in(NameScript::Arabic),
         op_name("أحمد محمد")
@@ -153,13 +158,13 @@ fn test_complete_cash_sale_workflow() {
 // Split Payment Workflow
 // ============================================================================
 
-#[test]
-fn test_split_payment_workflow() {
+#[tokio::test]
+async fn test_split_payment_workflow() {
     let app = TestApp::new();
     app.seed_test_data();
 
     // Setup: Login and create shift
-    let _operator = operator_after_an_offline_pin_entry(&app, "op-001");
+    let _operator = operator_after_an_offline_pin_entry(&app, "op-001").await;
 
     let shift_id = app.create_shift("shift-002", &op_id("op-001"), Decimal::from(500));
 

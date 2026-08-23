@@ -10,26 +10,11 @@ use serde::{Deserialize, Serialize};
 use crate::client::Enveloped;
 use crate::failure::ApiFailure;
 use crate::session::{OperatorSession, SessionToken};
-use pos_models::{OperatorId, OperatorPermissions, OperatorRole};
+use pos_models::{OperatorId, OperatorPermissions, OperatorRole, Pin};
 
 // ============================================================================
 // REQUEST TYPES
 // ============================================================================
-
-/// Terminal registration request
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RegisterTerminalRequest {
-    /// Unique hardware identifier (MAC address, CPU ID, etc.)
-    pub hardware_id: String,
-    /// Human-readable terminal name
-    pub name: String,
-    /// Business sector for the terminal
-    pub sector: String,
-    /// Optional branch identifier
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub branch_id: Option<String>,
-}
 
 /// Terminal login request
 #[derive(Debug, Serialize)]
@@ -103,36 +88,22 @@ struct HeartbeatBody<'a> {
 pub struct VerifyPinRequest {
     /// Operator ID
     pub operator_id: OperatorId,
-    /// PIN to verify
+    /// The digits, at the last hop before they become JSON.
     ///
-    /// Still a `String`. `pos_models::Pin` is the type that belongs here, and once it lands the
-    /// `Debug` derive is safe to restore, because `Pin`'s own `Debug` renders `Pin(****)`.
+    /// A `String` **here and nowhere above here**. [`ApiClient::verify_operator_pin`] takes a
+    /// `pos_models::Pin`, so the socket a caller can reach is typed; this field exists because
+    /// `Pin` has no `Serialize`, deliberately — a live PIN that can be serialized by anything
+    /// holding it is a PIN in a log line.
     ///
-    /// The old note here said the wiring needed *a policy-aware parse — which needs the terminal's
-    /// configured PIN length*. It no longer does: `Pin::parse` takes no policy, because a tenant's
-    /// length rule governs minting and the till never mints a PIN. What remains is plumbing the
-    /// parsed value down from PIN entry instead of a bare string, which is task 07's work.
+    /// The `Debug` derive stays off this struct for the same reason, and
+    /// `tests/guards.rs::a_live_pin_never_reaches_a_derived_debug` fails the build if it comes
+    /// back.
     pub pin: String,
 }
 
 // ============================================================================
 // RESPONSE TYPES
 // ============================================================================
-
-/// Terminal registration response
-#[derive(Debug, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct RegisterTerminalResponse {
-    /// Generated terminal ID
-    pub terminal_id: String,
-    /// Generated terminal code (e.g., "TERM-001")
-    pub terminal_code: String,
-    /// Secret for future logins
-    pub secret: String,
-    /// QR code for mobile pairing (optional)
-    #[serde(default)]
-    pub pairing_qr: Option<String>,
-}
 
 /// Terminal login response
 #[derive(Debug, Deserialize, Clone)]
@@ -452,32 +423,6 @@ pub struct PairedTerminalInfo {
 // ============================================================================
 
 impl ApiClient {
-    /// Registers a new terminal with the backend
-    ///
-    /// # Arguments
-    ///
-    /// * `request` - Registration details
-    ///
-    /// # Returns
-    ///
-    /// Terminal credentials including ID and secret
-    /// # This is dead code, and the raw read below is knowingly left drifted
-    ///
-    /// `POST /terminals/register` is guarded by `authMiddleware` + `POS_MANAGE`
-    /// (`terminal.controller.ts:117`) — a **user JWT**, which the till never holds. It is the
-    /// admin web UI's route; pairing is the till's only enrolment path (`doc/architecture`).
-    ///
-    /// The route does wrap its payload (`:317`), so this raw `post` cannot read it. That was
-    /// left alone on purpose: repairing a method the till cannot call and does not use would
-    /// make the drift invisible without making anything work. The verdict is recorded in
-    /// `till/doc/till-consumer-surface-audit` instead, which is what an unreachable row is owed.
-    pub async fn register_terminal(
-        &self,
-        request: &RegisterTerminalRequest,
-    ) -> Result<RegisterTerminalResponse> {
-        self.post("/api/pos/terminals/register", request).await
-    }
-
     /// Authenticates the terminal with the backend
     ///
     /// # Arguments
@@ -558,16 +503,23 @@ impl ApiClient {
     /// This one is the reason the enum exists: a wrong PIN, a standing lockout and a rotation
     /// requirement are three different 40x answers with three different things to say to the
     /// person at the till, and each carries typed figures in `details`. A caller that had to
-    /// downcast to find that out would be one `?` away from treating all three as weather — which
-    /// is exactly what `AuthService::verify_pin` does today, and what task 07 replaces.
+    /// downcast to find that out would be one `?` away from treating all three as weather, which
+    /// is what `AuthService::verify_pin` used to do to all of them.
+    ///
+    /// # It takes a `Pin`, not a `&str`
+    ///
+    /// A `&str` parameter accepts a name, a token, an empty string, or a PIN with a newline still
+    /// on it. [`Pin::parse`] is the only way to make one, so the socket says what fits. The
+    /// unwrapping to a `String` happens on the line below, inside the request type, because `Pin`
+    /// deliberately has no `Serialize`.
     pub async fn verify_operator_pin(
         &self,
         operator_id: &OperatorId,
-        pin: &str,
+        pin: &Pin,
     ) -> std::result::Result<VerifyPinResponse, ApiFailure> {
         let request = VerifyPinRequest {
             operator_id: operator_id.clone(),
-            pin: pin.to_string(),
+            pin: pin.expose_digits().to_string(),
         };
 
         let response: Enveloped<VerifyPinResponse> = self
@@ -871,19 +823,6 @@ mod tests {
         assert!(config.tax_config.is_none());
         assert!(config.receipt_config.is_none());
         assert!(config.features.is_empty());
-    }
-
-    #[test]
-    fn test_register_request_with_optional_branch() {
-        let request = RegisterTerminalRequest {
-            hardware_id: "HW123".to_string(),
-            name: "Checkout 1".to_string(),
-            sector: "RETAIL".to_string(),
-            branch_id: None,
-        };
-
-        let json = serde_json::to_string(&request).unwrap();
-        assert!(!json.contains("branchId")); // None should be skipped
     }
 
     // ========================================================================

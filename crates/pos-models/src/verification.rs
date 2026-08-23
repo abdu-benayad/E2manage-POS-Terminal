@@ -1,16 +1,19 @@
 //! What happened when an operator entered their PIN.
 //!
-//! This replaces `PinVerificationResult` (`crates/pos-services/src/auth_service.rs:39-46`) — a
-//! `valid` boolean beside an operator id, a name and a role, each a bare string, plus an optional
-//! message. All four are empty whenever the boolean is false. That is a sum type spelled as a
-//! product, and every reader of it has to know which fields the boolean makes meaningful.
+//! This replaced `PinVerificationResult`, deleted from `crates/pos-services/src/auth_service.rs`
+//! by `auth-outcome-and-offline-lockout` — a `valid` boolean beside an operator id, a name and a
+//! role, each a bare string, plus an optional message. All four were empty whenever the boolean
+//! was false. That is a sum type spelled as a product, and every reader of it had to know which
+//! fields the boolean made meaningful.
 //!
 //! [`PinVerification`] is that sum type spelled correctly, and it is **total**: "the till could
 //! not find out" is a third case, not an error, so a `verify_pin` returning this returns it
 //! directly rather than wrapping it in a `Result`. An offline till cannot decide, and that is
 //! ordinary weather rather than a failure of the call.
 //!
-//! Nothing references these yet; `auth-outcome-and-offline-lockout` is the first consumer.
+//! `AuthService::verify_pin` returns this, and `PinRefusal::consumes_an_attempt` is the only place
+//! in the till that can spend an operator's lockout budget — which is what makes an `Undetermined`
+//! *structurally incapable* of doing so.
 
 use std::error::Error;
 use std::fmt;
@@ -359,6 +362,18 @@ pub enum PinRefusal {
     /// requires. **Consumes no attempt**, and this is the variant that matters most: a tenant
     /// changing their policy from four digits to six would otherwise burn every operator's retry
     /// budget on PINs that were correct when they were set, and lock out the whole company.
+    ///
+    /// # Half of it is live and half is not
+    ///
+    /// The **online** half is constructed: the platform answers `POS_PIN_ROTATION_REQUIRED` and
+    /// `AuthService::verify_pin` maps it here, carrying the required length out of the refusal's
+    /// `details`. The **offline** half — a locally stored credential whose enrolled length no
+    /// longer matches the policy — cannot exist yet, because schema v13 left the till no stored
+    /// credential to have been enrolled under anything.
+    ///
+    /// That half is `offline-pin-verification-has-no-credential`'s, and it is the reason this
+    /// variant is shaped to carry `expected` rather than being a bare marker: the till has to be
+    /// able to say *six digits now* to someone whose four still work everywhere else.
     CredentialRequiresRotation {
         /// The length the tenant's policy now requires.
         expected: PinLength,

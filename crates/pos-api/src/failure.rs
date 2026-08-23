@@ -8,21 +8,23 @@
 //!
 //! # The distinction this file exists to preserve
 //!
-//! `handle_response` (`crates/pos-api/src/client.rs:514-554`) flattens every non-2xx response
-//! *and* every parse failure into one `anyhow!("API Error ({}): {}")`. `AuthService::verify_pin`
-//! (`crates/pos-services/src/auth_service.rs:263-268`) then treats any error at all as grounds to
-//! fall back to offline verification:
+//! `handle_response` used to flatten every non-2xx response *and* every parse failure into one
+//! `anyhow!("API Error ({}): {}")`, and `AuthService::verify_pin` then read any error at all as
+//! grounds to fall back to offline verification:
 //!
 //! ```text
 //! Err(e) => { warn!("Online PIN verification failed, trying offline: {}", e); }
 //! ```
 //!
-//! So a response that *arrived* and could not be read is currently indistinguishable from a
-//! network that is down, and both silently downgrade an authentication decision. A body that does
-//! not match the contract is a **bug in one of the two systems** — it should be logged and
-//! alerted as one, not counted as weather.
+//! So a response that *arrived* and could not be read was indistinguishable from a network that
+//! was down, and both silently downgraded an authentication decision. A body that does not match
+//! the contract is a **bug in one of the two systems** — it is logged and alerted as one, not
+//! counted as weather.
 //!
-//! Nothing here is wired in yet; `auth-outcome-and-offline-lockout` replaces `handle_response`.
+//! `handle_response` now builds these three, `verify_pin` branches on them, and only
+//! [`ApiFailure::Unreachable`] reaches the local leg. [`TerminalStanding`] and
+//! [`OperatorSessionRefusal`], further down, read a refusal for what it says about the terminal
+//! and about the operator's session.
 
 use std::fmt;
 

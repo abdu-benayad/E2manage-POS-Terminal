@@ -1,8 +1,10 @@
 //! The operator's PIN, and the policy that says what a valid one looks like.
 //!
-//! `auth-outcome-and-offline-lockout` is the first consumer: `pos-api` reads a
-//! [`RequiredPinLength`] off the terminal configuration, and the till's PIN entry parses what a
-//! cashier types with [`Pin::parse`].
+//! `AuthService::verify_pin` carries a [`PinPolicy`] as a parameter — the policy arrives with the
+//! terminal session at login, strictly before an operator is selected — and takes a [`Pin`] that
+//! [`Pin::parse`] made. Nothing in this repository builds a [`RequiredPinLength`] from a terminal
+//! configuration yet: the till has no PIN-entry screen here (it belongs to `egui-auth-screen`), so
+//! the only [`PinPolicy::new`] calls outside these tests are in the till's own test fixtures.
 //!
 //! # A credential policy governs minting, not presentation
 //!

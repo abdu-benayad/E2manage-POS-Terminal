@@ -45,10 +45,15 @@ fn fixture_policy() -> PinPolicy {
 ///
 /// The identity these tests need comes from the store, which still holds it. What is gone is the
 /// *verification*, not the operator.
-fn operator_after_an_offline_pin_entry(app: &TestApp, id: &str) -> OperatorRow {
+async fn operator_after_an_offline_pin_entry(app: &TestApp, id: &str) -> OperatorRow {
+    // Through the real entry point, against a port nothing is listening on. `verify_pin_sync` —
+    // the sync local-only delegate this used to call — is gone, and its absence is the point: the
+    // outcome asserted below is now the one a till actually reaches, decided by the whole path
+    // rather than by a shortcut into its last leg.
     let outcome = app
         .auth_service
-        .verify_pin_sync(&op_id(id), &fixture_pin(), &fixture_policy());
+        .verify_pin(&op_id(id), &fixture_pin(), &fixture_policy())
+        .await;
 
     match outcome {
         PinVerification::Undetermined(UndeterminedCause::ServerUnreachable) => {}
@@ -74,13 +79,13 @@ fn operator_after_an_offline_pin_entry(app: &TestApp, id: &str) -> OperatorRow {
 // Complete Shift Workflow (Sync DB Operations)
 // ============================================================================
 
-#[test]
-fn test_complete_shift_workflow_sync() {
+#[tokio::test]
+async fn test_complete_shift_workflow_sync() {
     let app = TestApp::new();
     app.seed_test_data();
 
     // 1. LOGIN (verify PIN)
-    let operator = operator_after_an_offline_pin_entry(&app, "op-001");
+    let operator = operator_after_an_offline_pin_entry(&app, "op-001").await;
     let operator_id = operator.id.clone();
     let operator_name = operator.name.recorded_in(NameScript::Arabic);
 

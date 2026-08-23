@@ -561,9 +561,9 @@ impl From<OperatorPermissions> for PermissionsWire {
 /// the [`OperatorId`] recorded on a transaction, not the operator.
 ///
 /// Constructibility is by convention rather than by proof, and this comment is the honest version
-/// of that: `from_verified_pin` names the act, but nothing yet stops another caller from using
-/// it. `06-pin-verification-outcome-types` makes `PinVerification::Accepted` its intended
-/// producer.
+/// of that: `from_verified_pin` names the act, but nothing stops another caller from using it.
+/// [`crate::PinVerification::Accepted`] is its intended producer and its only one today — a fact
+/// about the current call graph, not a property the type enforces.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VerifiedOperator {
     id: OperatorId,

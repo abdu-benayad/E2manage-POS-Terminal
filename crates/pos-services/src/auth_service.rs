@@ -368,11 +368,7 @@ impl AuthService {
     ) -> PinVerification {
         debug!("Verifying PIN for operator: {}", operator_id);
 
-        match self
-            .api
-            .verify_operator_pin(operator_id, pin.expose_digits())
-            .await
-        {
+        match self.api.verify_operator_pin(operator_id, pin).await {
             Ok(verified) => self.accepted_by_platform(operator_id, verified).await,
             Err(ApiFailure::Unreachable(error)) => {
                 debug!("the platform could not be reached, verifying locally: {error}");
@@ -482,11 +478,7 @@ impl AuthService {
             }
         }
 
-        match self
-            .api
-            .verify_operator_pin(operator_id, pin.expose_digits())
-            .await
-        {
+        match self.api.verify_operator_pin(operator_id, pin).await {
             Ok(verified) => self.accepted_by_platform(operator_id, verified).await,
             Err(ApiFailure::Unreachable(error)) => {
                 debug!("the platform went away between the renewal and the retry: {error}");
@@ -707,7 +699,7 @@ impl AuthService {
     /// *structurally incapable* of spending an attempt — there is no method to call. That is the
     /// fix. A check that the outcome does not consume an attempt would be a rule someone could
     /// forget to run; a type that has no such method is a rule nobody can break.
-    pub fn verify_pin_offline(
+    fn verify_pin_offline(
         &self,
         operator_id: &OperatorId,
         _pin: &Pin,
@@ -768,18 +760,6 @@ impl AuthService {
              no PIN can be verified until one is issued"
         );
         PinVerification::Undetermined(UndeterminedCause::ServerUnreachable)
-    }
-
-    /// Verifies a PIN against local storage without an async runtime.
-    ///
-    /// Kept as a thin delegate; task 11 removes it along with its three test call sites.
-    pub fn verify_pin_sync(
-        &self,
-        operator_id: &OperatorId,
-        pin: &Pin,
-        policy: &PinPolicy,
-    ) -> PinVerification {
-        self.verify_pin_offline(operator_id, pin, policy)
     }
 
     /// The store failed while doing something. Never a refusal — the operator is not at fault.
