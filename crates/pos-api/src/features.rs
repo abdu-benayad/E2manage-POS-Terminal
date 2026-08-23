@@ -45,6 +45,15 @@ impl ApiClient {
     pub async fn get_features(&self, etag: Option<&str>) -> Result<Option<FeaturesResponse>> {
         debug!("Fetching features (ETag: {:?})", etag);
 
+        // Deliberately a raw read and NOT `Enveloped`: this is one of the four POS success
+        // responses that carry no envelope at all. `feature.controller.ts:104` answers a bare
+        // `{version, features, lastUpdated}`, and all four exceptions live in that one file.
+        // Wrapping this would break a call site that is correct today.
+        //
+        // Its *error* shape is bare too — `{error: "Terminal not authenticated"}` at `:75`,
+        // rather than the nested `error.{code, message}` `ApiErrorResponse` parses — so a refusal
+        // here lands in `handle_response`'s raw-text branch. Out of scope for this issue; the
+        // platform tracks it as `api-error-envelope-has-six-shapes`.
         let result: GetResult<FeaturesResponse> = self
             .get_with_etag("/api/pos/features/terminal", etag)
             .await?;

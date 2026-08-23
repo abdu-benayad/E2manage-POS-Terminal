@@ -595,8 +595,9 @@ impl SyncService {
         // Fetch with ETag (includeCategories=true to get Arabic category names)
         let result: GetResult<CatalogResponse> = self
             .api
-            .get_with_etag_envelope("/api/pos/sync/catalog?includeCategories=true", etag)
-            .await?;
+            .get_with_etag("/api/pos/sync/catalog?includeCategories=true", etag)
+            .await
+            .map(GetResult::into_inner)?;
 
         match result {
             GetResult::NotModified => {
@@ -690,8 +691,9 @@ impl SyncService {
         // Fetch with ETag
         let result: GetResult<OperatorsResponse> = self
             .api
-            .get_with_etag_envelope("/api/pos/sync/operators", etag.as_deref())
-            .await?;
+            .get_with_etag("/api/pos/sync/operators", etag.as_deref())
+            .await
+            .map(GetResult::into_inner)?;
 
         match result {
             GetResult::NotModified => {

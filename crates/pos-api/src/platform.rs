@@ -9,6 +9,7 @@
 //! These APIs are separate from the tenant-level terminal APIs.
 
 use super::client::ApiClient;
+use crate::client::{Enveloped, GetResult};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
@@ -317,8 +318,8 @@ impl ApiClient {
         &self,
         request: &PlatformHeartbeatRequest,
     ) -> Result<PlatformHeartbeatResponse> {
-        self.post_envelope("/api/pos/platform/heartbeat", request)
-            .await
+        let response: Enveloped<_> = self.post("/api/pos/platform/heartbeat", request).await?;
+        Ok(response.into_inner())
     }
 
     /// Gets security policies from the platform
@@ -336,8 +337,9 @@ impl ApiClient {
         &self,
         etag: Option<&str>,
     ) -> Result<super::GetResult<SecurityPoliciesResponse>> {
-        self.get_with_etag_envelope("/api/pos/platform/security-policies", etag)
+        self.get_with_etag("/api/pos/platform/security-policies", etag)
             .await
+            .map(GetResult::into_inner)
     }
 
     /// Checks for available updates
@@ -359,7 +361,8 @@ impl ApiClient {
             "/api/pos/platform/check-update?currentVersion={}&releaseChannel={}",
             current_version, release_channel
         );
-        self.get_envelope(&path).await
+        let response: Enveloped<_> = self.get(&path).await?;
+        Ok(response.into_inner())
     }
 
     /// Reports successful version update
@@ -382,8 +385,14 @@ impl ApiClient {
             success: bool,
         }
 
+        // Read with a plain DTO, NOT `Enveloped`: this route answers `{success, message}` with
+        // no `data` (`platform.controller.ts:409-412`), and `Enveloped` refuses a success with no
+        // payload. It used to call `post_envelope`, whose tail is
+        // `data.ok_or_else(|| anyhow!("API returned success but no data"))` - so every call failed
+        // against a correct server, with a message that read like a server fault. The comment
+        // above recorded the right observation and the code contradicted it.
         let _: Response = self
-            .post_envelope("/api/pos/platform/report-version", &request)
+            .post("/api/pos/platform/report-version", &request)
             .await?;
         Ok(())
     }
@@ -406,8 +415,8 @@ impl ApiClient {
         &self,
         request: &RegisterDeviceRequest,
     ) -> Result<RegisterDeviceResponse> {
-        self.post_envelope("/api/pos/platform/register", request)
-            .await
+        let response: Enveloped<_> = self.post("/api/pos/platform/register", request).await?;
+        Ok(response.into_inner())
     }
 
     /// Validates a device license
@@ -441,8 +450,9 @@ impl ApiClient {
         };
 
         let response: Response = self
-            .post_envelope("/api/pos/platform/validate-license", &request)
-            .await?;
+            .post::<_, Enveloped<_>>("/api/pos/platform/validate-license", &request)
+            .await
+            .map(Enveloped::into_inner)?;
         Ok(response.valid)
     }
 }

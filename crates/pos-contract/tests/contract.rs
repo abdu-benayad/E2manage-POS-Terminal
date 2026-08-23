@@ -28,7 +28,7 @@
 //! provider being unreachable, not as anything about the contract.
 
 use pact_consumer::prelude::*;
-use pos_api::client::ApiEnvelope;
+use pos_api::Enveloped;
 use pos_api::{ApiErrorResponse, LoginTerminalResponse, ServerErrorCode};
 
 /// The nested error envelope, which every refusal the till handles is carried in.
@@ -143,11 +143,11 @@ async fn a_refusal_carries_the_nested_error_envelope() {
 /// existed the contract proved the real error path runs and said nothing about any
 /// controller's success path.
 ///
-/// The till reads this through `post_envelope`, which unwraps `{success, message, data}` and
+/// The till reads this through `Enveloped<T>`, which unwraps `{success, message, data}` and
 /// hands back `data` — so `data.{pairingCode, expiresAt, hardwareId}` is the till's actual
 /// expectation and the envelope around it is incidental. Both are pinned: the envelope
-/// because `post_envelope` requires `success` to be present and true before it will unwrap,
-/// and the payload because that is what `RequestPairingResponse` deserialises.
+/// because `Enveloped` refuses a body whose `success` is absent or false, and the payload
+/// because that is what `RequestPairingResponse` deserialises.
 ///
 /// `pairingCode` and `expiresAt` are `like!` — they are minted per request and the till only
 /// displays them. `hardwareId` is a literal because the platform echoes back what was sent,
@@ -443,21 +443,20 @@ async fn a_terminal_login_returns_a_session_the_till_can_read() {
 
     assert_eq!(response.status().as_u16(), 200);
 
-    // The exact pair `post_envelope` uses (`client.rs:387-404`), rather than hand-written
-    // JSON assertions: this is the deserialisation that was failing in production, so the
-    // contract is only meaningful if it is the one being exercised here.
-    let envelope: ApiEnvelope<LoginTerminalResponse> = response
-        .json()
+    // `Enveloped<LoginTerminalResponse>` is exactly what the till's `login_terminal` reads
+    // (`auth.rs:384`), rather than hand-written JSON assertions: this is the deserialisation
+    // that was failing in production, so the contract is only meaningful if it is the one
+    // being exercised here.
+    //
+    // It replaces a manual `ApiEnvelope` read plus two assertions, because `Enveloped` now
+    // performs both checks itself — a body whose `success` is absent or false, or which
+    // carries no `data`, fails to deserialise rather than reaching an assertion. Folding them
+    // into the type is the point of the type; restating them here would test the restatement.
+    let login: LoginTerminalResponse = response
+        .json::<Enveloped<LoginTerminalResponse>>()
         .await
-        .expect("the till's LoginTerminalResponse could not parse the login payload");
-
-    assert!(
-        envelope.success,
-        "`post_envelope` refuses to unwrap `data` unless `success` is present and true"
-    );
-    let login = envelope
-        .data
-        .expect("the envelope carried no `data`, so the till gets no session at all");
+        .expect("the till's LoginTerminalResponse could not parse the login payload")
+        .into_inner();
 
     for (field, value) in [
         ("sessionToken", &login.session_token),

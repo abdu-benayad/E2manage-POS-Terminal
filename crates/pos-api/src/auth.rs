@@ -7,6 +7,7 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+use crate::client::Enveloped;
 use pos_models::OperatorId;
 
 // ============================================================================
@@ -346,6 +347,16 @@ impl ApiClient {
     /// # Returns
     ///
     /// Terminal credentials including ID and secret
+    /// # This is dead code, and the raw read below is knowingly left drifted
+    ///
+    /// `POST /terminals/register` is guarded by `authMiddleware` + `POS_MANAGE`
+    /// (`terminal.controller.ts:117`) — a **user JWT**, which the till never holds. It is the
+    /// admin web UI's route; pairing is the till's only enrolment path (`doc/architecture`).
+    ///
+    /// The route does wrap its payload (`:317`), so this raw `post` cannot read it. That was
+    /// left alone on purpose: repairing a method the till cannot call and does not use would
+    /// make the drift invisible without making anything work. The verdict is recorded in
+    /// `till/doc/till-consumer-surface-audit` instead, which is what an unreachable row is owed.
     pub async fn register_terminal(
         &self,
         request: &RegisterTerminalRequest,
@@ -379,10 +390,11 @@ impl ApiClient {
             secret: secret.to_string(),
         };
 
-        // Use post_envelope to unwrap { success, data } response
+        // `Enveloped` unwraps `{ success, message, data }` (`terminal.controller.ts:213-224`).
         let response: LoginTerminalResponse = self
-            .post_envelope("/api/pos/terminals/login", &request)
-            .await?;
+            .post::<_, Enveloped<_>>("/api/pos/terminals/login", &request)
+            .await
+            .map(Enveloped::into_inner)?;
 
         // Store session token and terminal ID
         self.set_token(response.session_token.clone()).await;
@@ -430,8 +442,15 @@ impl ApiClient {
             pin: pin.to_string(),
         };
 
-        self.post("/api/pos/sync/operators/verify-pin", &request)
-            .await
+        // The envelope is repaired here (`sync.controller.ts:1168` wraps its payload). The DTO's
+        // required `valid: bool` is a SEPARATE drift - the platform deliberately stopped sending
+        // it, and says so at `sync.controller.ts:1172-1175` - and belongs to
+        // `auth-outcome-and-offline-lockout`. This call therefore still fails on the field; it is
+        // no longer also failing on the envelope. The route is CSRF-non-exempt regardless.
+        let response: Enveloped<_> = self
+            .post("/api/pos/sync/operators/verify-pin", &request)
+            .await?;
+        Ok(response.into_inner())
     }
 
     /// Refreshes the session token
@@ -444,7 +463,13 @@ impl ApiClient {
             session_token: String,
         }
 
-        let response: RefreshResponse = self.post("/api/pos/terminals/refresh", &()).await?;
+        // `Enveloped`, not a raw read: this route wraps its payload
+        // (`terminal.controller.ts:251-258`, `data:{sessionToken, expiresAt}`), so the raw `post`
+        // this used to call was deserialising the envelope into `RefreshResponse` and finding no
+        // `sessionToken` at the top level.
+        let response: Enveloped<RefreshResponse> =
+            self.post("/api/pos/terminals/refresh", &()).await?;
+        let response = response.into_inner();
         self.set_token(response.session_token.clone()).await;
         Ok(response.session_token)
     }
@@ -459,6 +484,11 @@ impl ApiClient {
             success: bool,
         }
 
+        // Deliberately a plain DTO and NOT `Enveloped`: this route answers `{success, message}`
+        // with no `data` (`terminal.controller.ts:281-284`). Reading `success` at the top level is
+        // correct here, and wrapping it would turn a working call into "no `data` payload". The
+        // boundary is pinned by `a_no_data_route_is_read_with_a_plain_dto_not_with_enveloped` in
+        // `client.rs`.
         let _: LogoutResponse = self.post("/api/pos/terminals/logout", &()).await?;
         self.clear_token().await;
         Ok(())
@@ -491,8 +521,9 @@ impl ApiClient {
             device_info,
         };
 
-        self.post_envelope("/api/pos/terminals/pairing/request", &request)
+        self.post::<_, Enveloped<_>>("/api/pos/terminals/pairing/request", &request)
             .await
+            .map(Enveloped::into_inner)
     }
 
     /// Checks the status of a pairing request
@@ -509,7 +540,8 @@ impl ApiClient {
     /// Current status and terminal info if completed
     pub async fn check_pairing_status(&self, pairing_code: &str) -> Result<PairingStatusResponse> {
         let path = format!("/api/pos/terminals/pairing/status/{}", pairing_code);
-        self.get_envelope(&path).await
+        let response: Enveloped<_> = self.get(&path).await?;
+        Ok(response.into_inner())
     }
 
     /// Recovers terminal registration when local data was lost
@@ -530,8 +562,9 @@ impl ApiClient {
             device_info: None,
         };
 
-        self.post_envelope("/api/pos/terminals/pairing/recover", &request)
+        self.post::<_, Enveloped<_>>("/api/pos/terminals/pairing/recover", &request)
             .await
+            .map(Enveloped::into_inner)
     }
 }
 

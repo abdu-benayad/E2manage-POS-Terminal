@@ -41,6 +41,7 @@ use serde::{Deserialize, Serialize};
 use pos_models::{OperatorId, RecordedOperatorName};
 
 use super::ApiClient;
+use crate::client::Enveloped;
 
 // ============================================================================
 // Request DTOs
@@ -449,7 +450,8 @@ impl ApiClient {
     ///
     /// Created cart with generated token
     pub async fn create_cart(&self, request: &CreateCartRequest) -> Result<CartResponse> {
-        self.post_envelope("/api/carts", request).await
+        let response: Enveloped<_> = self.post("/api/carts", request).await?;
+        Ok(response.into_inner())
     }
 
     /// Lists all POS carts for a warehouse
@@ -468,7 +470,8 @@ impl ApiClient {
             "/api/carts?warehouseId={}&source=POS&status=ACTIVE",
             urlencoding::encode(warehouse_id)
         );
-        self.get_envelope(&url).await
+        let response: Enveloped<_> = self.get(&url).await?;
+        Ok(response.into_inner())
     }
 
     /// Gets a cart by its token
@@ -484,7 +487,8 @@ impl ApiClient {
     /// The cart with all items
     pub async fn get_cart_by_token(&self, token: &str) -> Result<CartResponse> {
         let url = format!("/api/carts/token/{}", urlencoding::encode(token));
-        self.get_envelope(&url).await
+        let response: Enveloped<_> = self.get(&url).await?;
+        Ok(response.into_inner())
     }
 
     /// Gets a cart by ID
@@ -498,7 +502,8 @@ impl ApiClient {
     /// The cart with all items
     pub async fn get_cart_by_id(&self, id: &str) -> Result<CartResponse> {
         let url = format!("/api/carts/{}", urlencoding::encode(id));
-        self.get_envelope(&url).await
+        let response: Enveloped<_> = self.get(&url).await?;
+        Ok(response.into_inner())
     }
 
     /// Marks a cart as converted (completed transaction)
@@ -519,7 +524,8 @@ impl ApiClient {
         let request = ConvertCartRequest {
             transaction_id: transaction_id.to_string(),
         };
-        self.post_envelope(&url, &request).await
+        let response: Enveloped<_> = self.post(&url, &request).await?;
+        Ok(response.into_inner())
     }
 
     /// Deletes/cancels a cart
@@ -531,8 +537,7 @@ impl ApiClient {
     /// * `id` - Cart UUID to delete
     pub async fn delete_cart(&self, id: &str) -> Result<()> {
         let url = format!("/api/carts/{}", urlencoding::encode(id));
-        let _: serde_json::Value = self.delete(&url).await?;
-        Ok(())
+        self.delete_discard(&url).await
     }
 
     // ========================================================================
@@ -555,7 +560,8 @@ impl ApiClient {
         &self,
         request: &CreateAndParkCartRequest,
     ) -> Result<ParkedCartDetailResponse> {
-        self.post_envelope("/api/pos/parking", request).await
+        let response: Enveloped<_> = self.post("/api/pos/parking", request).await?;
+        Ok(response.into_inner())
     }
 
     /// Lists parked carts for a warehouse
@@ -585,7 +591,8 @@ impl ApiClient {
         if let Some(s) = search {
             url.push_str(&format!("&search={}", urlencoding::encode(s)));
         }
-        self.get_envelope(&url).await
+        let response: Enveloped<_> = self.get(&url).await?;
+        Ok(response.into_inner())
     }
 
     /// Gets a parked cart by POS token (P001, P002...)
@@ -602,7 +609,8 @@ impl ApiClient {
         pos_token: &str,
     ) -> Result<ParkedCartDetailResponse> {
         let url = format!("/api/pos/parking/token/{}", urlencoding::encode(pos_token));
-        self.get_envelope(&url).await
+        let response: Enveloped<_> = self.get(&url).await?;
+        Ok(response.into_inner())
     }
 
     /// Gets a parked cart by ID
@@ -616,7 +624,8 @@ impl ApiClient {
     /// The parked cart with items
     pub async fn get_parked_cart_by_id(&self, id: &str) -> Result<ParkedCartDetailResponse> {
         let url = format!("/api/pos/parking/{}", urlencoding::encode(id));
-        self.get_envelope(&url).await
+        let response: Enveloped<_> = self.get(&url).await?;
+        Ok(response.into_inner())
     }
 
     /// Recalls a parked cart
@@ -638,7 +647,8 @@ impl ApiClient {
         request: &RecallCartRequest,
     ) -> Result<ParkedCartDetailResponse> {
         let url = format!("/api/pos/parking/{}/recall", urlencoding::encode(id));
-        self.post_envelope(&url, request).await
+        let response: Enveloped<_> = self.post(&url, request).await?;
+        Ok(response.into_inner())
     }
 
     /// Recalls a parked cart by POS token
@@ -660,7 +670,8 @@ impl ApiClient {
             "/api/pos/parking/token/{}/recall",
             urlencoding::encode(pos_token)
         );
-        self.post_envelope(&url, request).await
+        let response: Enveloped<_> = self.post(&url, request).await?;
+        Ok(response.into_inner())
     }
 
     /// Releases a recalled cart back to PARKED status
@@ -678,7 +689,8 @@ impl ApiClient {
     ) -> Result<ParkedCartDetailResponse> {
         let url = format!("/api/pos/parking/{}/release", urlencoding::encode(id));
         let body = serde_json::json!({ "terminalId": terminal_id });
-        self.post_envelope(&url, &body).await
+        let response: Enveloped<_> = self.post(&url, &body).await?;
+        Ok(response.into_inner())
     }
 
     /// Re-parks a recalled cart after modifications
@@ -693,7 +705,8 @@ impl ApiClient {
         request: &ParkCartRequest,
     ) -> Result<ParkedCartDetailResponse> {
         let url = format!("/api/pos/parking/{}/repark", urlencoding::encode(id));
-        self.post_envelope(&url, request).await
+        let response: Enveloped<_> = self.post(&url, request).await?;
+        Ok(response.into_inner())
     }
 
     /// Parks an existing DRAFT cart
@@ -708,7 +721,8 @@ impl ApiClient {
         request: &ParkCartRequest,
     ) -> Result<ParkedCartDetailResponse> {
         let url = format!("/api/pos/parking/{}/park", urlencoding::encode(id));
-        self.post_envelope(&url, request).await
+        let response: Enveloped<_> = self.post(&url, request).await?;
+        Ok(response.into_inner())
     }
 
     /// Voids/cancels a parked cart
@@ -718,8 +732,7 @@ impl ApiClient {
     /// * `id` - Cart UUID to void
     pub async fn void_parked_cart(&self, id: &str) -> Result<()> {
         let url = format!("/api/pos/parking/{}", urlencoding::encode(id));
-        let _: serde_json::Value = self.delete(&url).await?;
-        Ok(())
+        self.delete_discard(&url).await
     }
 }
 

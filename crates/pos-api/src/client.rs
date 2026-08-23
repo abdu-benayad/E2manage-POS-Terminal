@@ -72,6 +72,13 @@ pub struct ApiErrorDetail {
 
 /// API response envelope from backend
 /// The backend wraps all responses in {success, message?, data}
+///
+/// **Kept only for `crates/pos-contract`**, which reads it directly at `tests/contract.rs:31, :449`
+/// to assert the envelope's own shape. Every call site in this crate reads payloads through
+/// [`Enveloped`] instead, which checks `success` and a missing `data` rather than handing the
+/// caller two `Option`-shaped decisions it will not make. `pos-contract` is `[workspace] exclude`d,
+/// so `cargo clippy --workspace` cannot tell you that deleting this broke it — `cd
+/// crates/pos-contract && cargo test` is what answers.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ApiEnvelope<T> {
@@ -158,6 +165,23 @@ pub enum GetResult<T> {
     Data { data: T, etag: Option<String> },
     /// Not modified (304), use cached data
     NotModified,
+}
+
+impl<T> GetResult<Enveloped<T>> {
+    /// Unwraps the envelope inside a conditional-GET result, leaving `NotModified` untouched.
+    ///
+    /// A 304 carries no body — both ETag helpers return before `handle_response` is reached — so
+    /// there is nothing to unwrap on that arm, and expressing that here rather than at each call
+    /// site is what stops someone deriving a payload from a response that had none.
+    pub fn into_inner(self) -> GetResult<T> {
+        match self {
+            GetResult::Data { data, etag } => GetResult::Data {
+                data: data.into_inner(),
+                etag,
+            },
+            GetResult::NotModified => GetResult::NotModified,
+        }
+    }
 }
 
 /// API Client for E2Manage backend communication
@@ -332,96 +356,6 @@ impl ApiClient {
         })
     }
 
-    /// Makes a conditional GET request with ETag support, unwrapping the API envelope
-    ///
-    /// Use this for endpoints that return {success, data} wrapper and support ETag caching.
-    pub async fn get_with_etag_envelope<T: DeserializeOwned>(
-        &self,
-        path: &str,
-        etag: Option<&str>,
-    ) -> Result<GetResult<T>> {
-        let url = format!("{}{}", self.base_url, path);
-        debug!("GET (envelope) {} (ETag: {:?})", url, etag);
-
-        let mut request = self.client.get(&url).headers(self.build_headers().await);
-
-        // Add If-None-Match header if we have an ETag
-        if let Some(etag_value) = etag {
-            if let Ok(value) = HeaderValue::from_str(etag_value) {
-                request = request.header(IF_NONE_MATCH, value);
-            }
-        }
-
-        let response = request
-            .send()
-            .await
-            .map_err(|e| self.handle_request_error(e))?;
-
-        // Handle 304 Not Modified
-        if response.status() == StatusCode::NOT_MODIFIED {
-            debug!("304 Not Modified for {}", path);
-            return Ok(GetResult::NotModified);
-        }
-
-        // Extract ETag from response headers
-        let new_etag = response
-            .headers()
-            .get("etag")
-            .and_then(|v| v.to_str().ok())
-            .map(|s| s.to_string());
-
-        // Unwrap the envelope
-        let envelope: ApiEnvelope<T> = self.handle_response(response).await?;
-
-        if !envelope.success {
-            return Err(anyhow!(
-                "API error: {}",
-                envelope
-                    .message
-                    .unwrap_or_else(|| "Unknown error".to_string())
-            ));
-        }
-
-        let data = envelope
-            .data
-            .ok_or_else(|| anyhow!("API returned success but no data"))?;
-
-        Ok(GetResult::Data {
-            data,
-            etag: new_etag,
-        })
-    }
-
-    /// Makes a GET request and unwraps the API envelope response
-    /// Use this for endpoints that return {success, data} wrapper
-    pub async fn get_envelope<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
-        let url = format!("{}{}", self.base_url, path);
-        debug!("GET (envelope) {}", url);
-
-        let response = self
-            .client
-            .get(&url)
-            .headers(self.build_headers().await)
-            .send()
-            .await
-            .map_err(|e| self.handle_request_error(e))?;
-
-        let envelope: ApiEnvelope<T> = self.handle_response(response).await?;
-
-        if !envelope.success {
-            return Err(anyhow!(
-                "API error: {}",
-                envelope
-                    .message
-                    .unwrap_or_else(|| "Unknown error".to_string())
-            ));
-        }
-
-        envelope
-            .data
-            .ok_or_else(|| anyhow!("API returned success but no data"))
-    }
-
     /// Makes a POST request
     ///
     /// # Arguments
@@ -450,41 +384,6 @@ impl ApiClient {
             .map_err(|e| self.handle_request_error(e))?;
 
         self.handle_response(response).await
-    }
-
-    /// Makes a POST request and unwraps the API envelope response
-    /// Use this for endpoints that return {success, data} wrapper
-    pub async fn post_envelope<T, R>(&self, path: &str, body: &T) -> Result<R>
-    where
-        T: Serialize,
-        R: DeserializeOwned,
-    {
-        let url = format!("{}{}", self.base_url, path);
-        debug!("POST (envelope) {}", url);
-
-        let response = self
-            .client
-            .post(&url)
-            .headers(self.build_headers().await)
-            .json(body)
-            .send()
-            .await
-            .map_err(|e| self.handle_request_error(e))?;
-
-        let envelope: ApiEnvelope<R> = self.handle_response(response).await?;
-
-        if !envelope.success {
-            return Err(anyhow!(
-                "API error: {}",
-                envelope
-                    .message
-                    .unwrap_or_else(|| "Unknown error".to_string())
-            ));
-        }
-
-        envelope
-            .data
-            .ok_or_else(|| anyhow!("API returned success but no data"))
     }
 
     /// Makes a PUT request
