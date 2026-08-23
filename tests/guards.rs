@@ -1,7 +1,12 @@
-//! Guards for the concepts `type-driven-domain-core` finished.
+//! Guards for the concepts this project has finished.
 //!
-//! The issue's diagnosis of how this codebase drifted is that **a rule written in a document is a
-//! rule nobody runs**. Two `OperatorPermissions` structs disagreed about the casing of the same
+//! `type-driven-domain-core` established the file and the first seven; later issues add their own,
+//! because "every finished concept gets a guard test that runs" is a standing decision rather than
+//! one issue's cleanup. A deletion is a concept like any other —
+//! `the_till_never_carries_a_tenant_id` guards one.
+//!
+//! The founding issue's diagnosis of how this codebase drifted is that **a rule written in a
+//! document is a rule nobody runs**. Two `OperatorPermissions` structs disagreed about the casing of the same
 //! JSON for as long as they both existed, because nothing checked. Every guard here is a rule that
 //! used to live only in a doc, expressed so that violating it turns the build red.
 //!
@@ -412,6 +417,19 @@ mod guards {
             witnesses.contains(&"VerifyPin"),
             "no `Debug`-deriving type in the tree declares a `pin` field (found {witnesses:?}); the PIN guard is vacuous"
         );
+
+        // `the_till_never_carries_a_tenant_id` is a scan for an absence, and an absence is what a
+        // broken reader reports too. So both of its spellings need a witness that the same matcher
+        // does find, or the guard passes on a tree it never read.
+        let finds = |word: &str| lines.iter().any(|line| contains_word(&line.code, word));
+        assert!(
+            finds("company_id"),
+            "no scanned line contains the word `company_id`; the tenant-id guard is scanning a tree it cannot read, and its snake_case arm is vacuous"
+        );
+        assert!(
+            finds("companyId"),
+            "no scanned line contains the word `companyId`. Measured 2026-08-23 there is exactly one in the shipped tree — the `\"companyId\"` key in `test_login_response_deserialization` (`crates/pos-api/src/auth.rs`), kept deliberately when its `tenantId` sibling was deleted. If that fixture is gone, the camelCase arm of the tenant-id guard now has no witness: give it another one rather than deleting this assertion"
+        );
     }
 
     /// An operator's identity is never a bare string.
@@ -627,6 +645,59 @@ mod guards {
         assert!(
             offences.is_empty(),
             "a PIN is exposed to a derived `Debug` in {} place(s); hold it as `pos_models::Pin`, or drop the derive until you can:\n  {}",
+            offences.len(),
+            offences.join("\n  ")
+        );
+    }
+
+    /// The till carries no tenant id.
+    ///
+    /// `LoginTerminalResponse` required `tenantId` and the platform stopped sending it, so
+    /// `POST /api/pos/terminals/login` was undeserialisable across four production call sites for
+    /// an unknown length of time. `PairedTerminalInfo` failed the same way and worse, breaking
+    /// pairing at the moment it succeeded rather than while it was pending.
+    ///
+    /// The fix was a deletion rather than a design question, and the measurement is what decided
+    /// it: of 25 occurrences across the tree, **not one read the value for anything** — no request
+    /// header, no query parameter, no scoping decision, no view-model bridge. There is no role here
+    /// for a `TenantId` newtype to name.
+    ///
+    /// So this guard is not "the spelling is banned". It is: **a field the till never consumes does
+    /// not get carried.** If a genuine tenancy need appears it arrives *with* its consumer, and the
+    /// type is designed against that consumer — at which point deleting this test is the deliberate
+    /// act that reopens the question, which is the whole point of it existing.
+    ///
+    /// Both spellings, because the concept has two vocabularies here as everywhere else: the wire
+    /// sends `tenantId` and the store and the structs say `tenant_id`. A scan for one is blind to
+    /// the other, and the wire spelling is the one that appears in a JSON fixture — which is
+    /// precisely where this defect hid.
+    ///
+    /// `tests/` stays out of scope, as it does for every scan here, and that is load-bearing rather
+    /// than inherited: `scripts/setup-e2e-test-data.sql` and `scripts/setup-test-env.sh` name
+    /// `pos_tenant_configurations.tenant_id`, which is the **platform's** own column — a different
+    /// concept that happens to share a spelling.
+    #[test]
+    fn the_till_never_carries_a_tenant_id() {
+        const SPELLINGS: [&str; 2] = ["tenant_id", "tenantId"];
+
+        let offences: Vec<String> = scanned_lines()
+            .iter()
+            .filter(|line| {
+                SPELLINGS
+                    .iter()
+                    .any(|spelling| contains_word(&line.code, spelling))
+            })
+            .map(|line| format!("{}:{} {}", line.path, line.number, line.code.trim()))
+            .collect();
+
+        assert!(
+            offences.is_empty(),
+            "a tenant id is back in the shipped tree in {} place(s). The till is write-only about \
+             one: it was deserialised, carried, persisted to two SQLite columns and read back, and \
+             consumed by nothing, which is why it and its columns were deleted rather than \
+             defaulted. If this reintroduction has a real consumer, that consumer is the argument \
+             for a `TenantId` newtype and for deleting this guard in the same increment — do both \
+             deliberately, not by adding a field:\n  {}",
             offences.len(),
             offences.join("\n  ")
         );
