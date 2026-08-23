@@ -711,6 +711,88 @@ mod tests {
         assert!(!service.is_registered().unwrap());
     }
 
+    /// Every column of `terminal_registration` carries a **distinct** value, and every field of
+    /// the loaded `TerminalRegistration` is asserted.
+    ///
+    /// `get_registration` reads its row by position, so a column added, removed or reordered in
+    /// the SELECT list shifts every index after it. Five of the seven columns are TEXT, so a swap
+    /// among them compiles and passes rusqlite's type check — it just attributes one terminal's
+    /// details to another. Asserting a subset leaves the unasserted positions free to swap, and
+    /// repeating a value across same-typed columns lets a swap between *those two* pass: a later
+    /// edit that tidies these fixtures into shared or omitted values disarms the test without
+    /// failing it.
+    #[test]
+    fn test_get_registration_reads_every_column_into_its_own_field() {
+        let service = create_test_service();
+
+        {
+            let conn = service.db.connection();
+            let conn = conn.lock();
+            conn.execute(
+                r#"
+                UPDATE terminal_registration
+                SET hardware_id = 'hardware-id-1',
+                    terminal_id = 'terminal-id-1',
+                    terminal_code = 'terminal-code-1',
+                    secret = 'secret-1',
+                    company_name = 'company-name-1',
+                    registered_at = '2026-08-23T12:00:00Z',
+                    is_registered = 1
+                WHERE id = 1
+                "#,
+                [],
+            )
+            .unwrap();
+        }
+
+        let registration = service.get_registration().unwrap().unwrap();
+
+        assert_eq!(registration.hardware_id, "hardware-id-1");
+        assert_eq!(registration.terminal_id, Some("terminal-id-1".to_string()));
+        assert_eq!(
+            registration.terminal_code,
+            Some("terminal-code-1".to_string())
+        );
+        assert_eq!(registration.secret, Some("secret-1".to_string()));
+        assert_eq!(
+            registration.company_name,
+            Some("company-name-1".to_string())
+        );
+        assert!(registration.is_registered);
+        assert_eq!(
+            registration.registered_at,
+            Some("2026-08-23T12:00:00Z".to_string())
+        );
+    }
+
+    /// A row that exists but is not registered is not a registration. The credentials are present
+    /// on that row during pairing, so returning it would hand callers a terminal identity the
+    /// server has not confirmed.
+    #[test]
+    fn test_get_registration_is_none_while_unregistered() {
+        let service = create_test_service();
+
+        {
+            let conn = service.db.connection();
+            let conn = conn.lock();
+            conn.execute(
+                r#"
+                UPDATE terminal_registration
+                SET hardware_id = 'hardware-id-1',
+                    terminal_id = 'terminal-id-1',
+                    terminal_code = 'terminal-code-1',
+                    secret = 'secret-1',
+                    is_registered = 0
+                WHERE id = 1
+                "#,
+                [],
+            )
+            .unwrap();
+        }
+
+        assert!(service.get_registration().unwrap().is_none());
+    }
+
     #[test]
     fn test_get_hardware_id() {
         let service = create_test_service();

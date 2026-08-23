@@ -498,6 +498,92 @@ mod tests {
         assert!(session.is_none());
     }
 
+    /// Every column of `terminal_config` carries a **distinct** value, and every field of the
+    /// loaded `TerminalSession` is asserted.
+    ///
+    /// Both halves are load-bearing. `load_saved_session` reads its row by position, so a column
+    /// added, removed or reordered in the SELECT list silently shifts every index after it —
+    /// and because the columns either side are all TEXT, the swapped read compiles and satisfies
+    /// rusqlite's type check. Asserting a subset leaves the unasserted positions free to swap;
+    /// repeating a value across same-typed columns lets a swap between *those two* pass. So a
+    /// later edit that tidies these fixtures into shared or omitted values disarms the test
+    /// without failing it.
+    ///
+    /// The three columns with fallbacks — locale, currency, sector — are given values that
+    /// differ from their defaults ("ar", "LYD", "RETAIL"), so a fallback firing over a stored
+    /// value fails here too.
+    #[test]
+    fn test_load_saved_session_reads_every_column_into_its_own_field() {
+        let service = create_test_service();
+
+        {
+            let conn = service.db.connection();
+            let conn = conn.lock();
+            conn.execute(
+                r#"
+                INSERT INTO terminal_config
+                (id, terminal_id, terminal_code, hardware_id, session_token,
+                 company_id, branch_id, locale, currency, tax_rate, tax_inclusive, sector)
+                VALUES (1, 'terminal-id-1', 'terminal-code-1', 'hardware-id-1', 'session-token-1',
+                        'company-id-1', 'branch-id-1', 'en', 'USD', 15.5, 1, 'PHARMACY')
+                "#,
+                [],
+            )
+            .unwrap();
+        }
+
+        let session = service.load_saved_session().unwrap().unwrap();
+
+        assert_eq!(session.terminal_id, "terminal-id-1");
+        assert_eq!(session.terminal_code, "terminal-code-1");
+        assert_eq!(session.hardware_id, "hardware-id-1");
+        assert_eq!(session.session_token, "session-token-1");
+        assert_eq!(session.company_id, "company-id-1");
+        assert_eq!(session.branch_id, Some("branch-id-1".to_string()));
+        assert_eq!(session.locale, "en");
+        assert_eq!(session.currency, "USD");
+        assert_eq!(session.tax_rate, 15.5);
+        assert!(session.tax_inclusive);
+        assert_eq!(session.sector, "PHARMACY");
+        assert!(
+            session.features.is_empty(),
+            "features are synced separately"
+        );
+    }
+
+    /// The fallbacks are the other half of the mapping: a NULL in any nullable column must reach
+    /// its own field's default, not another field's.
+    #[test]
+    fn test_load_saved_session_applies_each_fallback_to_its_own_field() {
+        let service = create_test_service();
+
+        {
+            let conn = service.db.connection();
+            let conn = conn.lock();
+            conn.execute(
+                r#"
+                INSERT INTO terminal_config
+                (id, terminal_id, terminal_code, hardware_id, session_token,
+                 company_id, branch_id, locale, currency, tax_rate, tax_inclusive, sector)
+                VALUES (1, 'terminal-id-1', 'terminal-code-1', 'hardware-id-1', 'session-token-1',
+                        NULL, NULL, NULL, NULL, NULL, NULL, NULL)
+                "#,
+                [],
+            )
+            .unwrap();
+        }
+
+        let session = service.load_saved_session().unwrap().unwrap();
+
+        assert_eq!(session.company_id, "");
+        assert_eq!(session.branch_id, None);
+        assert_eq!(session.locale, "ar");
+        assert_eq!(session.currency, "LYD");
+        assert_eq!(session.tax_rate, 0.0);
+        assert!(!session.tax_inclusive);
+        assert_eq!(session.sector, "RETAIL");
+    }
+
     #[test]
     fn test_verify_pin_offline_operator_not_found() {
         let service = create_test_service();
