@@ -31,7 +31,7 @@
 //! conflict_service.discard("offline-id-456")?;
 //! ```
 
-use pos_api::ApiClient;
+use pos_api::{ApiClient, UploadOfflineTransactionRequest};
 use pos_db::transactions::OfflineTransactionRow;
 use pos_db::Database;
 use pos_models::OperatorId;
@@ -282,7 +282,7 @@ impl ConflictService {
             .ok_or_else(|| ConflictError::NotFound(offline_id.to_string()))?;
 
         // Build force sync request
-        let request = ForceTransactionRequest {
+        let request = UploadOfflineTransactionRequest {
             offline_id: row.offline_id.clone(),
             transaction_number: row.transaction_number,
             transaction_type: row.transaction_type,
@@ -303,18 +303,14 @@ impl ConflictService {
             receipt_number: row.receipt_number,
             notes: row.notes,
             created_at: row.created_at,
+            // This resolver's whole purpose: the operator has chosen this version, so the
+            // platform's conflict check is being overridden deliberately.
             force: true,
+            catalog_etag: None,
         };
 
         // Attempt force sync
-        match self
-            .api
-            .post::<ForceTransactionRequest, ForceTransactionResponse>(
-                "/api/pos/offline/upload",
-                &request,
-            )
-            .await
-        {
+        match self.api.upload_offline_transaction(&request).await {
             Ok(response) => {
                 // Mark as synced
                 self.db
@@ -380,41 +376,6 @@ impl ConflictService {
         warn!("Discarded {} conflict transactions", count);
         Ok(count)
     }
-}
-
-/// Request payload for force syncing a transaction
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ForceTransactionRequest {
-    offline_id: String,
-    transaction_number: Option<String>,
-    transaction_type: String,
-    items: serde_json::Value,
-    payments: serde_json::Value,
-    subtotal: Decimal,
-    tax_total: Decimal,
-    discount_total: Decimal,
-    grand_total: Decimal,
-    customer_id: Option<String>,
-    customer_name: Option<String>,
-    shift_id: Option<String>,
-    operator_id: Option<OperatorId>,
-    terminal_id: Option<String>,
-    receipt_number: Option<String>,
-    notes: Option<String>,
-    created_at: String,
-    /// Force flag to override conflict checks
-    force: bool,
-}
-
-/// Response from server after force syncing a transaction
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ForceTransactionResponse {
-    id: String,
-    #[allow(dead_code)]
-    #[serde(default)]
-    transaction_number: Option<String>,
 }
 
 #[cfg(test)]

@@ -501,15 +501,8 @@ impl SyncService {
     async fn try_delta_sync(&self, tx: &broadcast::Sender<SyncEvent>, since: &str) -> Result<bool> {
         debug!("Attempting delta sync since {}", since);
 
-        // URL encode the timestamp
-        let encoded_since = urlencoding::encode(since);
-        let url = format!(
-            "/api/pos/sync/catalog/delta?since={}&includeCategories=true",
-            encoded_since
-        );
-
         // Try to fetch delta
-        let result: Result<CatalogDeltaResponse> = self.api.get(&url).await;
+        let result: Result<CatalogDeltaResponse> = self.api.get_catalog_delta(since).await;
 
         match result {
             Ok(delta) => {
@@ -593,11 +586,7 @@ impl SyncService {
         etag: Option<&str>,
     ) -> Result<()> {
         // Fetch with ETag (includeCategories=true to get Arabic category names)
-        let result: GetResult<CatalogResponse> = self
-            .api
-            .get_with_etag("/api/pos/sync/catalog?includeCategories=true", etag)
-            .await
-            .map(GetResult::into_inner)?;
+        let result: GetResult<CatalogResponse> = self.api.get_catalog(etag).await?;
 
         match result {
             GetResult::NotModified => {
@@ -689,11 +678,7 @@ impl SyncService {
         let etag = self.db.get_etag(SyncResource::Operators)?;
 
         // Fetch with ETag
-        let result: GetResult<OperatorsResponse> = self
-            .api
-            .get_with_etag("/api/pos/sync/operators", etag.as_deref())
-            .await
-            .map(GetResult::into_inner)?;
+        let result: GetResult<OperatorsResponse> = self.api.get_operators(etag.as_deref()).await?;
 
         match result {
             GetResult::NotModified => {

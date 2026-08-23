@@ -46,7 +46,7 @@ use chrono::{DateTime, Utc};
 use std::str::FromStr;
 
 use crate::parse::ParseError;
-use pos_api::ApiClient;
+use pos_api::{ApiClient, CreateReturnRequest, ReturnItemRequest};
 use pos_db::decimal_from_sqlite;
 use pos_db::transactions::OfflineTransactionRow;
 use pos_db::Database;
@@ -521,72 +521,20 @@ impl ReturnService {
             return Ok(None);
         }
 
-        #[derive(Deserialize)]
-        struct ApiResponse {
-            transaction: Option<TransactionDto>,
-        }
-
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct TransactionDto {
-            id: String,
-            transaction_number: String,
-            transaction_type: String,
-            items: Vec<TransactionItemDto>,
-            payments: Vec<PaymentDto>,
-            subtotal: Decimal,
-            tax_total: Decimal,
-            discount_total: Decimal,
-            grand_total: Decimal,
-            customer_id: Option<String>,
-            customer_name: Option<String>,
-            shift_id: String,
-            terminal_id: String,
-            operator_id: OperatorId,
-            operator_name: RecordedOperatorName,
-            status: String,
-            created_at: String,
-            completed_at: Option<String>,
-            receipt_number: Option<String>,
-        }
-
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct TransactionItemDto {
-            id: String,
-            product_id: String,
-            product_name: String,
-            product_name_ar: Option<String>,
-            sku: String,
-            barcode: Option<String>,
-            quantity: Decimal,
-            unit: String,
-            unit_price: Decimal,
-            tax_rate: Decimal,
-            tax_amount: Decimal,
-            discount_amount: Decimal,
-            line_total: Decimal,
-        }
-
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct PaymentDto {
-            id: String,
-            method: String,
-            amount: Decimal,
-            currency: String,
-            reference: Option<String>,
-            card_last_four: Option<String>,
-            card_type: Option<String>,
-            auth_code: Option<String>,
-            wallet_type: Option<String>,
-            created_at: String,
-        }
-
-        let path = format!("/api/pos/transactions/by-receipt/{}", receipt_number);
-        match self.api.get::<ApiResponse>(&path).await {
-            Ok(response) => {
-                if let Some(dto) = response.transaction {
+        // The platform sends the transaction AS the envelope's `data`
+        // (`transaction.controller.ts:322`). This used to read a bare `{ transaction: … }` with
+        // the raw `get`, so it was wrong twice over: the envelope was never unwrapped, and the
+        // payload was looked for under a key the platform does not send.
+        // A receipt the platform does not have arrives here as `Err`, not as `Ok(None)`, because
+        // `handle_response` flattens every non-2xx into one opaque `anyhow`. The `else { Ok(None) }`
+        // branch this replaced was already dead for the same reason *plus* a second one: the old
+        // `{ transaction: Option<…> }` DTO could not deserialise the real payload at all, so the
+        // `None` arm was unreachable on every path. Distinguishing "not found" from "lookup
+        // failed" needs `ApiFailure`, which `auth-outcome-and-offline-lockout` wires in; inventing
+        // a discriminator here would mean matching on an error string.
+        match self.api.get_transaction_by_receipt(receipt_number).await {
+            Ok(dto) => {
+                {
                     // Convert DTO to Transaction
                     let created_at = DateTime::parse_from_rfc3339(&dto.created_at)
                         .map(|dt| dt.with_timezone(&Utc))
@@ -671,8 +619,6 @@ impl ReturnService {
                     };
 
                     Ok(Some(txn))
-                } else {
-                    Ok(None)
                 }
             }
             Err(e) => {
@@ -1053,31 +999,6 @@ impl ReturnService {
             return false;
         }
 
-        #[derive(Serialize)]
-        #[serde(rename_all = "camelCase")]
-        struct CreateReturnRequest {
-            original_transaction_id: String,
-            items: Vec<ReturnItemRequest>,
-            refund_method: String,
-            refund_amount: Decimal,
-            operator_id: OperatorId,
-            terminal_id: String,
-            shift_id: String,
-        }
-
-        #[derive(Serialize)]
-        #[serde(rename_all = "camelCase")]
-        struct ReturnItemRequest {
-            original_item_id: String,
-            quantity: Decimal,
-            reason: String,
-        }
-
-        #[derive(Deserialize)]
-        struct CreateReturnResponse {
-            id: String,
-        }
-
         let request = CreateReturnRequest {
             original_transaction_id: original_txn.id.clone(),
             items: return_txn
@@ -1100,11 +1021,7 @@ impl ReturnService {
             shift_id: return_txn.shift_id.clone(),
         };
 
-        match self
-            .api
-            .post::<_, CreateReturnResponse>("/api/pos/returns", &request)
-            .await
-        {
+        match self.api.create_return(&request).await {
             Ok(response) => {
                 info!("Return synced to server: {}", response.id);
                 // Update sync status

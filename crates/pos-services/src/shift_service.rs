@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::{info, warn};
 
-use pos_api::ApiClient;
+use pos_api::{ApiClient, DenominationDto, EndShiftRequest, StartShiftRequest};
 use pos_db::shifts::{ShiftRow, ShiftStatus};
 use pos_db::Database;
 use pos_models::{OperatorId, RecordedOperatorName};
@@ -269,45 +269,6 @@ pub struct CloseShiftResult {
     pub synced: bool,
     /// X-Report data for printing
     pub report: ShiftSummary,
-}
-
-/// API DTOs for shift sync
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct StartShiftRequest {
-    shift_number: String,
-    operator_id: OperatorId,
-    terminal_id: String,
-    opening_cash: Decimal,
-    currency: String,
-    started_at: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct StartShiftResponse {
-    id: String,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct EndShiftRequest {
-    closing_cash: Decimal,
-    expected_cash: Decimal,
-    variance: Decimal,
-    note: Option<String>,
-    ended_at: String,
-    denomination_breakdown: Option<Vec<DenominationDto>>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct DenominationDto {
-    label: String,
-    value: Decimal,
-    count: i32,
-    subtotal: Decimal,
 }
 
 /// Shift service for managing POS shifts
@@ -678,7 +639,7 @@ impl ShiftService {
             started_at: started_at.to_string(),
         };
 
-        let response: StartShiftResponse = self.api.post("/api/pos/shifts", &request).await?;
+        let response = self.api.start_shift(&request).await?;
 
         Ok(response.id)
     }
@@ -719,10 +680,7 @@ impl ShiftService {
             denomination_breakdown,
         };
 
-        let _: serde_json::Value = self
-            .api
-            .post(&format!("/api/pos/shifts/{}/end", shift_id), &request)
-            .await?;
+        self.api.end_shift(shift_id, &request).await?;
 
         Ok(())
     }

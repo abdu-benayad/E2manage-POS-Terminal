@@ -6,11 +6,10 @@
 use anyhow::Result;
 use parking_lot::RwLock;
 use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::{info, warn};
 
-use pos_api::ApiClient;
+use pos_api::{ApiClient, ZReportRequest};
 use pos_db::Database;
 use pos_models::{ShiftSummary, VarianceStatus, ZReport};
 
@@ -81,37 +80,6 @@ pub struct CloseDayResult {
 }
 
 /// API DTOs for Z-Report sync
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ZReportRequest {
-    report_number: String,
-    report_date: String,
-    terminal_id: String,
-    currency: String,
-    total_shifts: u32,
-    total_transactions: u32,
-    gross_sales: Decimal,
-    discounts: Decimal,
-    returns: Decimal,
-    net_sales: Decimal,
-    tax_collected: Decimal,
-    cash_total: Decimal,
-    card_total: Decimal,
-    wallet_total: Decimal,
-    credit_total: Decimal,
-    opening_float: Decimal,
-    expected_cash: Decimal,
-    actual_cash: Decimal,
-    variance: Decimal,
-    generated_at: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ZReportResponse {
-    id: String,
-}
-
 /// Z-Report service for end-of-day operations
 pub struct ZReportService {
     api: Arc<ApiClient>,
@@ -417,7 +385,7 @@ impl ZReportService {
             generated_at: report.generated_at.clone(),
         };
 
-        let response: ZReportResponse = self.api.post("/api/pos/z-reports", &request).await?;
+        let response = self.api.submit_z_report(&request).await?;
 
         Ok(response.id)
     }

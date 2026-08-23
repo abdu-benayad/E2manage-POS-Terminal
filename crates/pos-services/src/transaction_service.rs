@@ -7,11 +7,13 @@ use anyhow::{anyhow, Result};
 use parking_lot::RwLock;
 use pos_models::{OperatorId, RecordedOperatorName};
 use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::{info, warn};
 
-use pos_api::ApiClient;
+use pos_api::{
+    ApiClient, CreateTransactionRequest, CreateTransactionResponse, PaymentDto, TransactionItemDto,
+    VoidTransactionRequest,
+};
 use pos_db::transactions::{OfflineTransactionRow, SyncStatus};
 use pos_db::{Database, SyncResource};
 use pos_models::cart::Cart;
@@ -73,68 +75,6 @@ pub struct CompleteResult {
     pub server_id: Option<String>,
     /// Change due to customer
     pub change_due: Decimal,
-}
-
-/// API request/response DTOs for transaction sync
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct CreateTransactionRequest {
-    transaction_number: String,
-    transaction_type: String,
-    items: Vec<TransactionItemDto>,
-    payments: Vec<PaymentDto>,
-    subtotal: Decimal,
-    tax_total: Decimal,
-    discount_total: Decimal,
-    grand_total: Decimal,
-    currency: String,
-    customer_id: Option<String>,
-    customer_name: Option<String>,
-    shift_id: String,
-    terminal_id: String,
-    operator_id: OperatorId,
-    note: Option<String>,
-    created_at: String,
-    completed_at: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct TransactionItemDto {
-    product_id: String,
-    product_name: String,
-    sku: String,
-    quantity: Decimal,
-    unit_price: Decimal,
-    tax_rate: Decimal,
-    tax_amount: Decimal,
-    discount_amount: Decimal,
-    line_total: Decimal,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    product_type: Option<String>,
-    inventory_deducted: bool,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct PaymentDto {
-    method: String,
-    amount: Decimal,
-    currency: String,
-    reference: Option<String>,
-    card_last_four: Option<String>,
-    card_type: Option<String>,
-    auth_code: Option<String>,
-    wallet_type: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[allow(dead_code)]
-struct CreateTransactionResponse {
-    id: String,
-    receipt_number: String,
 }
 
 /// Transaction service for managing POS transactions
@@ -421,12 +361,7 @@ impl TransactionService {
             completed_at: txn.completed_at.map(|dt| dt.to_rfc3339()),
         };
 
-        self.api
-            .post::<CreateTransactionRequest, CreateTransactionResponse>(
-                "/api/pos/transactions",
-                &request,
-            )
-            .await
+        self.api.create_transaction(&request).await
     }
 
     /// Queues a transaction for offline sync
@@ -500,20 +435,14 @@ impl TransactionService {
         let txn_id_owned = txn_id.to_string();
         let reason_owned = reason.to_string();
         tokio::spawn(async move {
-            #[derive(Serialize)]
-            struct VoidRequest {
-                reason: String,
-            }
-            #[derive(Deserialize)]
-            #[allow(dead_code)]
-            struct VoidResponse {
-                success: bool,
-            }
-
-            let _result: Result<VoidResponse> = api
-                .post(
-                    &format!("/api/pos/transactions/{}/void", txn_id_owned),
-                    &VoidRequest {
+            // The result is deliberately dropped: this runs detached, and the route is
+            // unreachable anyway (`authMiddleware` + `POS_VOID`, not CSRF-exempt). It used to
+            // declare a throwaway `struct VoidResponse { success: bool }` with `#[allow(dead_code)]`
+            // to have something to deserialise into — a type that existed only to be discarded.
+            let _result = api
+                .void_transaction(
+                    &txn_id_owned,
+                    &VoidTransactionRequest {
                         reason: reason_owned,
                     },
                 )

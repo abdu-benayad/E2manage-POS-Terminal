@@ -433,6 +433,45 @@ impl OperatorDto {
     }
 }
 
+impl crate::client::ApiClient {
+    /// Full catalog, with ETag caching. `GET /api/pos/sync/catalog`
+    ///
+    /// Terminal-authenticated and a safe method, so CSRF does not apply — one of the few routes
+    /// the till can actually reach (`sync.controller.ts:163`).
+    pub async fn get_catalog(
+        &self,
+        etag: Option<&str>,
+    ) -> anyhow::Result<crate::client::GetResult<CatalogResponse>> {
+        self.get_with_etag("/api/pos/sync/catalog?includeCategories=true", etag)
+            .await
+            .map(crate::client::GetResult::into_inner)
+    }
+
+    /// Everything that changed since `since`. `GET /api/pos/sync/catalog/delta`
+    ///
+    /// Was read with the raw `get` against an enveloped route (`sync.controller.ts:685`), so it
+    /// looked for `updated`/`deleted` at the top level of the envelope and never found them.
+    /// Reachable, so this one was failing in the field rather than merely being wrong.
+    pub async fn get_catalog_delta(&self, since: &str) -> anyhow::Result<CatalogDeltaResponse> {
+        let path = format!(
+            "/api/pos/sync/catalog/delta?since={}&includeCategories=true",
+            urlencoding::encode(since)
+        );
+        let response: crate::client::Enveloped<_> = self.get(&path).await?;
+        Ok(response.into_inner())
+    }
+
+    /// The operators this terminal may authenticate. `GET /api/pos/sync/operators`
+    pub async fn get_operators(
+        &self,
+        etag: Option<&str>,
+    ) -> anyhow::Result<crate::client::GetResult<OperatorsResponse>> {
+        self.get_with_etag("/api/pos/sync/operators", etag)
+            .await
+            .map(crate::client::GetResult::into_inner)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -33,13 +33,10 @@
 
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
-use pos_api::ApiClient;
+use pos_api::{ApiClient, UploadOfflineTransactionRequest};
 use pos_db::transactions::{OfflineTransactionRow, SyncStatus};
 use pos_db::Database;
 use pos_models::transaction::Transaction;
-use pos_models::OperatorId;
-use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
@@ -126,42 +123,6 @@ impl SyncResult {
     pub fn has_conflicts(&self) -> bool {
         self.conflicts > 0
     }
-}
-
-/// Request payload for creating a transaction on the server
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct CreateTransactionRequest {
-    offline_id: String,
-    transaction_number: Option<String>,
-    transaction_type: String,
-    items: serde_json::Value,
-    payments: serde_json::Value,
-    subtotal: Decimal,
-    tax_total: Decimal,
-    discount_total: Decimal,
-    grand_total: Decimal,
-    customer_id: Option<String>,
-    customer_name: Option<String>,
-    shift_id: Option<String>,
-    operator_id: Option<OperatorId>,
-    terminal_id: Option<String>,
-    receipt_number: Option<String>,
-    notes: Option<String>,
-    created_at: String,
-    /// Catalog ETag at the time this transaction was created (for price version tracking)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    catalog_etag: Option<String>,
-}
-
-/// Response from server after creating a transaction
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct CreateTransactionResponse {
-    id: String,
-    #[allow(dead_code)]
-    #[serde(default)]
-    transaction_number: Option<String>,
 }
 
 /// Offline queue service for managing transaction sync
@@ -475,7 +436,7 @@ impl OfflineService {
         let payments: serde_json::Value = serde_json::from_str(&txn.payments_json)
             .map_err(|e| anyhow!("Failed to parse payments JSON: {}", e))?;
 
-        let request = CreateTransactionRequest {
+        let request = UploadOfflineTransactionRequest {
             offline_id: txn.offline_id.clone(),
             transaction_number: txn.transaction_number.clone(),
             transaction_type: txn.transaction_type.clone(),
@@ -494,10 +455,12 @@ impl OfflineService {
             notes: txn.notes.clone(),
             created_at: txn.created_at.clone(),
             catalog_etag: txn.catalog_etag.clone(),
+            // An ordinary queue drain never overrides the platform's conflict checks; only
+            // `ConflictService` does. `skip_serializing_if` keeps the flag off this body entirely.
+            force: false,
         };
 
-        let response: CreateTransactionResponse =
-            self.api.post("/api/pos/offline/upload", &request).await?;
+        let response = self.api.upload_offline_transaction(&request).await?;
 
         Ok(response.id)
     }
@@ -603,7 +566,7 @@ mod tests {
     use pos_db::operators::OperatorRow;
     use pos_models::cart::{Cart, CartItem};
     use pos_models::product::{Product, ProductUnit};
-    use pos_models::{OperatorName, OperatorRole};
+    use pos_models::{OperatorId, OperatorName, OperatorRole};
     use rust_decimal::Decimal;
 
     fn op_id(id: &str) -> OperatorId {

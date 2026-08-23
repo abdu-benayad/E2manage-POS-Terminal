@@ -30,9 +30,14 @@ pub mod cart;
 pub mod client;
 pub mod failure;
 pub mod features;
+pub mod offline;
 pub mod platform;
+pub mod reports;
+pub mod returns;
 pub mod session;
+pub mod shifts;
 pub mod sync;
+pub mod transactions;
 
 // Re-export main types
 pub use client::{ApiClient, ApiErrorDetail, ApiErrorResponse, Enveloped, GetResult, OnlineStatus};
@@ -90,6 +95,20 @@ pub use platform::{
     SecurityPoliciesResponse,
     SecurityPolicy,
 };
+
+pub use transactions::{
+    CreateTransactionRequest, CreateTransactionResponse, PaymentDto, TransactionDetailDto,
+    TransactionDetailItemDto, TransactionDetailPaymentDto, TransactionItemDto,
+    VoidTransactionRequest,
+};
+
+pub use shifts::{DenominationDto, EndShiftRequest, StartShiftRequest, StartShiftResponse};
+
+pub use offline::{UploadOfflineTransactionRequest, UploadOfflineTransactionResponse};
+
+pub use returns::{CreateReturnRequest, CreateReturnResponse, ReturnItemRequest};
+
+pub use reports::{ZReportRequest, ZReportResponse};
 
 pub use cart::{
     CartItemDto, CartListResponse, CartResponse, ConvertCartRequest, CreateCartRequest,
