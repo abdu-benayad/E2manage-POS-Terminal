@@ -59,8 +59,16 @@ pub struct DenominationDto {
 
 impl ApiClient {
     /// Opens a shift. `POST /api/pos/shifts/start`
+    ///
+    /// The till posted to `/api/pos/shifts`, which the shift router does not serve — it registers
+    /// `POST /start`, `POST /:shiftId/end` and `POST /:shiftId/z-report`, and no `POST /`. A 404
+    /// nobody had reported, found by resolving every path the till names against the router
+    /// instead of checking the two that were already known.
+    ///
+    /// Corrected, and still unreachable: `authMiddleware` + `POS_CREATE` (`shift.controller.ts:68`),
+    /// not on the CSRF exemption list.
     pub async fn start_shift(&self, request: &StartShiftRequest) -> Result<StartShiftResponse> {
-        let response: Enveloped<_> = self.post("/api/pos/shifts", request).await?;
+        let response: Enveloped<_> = self.post("/api/pos/shifts/start", request).await?;
         Ok(response.into_inner())
     }
 

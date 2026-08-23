@@ -50,9 +50,19 @@ pub struct ZReportResponse {
 }
 
 impl ApiClient {
-    /// Submits the end-of-day report.
+    /// Submits the end-of-day report. `POST /api/pos/reports/z-reports`
+    ///
+    /// **The URL is now right and the call still cannot succeed.** The route is mounted at
+    /// `/reports` (`pos.routes.ts:83`), so `/api/pos/z-reports` was a 404 — which is why the
+    /// payload disagreement above went unseen for as long as it did. Correcting it trades that
+    /// 404 for a CSRF 403 and then a 401, and past those it would be a 400 for the missing
+    /// `shiftId`.
+    ///
+    /// Tracked as `till/issue/z-report-models-a-day-here-and-a-shift-on-the-platform`. Do not
+    /// "fix" this by bending the payload to fit: which side owns the arithmetic is a domain
+    /// question, and a till that posts totals the server will not check is a reconciliation hole.
     pub async fn submit_z_report(&self, request: &ZReportRequest) -> Result<ZReportResponse> {
-        let response: Enveloped<_> = self.post("/api/pos/z-reports", request).await?;
+        let response: Enveloped<_> = self.post("/api/pos/reports/z-reports", request).await?;
         Ok(response.into_inner())
     }
 }
