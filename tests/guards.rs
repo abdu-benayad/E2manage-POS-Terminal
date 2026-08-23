@@ -399,6 +399,21 @@ mod guards {
             "the walker did not find `VerifyPinRequest` — it is not reaching a struct that sits behind a doc comment and two attributes"
         );
 
+        // `only_the_transport_crates_name_a_route` needs its own positive control, and it is the
+        // one guard here whose clean state is *also* its broken state: it passes when it finds no
+        // route literal outside the transport crates, and a scan that reads no route literals
+        // anywhere passes identically. So prove the corpus still contains the thing it looks for.
+        let routes_seen = lines
+            .iter()
+            .filter(|line| line.code.contains("\"/api/") || line.code.contains("\"{}/api/"))
+            .count();
+        assert!(
+            routes_seen > 20,
+            "the scan found only {routes_seen} route literals in the whole tree; it is not reading \
+             the strings `only_the_transport_crates_name_a_route` exists to locate, so that guard \
+             is green against nothing"
+        );
+
         // The exact shape `a_live_pin_never_reaches_a_derived_debug` inspects: a `Debug`-deriving
         // type with a `pin` field. Without one in the tree that guard has nothing to be right
         // about. The witness is the `VerifyPin` mock in `pos-models`' own tests, which also proves
@@ -698,6 +713,71 @@ mod guards {
              defaulted. If this reintroduction has a real consumer, that consumer is the argument \
              for a `TenantId` newtype and for deleting this guard in the same increment — do both \
              deliberately, not by adding a field:\n  {}",
+            offences.len(),
+            offences.join("\n  ")
+        );
+    }
+
+    /// Only the crates that own transport may name a route.
+    ///
+    /// `doc/architecture` states it as an invariant — *"`pos-api` is the only thing that knows the
+    /// network exists"* — and until 2026-08-23 it was false in twelve places. `pos-services`
+    /// assembled `/api/pos/...` strings inline, which is not a style problem: it put the choice of
+    /// **how to read the reply** in a file that does not contain the DTO, decided by someone not
+    /// looking at the route. Sixteen call sites read the wrong wire shape as a direct result, in
+    /// both directions — a raw read of an enveloped route, and an enveloped read of a route that
+    /// sends no `data`.
+    ///
+    /// So this guard is not about tidiness. A route literal outside these crates is the return of
+    /// the condition that produced the defect class.
+    ///
+    /// # The crate list is a statement, not an exemption
+    ///
+    /// The module docs say there are no exemptions here, and this is not one: it names who owns
+    /// the network, which is a permanent fact about the architecture rather than a temporary
+    /// allowance waiting to expire. It is still held to the same standard — each entry must name a
+    /// directory that **exists**, so a crate that is renamed or deleted fails this test instead of
+    /// silently widening it into a pattern that matches nothing.
+    ///
+    /// `pos-updater` is on the list for a reason worth knowing rather than assuming: it is
+    /// `[workspace] exclude`d, carries its own `reqwest::Client` and its own envelope type, and
+    /// never touches `ApiClient`. Nothing in `pos-api` can protect it, and the pact cannot see it
+    /// either — a platform change to `/api/pos/version/check` breaks it silently. That is a real
+    /// gap, recorded in `till/doc/till-consumer-surface-audit`, not something this guard closes.
+    #[test]
+    fn only_the_transport_crates_name_a_route() {
+        /// Directories permitted to contain a route literal. See the doc comment: this names who
+        /// owns the network.
+        const TRANSPORT_CRATES: [&str; 3] = [
+            "crates/pos-api/",
+            "crates/pos-contract/",
+            "crates/pos-updater/",
+        ];
+
+        for crate_dir in TRANSPORT_CRATES {
+            let path = repo_root().join(crate_dir);
+            assert!(
+                path.is_dir(),
+                "{} is on the transport allowlist and does not exist. A stale entry turns this \
+                 guard into a pattern that matches nothing, which is the failure mode the module \
+                 docs refuse: fix the list deliberately rather than leaving it to rot",
+                path.display()
+            );
+        }
+
+        let offences: Vec<String> = scanned_lines()
+            .iter()
+            .filter(|line| !TRANSPORT_CRATES.iter().any(|c| line.path.starts_with(c)))
+            .filter(|line| line.code.contains("\"/api/") || line.code.contains("\"{}/api/"))
+            .map(|line| format!("{}:{} {}", line.path, line.number, line.code.trim()))
+            .collect();
+
+        assert!(
+            offences.is_empty(),
+            "a route is named outside the crates that own transport, in {} place(s). This is how \
+             the wire-shape defects got in: the helper choice ends up in a file that does not hold \
+             the DTO. Add a typed method on `ApiClient` beside the response type and call that \
+             instead — `crates/pos-api/src/transactions.rs` is the pattern:\n  {}",
             offences.len(),
             offences.join("\n  ")
         );

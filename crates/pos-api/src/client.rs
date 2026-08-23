@@ -288,7 +288,7 @@ impl ApiClient {
     /// # Returns
     ///
     /// Deserialized response body
-    pub async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
+    pub(crate) async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
         let url = format!("{}{}", self.base_url, path);
         debug!("GET {}", url);
 
@@ -313,7 +313,7 @@ impl ApiClient {
     /// # Returns
     ///
     /// `GetResult::Data` with new data and ETag, or `GetResult::NotModified` if unchanged
-    pub async fn get_with_etag<T: DeserializeOwned>(
+    pub(crate) async fn get_with_etag<T: DeserializeOwned>(
         &self,
         path: &str,
         etag: Option<&str>,
@@ -366,7 +366,7 @@ impl ApiClient {
     /// # Returns
     ///
     /// Deserialized response body
-    pub async fn post<T, R>(&self, path: &str, body: &T) -> Result<R>
+    pub(crate) async fn post<T, R>(&self, path: &str, body: &T) -> Result<R>
     where
         T: Serialize,
         R: DeserializeOwned,
@@ -386,43 +386,6 @@ impl ApiClient {
         self.handle_response(response).await
     }
 
-    /// Makes a PUT request
-    pub async fn put<T, R>(&self, path: &str, body: &T) -> Result<R>
-    where
-        T: Serialize,
-        R: DeserializeOwned,
-    {
-        let url = format!("{}{}", self.base_url, path);
-        debug!("PUT {}", url);
-
-        let response = self
-            .client
-            .put(&url)
-            .headers(self.build_headers().await)
-            .json(body)
-            .send()
-            .await
-            .map_err(|e| self.handle_request_error(e))?;
-
-        self.handle_response(response).await
-    }
-
-    /// Makes a DELETE request
-    pub async fn delete<R: DeserializeOwned>(&self, path: &str) -> Result<R> {
-        let url = format!("{}{}", self.base_url, path);
-        debug!("DELETE {}", url);
-
-        let response = self
-            .client
-            .delete(&url)
-            .headers(self.build_headers().await)
-            .send()
-            .await
-            .map_err(|e| self.handle_request_error(e))?;
-
-        self.handle_response(response).await
-    }
-
     /// Makes a DELETE request whose response body carries nothing the caller reads.
     ///
     /// The status is still checked, and a refusal still goes through the platform's error envelope
@@ -433,7 +396,7 @@ impl ApiClient {
     ///
     /// Both routes it serves answer `{success, message}` with no `data`
     /// (`parking.controller.ts:280`, `cart.controller.ts:246`).
-    pub async fn delete_discard(&self, path: &str) -> Result<()> {
+    pub(crate) async fn delete_discard(&self, path: &str) -> Result<()> {
         let url = format!("{}{}", self.base_url, path);
         debug!("DELETE (body discarded) {}", url);
 
