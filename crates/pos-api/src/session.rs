@@ -60,6 +60,22 @@ impl SessionToken {
     }
 }
 
+/// Deserializes a token and **refuses a blank one at the boundary**.
+///
+/// Hand-written rather than derived: a derived impl on a newtype would accept `""` and build the
+/// very sentinel this type exists to make unrepresentable, one layer below every caller that
+/// would then have to re-check it. Failing here means a 2xx body carrying an empty token is read
+/// as `ApiFailure::Unreadable` — the platform answered, and the answer does not satisfy the
+/// contract — rather than as a session the till would put in an `Authorization` header.
+///
+/// There is deliberately no `Serialize`. The token leaves this type only through
+/// [`Self::expose`], so every place it travels in the clear is greppable.
+impl<'de> Deserialize<'de> for SessionToken {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Self::new(String::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+    }
+}
+
 impl fmt::Debug for SessionToken {
     /// Renders `SessionToken(****)`, with a fixed star count that does not track the token's
     /// length.

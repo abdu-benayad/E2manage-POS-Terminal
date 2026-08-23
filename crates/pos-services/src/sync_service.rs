@@ -37,7 +37,7 @@ use crate::shared_draft_service::SharedDraftService;
 use anyhow::Result;
 use chrono::Utc;
 use pos_api::sync::{CatalogDeltaResponse, CatalogResponse, OperatorsResponse};
-use pos_api::{ApiClient, GetResult};
+use pos_api::{ApiClient, ApiFailure, GetResult, ReauthOutcome, SessionToken, TerminalStanding};
 use pos_db::{Database, SyncResource};
 use pos_models::{Feature, FeatureScreen};
 use rusqlite::params;
@@ -189,12 +189,29 @@ impl SyncService {
                 error!("Online check returned auth rejected — terminal/tenant invalid");
                 // Try re-auth before giving up
                 match self.try_reauthenticate().await {
-                    Ok(true) => {
+                    Ok(ReauthOutcome::Renewed(_)) => {
                         info!("Re-authentication successful after auth rejection");
                     }
-                    _ => {
+                    // The renewal found nobody home. That is weather, not a de-registration, and
+                    // the `_ =>` this replaces reported it as "this terminal needs re-pairing" —
+                    // a sentence that sends someone to find the pairing code over a dropped link.
+                    Ok(ReauthOutcome::Unreachable) => {
+                        warn!(
+                            "Sync skipped: the platform could not be reached to renew the session"
+                        );
+                        let _ = tx.send(SyncEvent::Offline);
+                        return;
+                    }
+                    Ok(
+                        outcome @ (ReauthOutcome::NoStoredCredentials | ReauthOutcome::Rejected),
+                    ) => {
                         let _ = tx.send(SyncEvent::TerminalNotRegistered);
-                        error!("Re-authentication failed, terminal needs re-pairing");
+                        error!("Re-authentication failed ({outcome:?}), terminal needs re-pairing");
+                        return;
+                    }
+                    Err(reauth_err) => {
+                        let _ = tx.send(SyncEvent::Failed(reauth_err.to_string()));
+                        error!("Re-authentication error: {reauth_err}");
                         return;
                     }
                 }
@@ -212,13 +229,21 @@ impl SyncService {
                 info!("Sync completed successfully");
             }
             Err(e) => {
-                // Check if this is an authentication error (401)
-                if Self::is_auth_error(&e) {
+                // What did that failure say about *this terminal*? Four different things arrive
+                // as a 401-shaped error and only one of them is worth renewing a session over.
+                let standing = Self::terminal_standing(&e);
+                if let Some(repudiation) = standing.repudiation() {
+                    // The platform was reached, answered, and said this device is not one of
+                    // theirs. Renewing a session for a terminal the platform has disowned is the
+                    // request that cannot succeed, and the old code made it on every cycle.
+                    let _ = tx.send(SyncEvent::TerminalNotRegistered);
+                    error!("Sync failed: the platform has disowned this terminal: {repudiation}");
+                } else if standing.deserves_one_retry() {
                     warn!("Sync failed with auth error, attempting re-authentication...");
 
                     // Try to re-authenticate
                     match self.try_reauthenticate().await {
-                        Ok(true) => {
+                        Ok(ReauthOutcome::Renewed(_)) => {
                             // Re-auth succeeded, retry sync
                             info!("Re-authentication successful, retrying sync...");
                             match self.sync_all(tx).await {
@@ -232,9 +257,18 @@ impl SyncService {
                                 }
                             }
                         }
-                        Ok(false) => {
+                        Ok(ReauthOutcome::Unreachable) => {
+                            let _ = tx.send(SyncEvent::Offline);
+                            warn!("The platform could not be reached to renew the session");
+                        }
+                        Ok(
+                            outcome
+                            @ (ReauthOutcome::NoStoredCredentials | ReauthOutcome::Rejected),
+                        ) => {
                             let _ = tx.send(SyncEvent::TerminalNotRegistered);
-                            error!("Re-authentication failed, terminal needs re-pairing");
+                            error!(
+                                "Re-authentication failed ({outcome:?}), terminal needs re-pairing"
+                            );
                         }
                         Err(reauth_err) => {
                             let _ = tx.send(SyncEvent::Failed(reauth_err.to_string()));
@@ -329,10 +363,31 @@ impl SyncService {
         Ok(())
     }
 
-    /// Checks if an error is a 401 authentication error
-    fn is_auth_error(error: &anyhow::Error) -> bool {
-        let msg = error.to_string();
-        msg.contains("401") || msg.contains("authentication failed") || msg.contains("Unauthorized")
+    /// What a failed sync said about this terminal's standing with the platform.
+    ///
+    /// # What this replaces
+    ///
+    /// ```ignore
+    /// fn is_auth_error(error: &anyhow::Error) -> bool {
+    ///     let msg = error.to_string();
+    ///     msg.contains("401") || msg.contains("authentication failed") || msg.contains("Unauthorized")
+    /// }
+    /// ```
+    ///
+    /// Three properties of that made it unfixable in place. It read a **rendered message**, so any
+    /// product named `401 Special` matched and any translated message stopped matching. It
+    /// answered a **boolean** over four situations, of which two are terminal, one wants a
+    /// renewal and one is weather. And it could not distinguish the terminal's session lapsing
+    /// from an *operator's* — different credential, different route, different remedy.
+    ///
+    /// [`TerminalStanding`] answers from the machine code the platform sent. An error that is not
+    /// an [`ApiFailure`] is [`TerminalStanding::Unaffected`]: a sync can fail for reasons that
+    /// have nothing to do with authentication, and guessing otherwise is how a SQLite error
+    /// triggered a login.
+    fn terminal_standing(error: &anyhow::Error) -> TerminalStanding {
+        error
+            .downcast_ref::<ApiFailure>()
+            .map_or(TerminalStanding::Unaffected, TerminalStanding::of)
     }
 
     /// Gets stored terminal credentials for re-authentication
@@ -367,31 +422,42 @@ impl SyncService {
     }
 
     /// Saves the new session token to database
-    fn save_session_token(&self, token: &str) -> Result<()> {
+    fn save_session_token(&self, token: &SessionToken) -> Result<()> {
         let conn = self.db.connection();
         let conn = conn.lock();
 
         conn.execute(
             "UPDATE terminal_config SET session_token = ?1, updated_at = datetime('now') WHERE id = 1",
-            params![token],
+            params![token.expose()],
         )?;
 
         info!("Session token updated in database");
         Ok(())
     }
 
-    /// Attempts to re-authenticate when token is expired
-    async fn try_reauthenticate(&self) -> Result<bool> {
+    /// Attempts to re-authenticate when the terminal's session has expired.
+    ///
+    /// # Why this is not a `Result<bool>` any more
+    ///
+    /// It used to answer `Ok(false)` both when there were no stored credentials to log in with
+    /// and when the login itself was refused — two situations separated only by the log level of
+    /// the line above the `return`, and both call sites turned that one `false` into
+    /// [`SyncEvent::TerminalNotRegistered`]. So a dropped link on the way to the login route told
+    /// the person at the drawer that their till had been de-registered.
+    ///
+    /// [`ReauthOutcome`] keeps the four apart, and `is_worth_retrying()` is the question the
+    /// boolean was being asked to answer.
+    ///
+    /// The `Result` that remains is for **local** faults only: `get_credentials` reads SQLite, and
+    /// a store that will not answer is not a statement about the platform. Folding that into
+    /// `NoStoredCredentials` would rebuild the same conflation one layer down.
+    async fn try_reauthenticate(&self) -> Result<ReauthOutcome> {
         info!("Attempting to re-authenticate due to expired token...");
 
         // Get stored credentials
-        let credentials = self.get_credentials()?;
-        let (terminal_code, hardware_id, secret) = match credentials {
-            Some(creds) => creds,
-            None => {
-                warn!("No stored credentials found for re-authentication");
-                return Ok(false);
-            }
+        let Some((terminal_code, hardware_id, secret)) = self.get_credentials()? else {
+            warn!("No stored credentials found for re-authentication");
+            return Ok(ReauthOutcome::NoStoredCredentials);
         };
 
         // Try to login
@@ -401,16 +467,57 @@ impl SyncService {
             .await
         {
             Ok(response) => {
+                let Ok(token) = SessionToken::new(response.session_token) else {
+                    // A 2xx carrying a blank token has not renewed anything. Saying `Renewed`
+                    // here would have the sync loop retry every request with an empty header.
+                    error!("Re-authentication answered success with a blank session token");
+                    return Ok(ReauthOutcome::Rejected);
+                };
                 info!("Re-authentication successful, new token acquired");
                 // Save new token to database
-                if let Err(e) = self.save_session_token(&response.session_token) {
+                if let Err(e) = self.save_session_token(&token) {
                     warn!("Failed to save new session token: {}", e);
                 }
-                Ok(true)
+                Ok(ReauthOutcome::Renewed(token))
             }
-            Err(e) => {
-                error!("Re-authentication failed: {}", e);
-                Ok(false)
+            Err(error) => Ok(Self::why_the_login_failed(&error)),
+        }
+    }
+
+    /// Reads a failed terminal login for whether it is worth trying again.
+    ///
+    /// `login_terminal` still returns `anyhow::Error`, so the [`ApiFailure`] is recovered by
+    /// downcast — which is exactly what the legacy surface is kept *by conversion* for. A failure
+    /// that is not an `ApiFailure` at all cannot be classified, and reporting it as
+    /// [`ReauthOutcome::Rejected`] would be inventing a platform verdict; it is
+    /// [`ReauthOutcome::Unreachable`], the one outcome that claims nothing about the terminal.
+    fn why_the_login_failed(error: &anyhow::Error) -> ReauthOutcome {
+        let Some(failure) = error.downcast_ref::<ApiFailure>() else {
+            warn!("Re-authentication failed with an unclassifiable error: {error:#}");
+            return ReauthOutcome::Unreachable;
+        };
+
+        match failure {
+            ApiFailure::Unreachable(_) => {
+                warn!("Re-authentication could not reach the platform: {failure}");
+                ReauthOutcome::Unreachable
+            }
+            // The platform answered and the till could not read the answer. The two disagree
+            // about this endpoint's shape; retrying repeats it, so this is not weather.
+            ApiFailure::Unreadable(_) => {
+                error!("Contract breach re-authenticating: {failure}");
+                ReauthOutcome::Rejected
+            }
+            ApiFailure::Refused { .. } => {
+                match TerminalStanding::of(failure) {
+                    TerminalStanding::Repudiated(repudiation) => {
+                        error!("Re-authentication refused: {repudiation}");
+                    }
+                    // Including `NotProvisioned`, which needs a pairing and not a login — the
+                    // same remedy `TerminalNotRegistered` sends the operator to.
+                    _ => error!("Re-authentication refused: {failure}"),
+                }
+                ReauthOutcome::Rejected
             }
         }
     }

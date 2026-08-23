@@ -45,6 +45,6 @@ pub use transaction::{
 };
 pub use verification::{
     AttemptsRemaining, Authority, CredentialExpiry, EnrolmentState, FailedAttempts, LockState,
-    PinRefusal, PinVerification, StoreFailure, StoreFailureKind, UndeterminedCause,
+    PinRefusal, PinVerification, Repudiation, StoreFailure, StoreFailureKind, UndeterminedCause,
 };
 pub use z_report::ZReport;

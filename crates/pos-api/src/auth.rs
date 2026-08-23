@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::client::Enveloped;
 use crate::failure::ApiFailure;
-use crate::session::OperatorSession;
+use crate::session::{OperatorSession, SessionToken};
 use pos_models::{OperatorId, OperatorPermissions, OperatorRole};
 
 // ============================================================================
@@ -250,7 +250,10 @@ pub struct HeartbeatResponse {
 #[serde(rename_all = "camelCase")]
 pub struct RefreshResponse {
     /// The new session token, which replaces the one presented.
-    pub session_token: String,
+    ///
+    /// [`SessionToken`], not `String`: a 2xx carrying `""` is a contract breach and is refused
+    /// where it is read, not carried forward as a session made of nothing.
+    pub session_token: SessionToken,
 }
 
 /// Command to execute on terminal
@@ -573,19 +576,40 @@ impl ApiClient {
         Ok(response.into_inner())
     }
 
-    /// Refreshes the session token
+    /// Renews the terminal's session, keeping **why** it could not be renewed.
     ///
-    /// Should be called periodically to prevent token expiration
-    pub async fn refresh_token(&self) -> Result<String> {
+    /// The distinction is the whole point: a refresh that was *refused* is the platform saying
+    /// something about this terminal — very often that the enrolment is gone, because
+    /// `terminal-auth.middleware.ts:76` tests `revokedAt` before `:81` tests `terminal.status`, so
+    /// a disowned terminal whose session also lapsed reports as merely expired. A refresh that
+    /// could not *reach* anybody says nothing at all. Flattened into one `anyhow::Error`, as
+    /// [`Self::refresh_token`] still returns them, they are told apart only by substring-matching
+    /// the message — which is the defect `ApiFailure` exists to end.
+    ///
+    /// A blank token in a 2xx body is [`ApiFailure::Unreadable`] and not a renewal: the platform
+    /// answered, and the answer does not satisfy the contract. Reading it as a session would put
+    /// the empty string back in the `Authorization` header.
+    pub async fn refresh_session(&self) -> std::result::Result<SessionToken, ApiFailure> {
         // `Enveloped`, not a raw read: this route wraps its payload
         // (`terminal.controller.ts:251-258`, `data:{sessionToken, expiresAt}`), so the raw `post`
         // this used to call was deserialising the envelope into `RefreshResponse` and finding no
         // `sessionToken` at the top level.
-        let response: Enveloped<RefreshResponse> =
-            self.post("/api/pos/terminals/refresh", &()).await?;
-        let response = response.into_inner();
-        self.set_token(response.session_token.clone()).await;
-        Ok(response.session_token)
+        let response: Enveloped<RefreshResponse> = self
+            .post_or_failure("/api/pos/terminals/refresh", &())
+            .await?;
+        let token = response.into_inner().session_token;
+        self.set_token(token.expose().to_string()).await;
+        Ok(token)
+    }
+
+    /// Refreshes the session token
+    ///
+    /// Should be called periodically to prevent token expiration
+    ///
+    /// Kept as the `anyhow` surface for the callers that only need "did it work"; everything that
+    /// has to branch on *why* calls [`Self::refresh_session`].
+    pub async fn refresh_token(&self) -> Result<String> {
+        Ok(self.refresh_session().await?.expose().to_string())
     }
 
     /// Logs out the terminal

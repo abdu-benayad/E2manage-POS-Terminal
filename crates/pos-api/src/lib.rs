@@ -43,7 +43,7 @@ pub mod transactions;
 
 // Re-export main types
 pub use client::{ApiClient, ApiErrorDetail, ApiErrorResponse, Enveloped, GetResult, OnlineStatus};
-pub use failure::{ApiFailure, ServerErrorCode};
+pub use failure::{ApiFailure, ServerErrorCode, TerminalStanding};
 pub use refusal_details::{
     CapabilityCode, HeldBy, LockoutNotice, OfflineReportExpiredDetails,
     OfflineReportOverBudgetDetails, OperatorCapabilityDeniedDetails, OperatorLockedDetails,

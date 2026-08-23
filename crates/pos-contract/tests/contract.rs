@@ -655,8 +655,13 @@ async fn a_token_refresh_returns_a_session_the_till_can_read() {
         .expect("the till's RefreshResponse could not parse the refresh payload")
         .into_inner();
 
+    // A blank token can no longer reach this line: `RefreshResponse.session_token` is a
+    // `SessionToken`, whose `Deserialize` refuses one, so the `.json()` above is where a blank
+    // fails now — the `is_empty()` check that used to stand here has moved into the type. The
+    // property still needs saying, because "the till parsed it" is not obviously the same claim
+    // as "the token is usable", and this is the file that documents the contract.
     assert!(
-        !refreshed.session_token.is_empty(),
+        !refreshed.session_token.expose().trim().is_empty(),
         "a refresh that returns a blank token silently unauthenticates the till on its next request"
     );
 }

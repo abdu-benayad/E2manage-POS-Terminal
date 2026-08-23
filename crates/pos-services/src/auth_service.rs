@@ -3,10 +3,10 @@
 //! Handles terminal login, operator PIN verification, and session management.
 //! Supports both online verification (via API) and offline verification (via local DB).
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use pos_api::{
     ApiClient, ApiFailure, HeartbeatRequest, HeartbeatResponse, LoginTerminalResponse,
-    RefusalDetails, ServerErrorCode, VerifyPinResponse,
+    RefusalDetails, ServerErrorCode, SessionToken, TerminalStanding, VerifyPinResponse,
 };
 use pos_db::column::{operator_name, operator_role};
 use pos_db::Database;
@@ -31,7 +31,14 @@ pub struct TerminalSession {
     pub terminal_id: String,
     pub terminal_code: String,
     pub hardware_id: String,
-    pub session_token: String,
+    /// The terminal's bearer credential.
+    ///
+    /// [`SessionToken`], not `String`, because the empty string was doing sentinel duty here:
+    /// `load_saved_session` used to read `Option<String>`, `unwrap_or_default()` it, and then ask
+    /// `is_empty()` to decide whether a session existed — so "there is no session" and "there is a
+    /// session whose token is empty" were one value wearing two meanings, and every other reader
+    /// got the second one without being told. A blank is now refused where it is read.
+    pub session_token: SessionToken,
     pub company_id: String,
     pub branch_id: Option<String>,
     pub locale: String,
@@ -150,6 +157,12 @@ impl AuthService {
             .login_terminal(terminal_code, hardware_id, secret)
             .await?;
 
+        // Refused before anything is stored: a login that answered 2xx with a blank token has
+        // not logged this terminal in, and writing the row would leave a `terminal_config` that
+        // `load_saved_session` then reports as a session.
+        let session_token = SessionToken::new(response.session_token.clone())
+            .context("the platform answered a terminal login with a blank session token")?;
+
         // Save terminal configuration to local database
         self.save_terminal_config(hardware_id, &response)?;
 
@@ -162,7 +175,7 @@ impl AuthService {
             terminal_id: response.terminal_id,
             terminal_code: response.terminal_code,
             hardware_id: hardware_id.to_string(),
-            session_token: response.session_token,
+            session_token,
             company_id: response.company_id,
             branch_id: response.branch_id,
             locale: response.config.locale.unwrap_or_else(|| "ar".to_string()),
@@ -253,37 +266,54 @@ impl AuthService {
             "#,
             [],
             |row| {
-                Ok(TerminalSession {
-                    terminal_id: row.get(0)?,
-                    terminal_code: row.get(1)?,
-                    hardware_id: row.get(2)?,
-                    session_token: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
-                    company_id: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
-                    branch_id: row.get(5)?,
-                    locale: row
-                        .get::<_, Option<String>>(6)?
-                        .unwrap_or_else(|| "ar".to_string()),
-                    currency: row
-                        .get::<_, Option<String>>(7)?
-                        .unwrap_or_else(|| "LYD".to_string()),
-                    tax_rate: row.get::<_, Option<f64>>(8)?.unwrap_or(0.0),
-                    tax_inclusive: row.get::<_, Option<i32>>(9)?.unwrap_or(0) != 0,
-                    sector: row
-                        .get::<_, Option<String>>(10)?
-                        .unwrap_or_else(|| "RETAIL".to_string()),
+                // Every column is read before the token is judged, deliberately. Returning early
+                // on a blank token would leave the reads after it unexercised, and this row is
+                // read by position — `test_load_saved_session_reads_every_column_into_its_own_field`
+                // is what catches a shift, and it can only catch one it reaches.
+                let terminal_id = row.get(0)?;
+                let terminal_code = row.get(1)?;
+                let hardware_id = row.get(2)?;
+                let session_token = row.get::<_, Option<String>>(3)?;
+                let company_id = row.get::<_, Option<String>>(4)?.unwrap_or_default();
+                let branch_id = row.get(5)?;
+                let locale = row
+                    .get::<_, Option<String>>(6)?
+                    .unwrap_or_else(|| "ar".to_string());
+                let currency = row
+                    .get::<_, Option<String>>(7)?
+                    .unwrap_or_else(|| "LYD".to_string());
+                let tax_rate = row.get::<_, Option<f64>>(8)?.unwrap_or(0.0);
+                let tax_inclusive = row.get::<_, Option<i32>>(9)?.unwrap_or(0) != 0;
+                let sector = row
+                    .get::<_, Option<String>>(10)?
+                    .unwrap_or_else(|| "RETAIL".to_string());
+
+                // NULL and `""` are the same answer — *there is no session* — and they say it
+                // here, once, instead of downstream in an `is_empty()` every reader had to
+                // remember.
+                let Ok(session_token) = SessionToken::new(session_token.unwrap_or_default()) else {
+                    return Ok(None);
+                };
+
+                Ok(Some(TerminalSession {
+                    terminal_id,
+                    terminal_code,
+                    hardware_id,
+                    session_token,
+                    company_id,
+                    branch_id,
+                    locale,
+                    currency,
+                    tax_rate,
+                    tax_inclusive,
+                    sector,
                     features: vec![], // Features need to be synced
-                })
+                }))
             },
         );
 
         match result {
-            Ok(session) => {
-                if !session.session_token.is_empty() {
-                    Ok(Some(session))
-                } else {
-                    Ok(None)
-                }
-            }
+            Ok(session) => Ok(session),
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
             Err(e) => Err(e.into()),
         }
@@ -354,7 +384,132 @@ impl AuthService {
                 );
                 PinVerification::Undetermined(UndeterminedCause::contract_breach(error))
             }
-            Err(refusal @ ApiFailure::Refused { .. }) => Self::refused_by_platform(refusal),
+            Err(refusal @ ApiFailure::Refused { .. }) => {
+                self.read_the_refusal(refusal, operator_id, pin, policy)
+                    .await
+            }
+        }
+    }
+
+    /// A refusal, split by whether it was about the **request** or about the **terminal**.
+    ///
+    /// `SyncService::is_auth_error` recovers the status by substring-matching `"401"` and gives
+    /// everything that matches one response. Four different situations arrive that way and only
+    /// one of them is worth retrying — see [`TerminalStanding`], which is where that table lives.
+    ///
+    /// # `Repudiated` never reaches the local leg
+    ///
+    /// That is the one branch where the till would override a decision the server actually made:
+    /// the platform was reached, it answered, and the answer was that this device is not one of
+    /// theirs. Falling back to a local credential there is the bypass this issue is named for,
+    /// wearing a different hat. Note which arms can reach [`Self::verify_pin_offline`] — only the
+    /// one where a renewal found nobody home.
+    async fn read_the_refusal(
+        &self,
+        refusal: ApiFailure,
+        operator_id: &OperatorId,
+        pin: &Pin,
+        policy: &PinPolicy,
+    ) -> PinVerification {
+        match TerminalStanding::of(&refusal) {
+            // The refusal was about the PIN, not about the device.
+            TerminalStanding::Unaffected => Self::refused_by_platform(refusal),
+            TerminalStanding::NotProvisioned => {
+                warn!("the platform holds no secret for this terminal; it must be paired again");
+                PinVerification::Undetermined(UndeterminedCause::TerminalNotProvisioned)
+            }
+            TerminalStanding::Repudiated(repudiation) => {
+                error!("the platform has disowned this terminal: {repudiation}");
+                PinVerification::Undetermined(UndeterminedCause::EnrolmentRepudiated(repudiation))
+            }
+            TerminalStanding::SessionLapsed => {
+                self.after_renewing_the_session(operator_id, pin, policy)
+                    .await
+            }
+        }
+    }
+
+    /// Renews the terminal session **once**, then asks the platform **once**.
+    ///
+    /// # Once, and structurally so
+    ///
+    /// A retry loop against a server that keeps answering 401 is a lockout amplifier: the endpoint
+    /// behind it counts failed attempts against the operator, so a till that retries on the
+    /// operator's behalf spends their budget without them touching the keypad. The second attempt
+    /// is written out in full below rather than reached by recursing into [`Self::verify_pin`],
+    /// which is what makes "exactly once" a property of the shape and not of a counter somebody
+    /// has to maintain.
+    ///
+    /// # A refused renewal is very likely a disowned terminal
+    ///
+    /// `terminal-auth.middleware.ts:76` tests `revokedAt` before `:81` tests `terminal.status`,
+    /// with a comment recording the order as known-wrong — so a terminal that has been withdrawn
+    /// *and* whose session lapsed reports as merely expired. That is why a refusal here is never
+    /// treated as a second chance. When the refusal names a standing the till says so; when it
+    /// does not, [`UndeterminedCause::ReauthFailed`] is the honest reading — *the session could
+    /// not be renewed* — rather than a guess at which flavour of repudiation it was.
+    async fn after_renewing_the_session(
+        &self,
+        operator_id: &OperatorId,
+        pin: &Pin,
+        policy: &PinPolicy,
+    ) -> PinVerification {
+        match self.api.refresh_session().await {
+            Ok(_) => {
+                info!("the terminal session lapsed and was renewed; asking again, once");
+            }
+            // Nobody answered the renewal. The platform has made no claim about this terminal, so
+            // this is the ordinary weather case and the only path from here to the local leg.
+            Err(ApiFailure::Unreachable(error)) => {
+                debug!("the session lapsed and the platform is now unreachable: {error}");
+                return self.verify_pin_offline(operator_id, pin, policy);
+            }
+            Err(ApiFailure::Unreadable(error)) => {
+                error!("contract breach renewing the terminal session: {error}");
+                return PinVerification::Undetermined(UndeterminedCause::contract_breach(error));
+            }
+            Err(refusal @ ApiFailure::Refused { .. }) => {
+                return PinVerification::Undetermined(match TerminalStanding::of(&refusal) {
+                    TerminalStanding::Repudiated(repudiation) => {
+                        UndeterminedCause::EnrolmentRepudiated(repudiation)
+                    }
+                    TerminalStanding::NotProvisioned => UndeterminedCause::TerminalNotProvisioned,
+                    TerminalStanding::SessionLapsed | TerminalStanding::Unaffected => {
+                        UndeterminedCause::ReauthFailed
+                    }
+                });
+            }
+        }
+
+        match self
+            .api
+            .verify_operator_pin(operator_id, pin.expose_digits())
+            .await
+        {
+            Ok(verified) => self.accepted_by_platform(operator_id, verified),
+            Err(ApiFailure::Unreachable(error)) => {
+                debug!("the platform went away between the renewal and the retry: {error}");
+                self.verify_pin_offline(operator_id, pin, policy)
+            }
+            Err(ApiFailure::Unreadable(error)) => {
+                error!("contract breach verifying a PIN after a renewal: {error}");
+                PinVerification::Undetermined(UndeterminedCause::contract_breach(error))
+            }
+            Err(refusal @ ApiFailure::Refused { .. }) => match TerminalStanding::of(&refusal) {
+                TerminalStanding::Unaffected => Self::refused_by_platform(refusal),
+                TerminalStanding::NotProvisioned => {
+                    PinVerification::Undetermined(UndeterminedCause::TerminalNotProvisioned)
+                }
+                TerminalStanding::Repudiated(repudiation) => PinVerification::Undetermined(
+                    UndeterminedCause::EnrolmentRepudiated(repudiation),
+                ),
+                // A session minted seconds ago, rejected. Not weather, and not a third attempt:
+                // this is where the loop would be, and it is deliberately not here.
+                TerminalStanding::SessionLapsed => {
+                    error!("a freshly renewed terminal session was rejected immediately");
+                    PinVerification::Undetermined(UndeterminedCause::ReauthFailed)
+                }
+            },
         }
     }
 
@@ -640,13 +795,13 @@ impl AuthService {
     }
 
     /// Updates the session token in local storage
-    pub fn update_session_token(&self, token: &str) -> Result<()> {
+    pub fn update_session_token(&self, token: &SessionToken) -> Result<()> {
         let conn = self.db.connection();
         let conn = conn.lock();
 
         conn.execute(
             "UPDATE terminal_config SET session_token = ?1, updated_at = datetime('now') WHERE id = 1",
-            [token],
+            params![token.expose()],
         )?;
 
         Ok(())
@@ -717,7 +872,7 @@ mod tests {
         assert_eq!(session.terminal_id, "terminal-id-1");
         assert_eq!(session.terminal_code, "terminal-code-1");
         assert_eq!(session.hardware_id, "hardware-id-1");
-        assert_eq!(session.session_token, "session-token-1");
+        assert_eq!(session.session_token.expose(), "session-token-1");
         assert_eq!(session.company_id, "company-id-1");
         assert_eq!(session.branch_id, Some("branch-id-1".to_string()));
         assert_eq!(session.locale, "en");
@@ -1064,10 +1219,12 @@ mod tests {
         }
 
         // Update token
-        service.update_session_token("new-token").unwrap();
+        service
+            .update_session_token(&SessionToken::new("new-token").expect("not blank"))
+            .unwrap();
 
         // Verify token updated
         let session = service.load_saved_session().unwrap().unwrap();
-        assert_eq!(session.session_token, "new-token");
+        assert_eq!(session.session_token.expose(), "new-token");
     }
 }

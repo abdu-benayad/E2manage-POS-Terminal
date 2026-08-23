@@ -27,6 +27,7 @@
 use std::fmt;
 
 use crate::refusal_details::RefusalDetails;
+use pos_models::{EnrolmentState, Repudiation};
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -751,5 +752,239 @@ mod tests {
 
         assert!(!unreadable.is_transient());
         assert!(!refused.is_transient());
+    }
+}
+
+// ============================================================================
+// TerminalStanding
+// ============================================================================
+
+/// What a refusal says about **this terminal's** standing with the platform, as opposed to about
+/// the request it refused.
+///
+/// # Why four answers and not one 401
+///
+/// `SyncService::is_auth_error` recovers the status by substring-matching `"401"` in a message
+/// string, and everything that matches takes one branch: re-authenticate, and if that fails,
+/// declare the terminal unregistered. Four genuinely different situations arrive that way —
+///
+/// | server answer | what it means | what the till should do |
+/// | --- | --- | --- |
+/// | 403 `POS_TERMINAL_GONE` | the device was taken away | stop, permanently |
+/// | 403 `POS_TERMINAL_NOT_ACTIVE` | enrolled and not active | stop; an administrator can fix it |
+/// | 401 `POS_TERMINAL_SESSION_EXPIRED` / `_TOKEN_INVALID` | the session lapsed | refresh once, retry |
+/// | 409 `POS_TERMINAL_NOT_PROVISIONED` | no `secretHash` to seal with | pair again; do not retry |
+///
+/// — and only the third is worth a retry. Two of the four are terminal, and the two terminal ones
+/// are different sentences to a human.
+///
+/// # This is what makes Decision 2 implementable without a server change
+///
+/// Design v6 held that a de-enrolled terminal answers an indistinguishable 401, because
+/// de-enrolment revokes sessions and session-revoked is tested first. The second clause was false:
+/// nothing revoked a session on de-enrolment, so a de-enrolled terminal still holds an unrevoked
+/// one, reaches the status check, and answers **403** — a different status *and* a different code.
+///
+/// The order is still wrong at `terminal-auth.middleware.ts:76`, which tests `revokedAt` before
+/// `terminal.status` with a comment recording it as known-wrong. So a de-enrolled terminal whose
+/// session *also* expired reports as expired — which is why "expired, and the refresh was refused"
+/// is treated as repudiation by the caller rather than as a second chance.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TerminalStanding {
+    /// The refusal was not about the terminal. Whatever it says, it says about the request.
+    Unaffected,
+    /// The session lapsed. The enrolment stands; refresh **once** and retry.
+    ///
+    /// Once, not in a loop: a retry loop against a server that keeps answering 401 is a lockout
+    /// amplifier, and the endpoint behind it counts attempts.
+    SessionLapsed,
+    /// Enrolled, and with no `secretHash` on the platform. Pair the device again.
+    NotProvisioned,
+    /// The platform has disowned this terminal.
+    Repudiated(Repudiation),
+}
+
+impl TerminalStanding {
+    /// Reads a refusal for what it says about the terminal.
+    ///
+    /// Only [`ApiFailure::Refused`] can say anything: an unreachable server has made no claim
+    /// about the enrolment, and a body that could not be read is a bug rather than a verdict.
+    /// Both answer [`Self::Unaffected`], which is the honest reading — *this failure tells you
+    /// nothing about the device*.
+    pub fn of(failure: &ApiFailure) -> Self {
+        let ApiFailure::Refused { code, .. } = failure else {
+            return Self::Unaffected;
+        };
+
+        match code {
+            ServerErrorCode::PosTerminalGone => Self::Repudiated(Repudiation::Withdrawn),
+            ServerErrorCode::PosTerminalNotActive => Self::Repudiated(Repudiation::Suspended),
+            ServerErrorCode::PosTerminalSessionExpired
+            | ServerErrorCode::PosTerminalTokenInvalid => Self::SessionLapsed,
+            ServerErrorCode::PosTerminalNotProvisioned => Self::NotProvisioned,
+            _ => Self::Unaffected,
+        }
+    }
+
+    /// The enrolment this standing implies.
+    ///
+    /// `None` when the refusal said nothing about the terminal. Routing through
+    /// [`EnrolmentState::offline_authority`] from here is what makes "fell back to a repudiated
+    /// enrolment because the network was down" a thing a caller has to write on purpose.
+    pub const fn enrolment(self) -> Option<EnrolmentState> {
+        match self {
+            Self::Unaffected => None,
+            Self::SessionLapsed | Self::NotProvisioned => Some(EnrolmentState::Active),
+            Self::Repudiated(_) => Some(EnrolmentState::Repudiated),
+        }
+    }
+
+    /// The repudiation this standing carries, if the platform disowned the terminal.
+    ///
+    /// An accessor rather than a `matches!` at each call site, because "is this terminal finished"
+    /// is asked in more than one place and the answer must not drift between them.
+    pub const fn repudiation(self) -> Option<Repudiation> {
+        match self {
+            Self::Repudiated(repudiation) => Some(repudiation),
+            Self::Unaffected | Self::SessionLapsed | Self::NotProvisioned => None,
+        }
+    }
+
+    /// Whether the till should refresh its session and try this request again.
+    ///
+    /// True for exactly one of the four. Exhaustive with no catch-all arm: a fifth standing has to
+    /// answer this deliberately.
+    pub const fn deserves_one_retry(self) -> bool {
+        match self {
+            Self::SessionLapsed => true,
+            Self::Unaffected | Self::NotProvisioned | Self::Repudiated(_) => false,
+        }
+    }
+}
+
+#[cfg(test)]
+mod terminal_standing_tests {
+    use super::*;
+
+    fn refusal(status: u16, code: ServerErrorCode) -> ApiFailure {
+        ApiFailure::Refused {
+            status: StatusCode::from_u16(status).expect("a real status"),
+            code,
+            message: "refused".to_string(),
+            details: None,
+        }
+    }
+
+    /// The four-way table, read from the machine code the platform sends.
+    ///
+    /// Written as data rather than as four tests because the point is that the four answers are
+    /// *different*: a mapping collapsed onto one answer is the defect, and a table shows the
+    /// collapse where four separate assertions would each still pass.
+    #[test]
+    fn each_terminal_code_gets_its_own_standing() {
+        let table = [
+            (
+                403,
+                ServerErrorCode::PosTerminalGone,
+                TerminalStanding::Repudiated(Repudiation::Withdrawn),
+            ),
+            (
+                403,
+                ServerErrorCode::PosTerminalNotActive,
+                TerminalStanding::Repudiated(Repudiation::Suspended),
+            ),
+            (
+                401,
+                ServerErrorCode::PosTerminalSessionExpired,
+                TerminalStanding::SessionLapsed,
+            ),
+            (
+                401,
+                ServerErrorCode::PosTerminalTokenInvalid,
+                TerminalStanding::SessionLapsed,
+            ),
+            (
+                409,
+                ServerErrorCode::PosTerminalNotProvisioned,
+                TerminalStanding::NotProvisioned,
+            ),
+            // About the PIN, not about the device — and the reason the standing is consulted
+            // before the refusal is mapped.
+            (
+                401,
+                ServerErrorCode::PosPinInvalid,
+                TerminalStanding::Unaffected,
+            ),
+            (
+                401,
+                ServerErrorCode::PosOperatorLocked,
+                TerminalStanding::Unaffected,
+            ),
+        ];
+
+        for (status, code, expected) in table {
+            assert_eq!(
+                TerminalStanding::of(&refusal(status, code.clone())),
+                expected,
+                "for {code:?}"
+            );
+        }
+    }
+
+    /// Exactly one of the four is worth asking again, and only the two repudiations forbid the
+    /// local leg. `enrolment()` is `None` for `Unaffected` because a refusal about the PIN says
+    /// nothing about the enrolment — reading it as `Active` would be an assertion nobody made.
+    #[test]
+    fn only_a_lapsed_session_is_worth_a_retry() {
+        assert!(TerminalStanding::SessionLapsed.deserves_one_retry());
+        for standing in [
+            TerminalStanding::Unaffected,
+            TerminalStanding::NotProvisioned,
+            TerminalStanding::Repudiated(Repudiation::Withdrawn),
+            TerminalStanding::Repudiated(Repudiation::Suspended),
+        ] {
+            assert!(
+                !standing.deserves_one_retry(),
+                "{standing:?} must not be retried"
+            );
+        }
+
+        assert_eq!(TerminalStanding::Unaffected.enrolment(), None);
+        assert_eq!(
+            TerminalStanding::SessionLapsed.enrolment(),
+            Some(EnrolmentState::Active)
+        );
+        assert_eq!(
+            TerminalStanding::NotProvisioned.enrolment(),
+            Some(EnrolmentState::Active)
+        );
+        assert_eq!(
+            TerminalStanding::Repudiated(Repudiation::Suspended).enrolment(),
+            Some(EnrolmentState::Repudiated)
+        );
+
+        // The property the local leg depends on: a repudiated enrolment confers no offline
+        // authority, whatever the expiry says.
+        let not_after = pos_models::CredentialExpiry::at(
+            chrono::DateTime::parse_from_rfc3339("2099-01-01T00:00:00Z")
+                .expect("a literal instant")
+                .with_timezone(&chrono::Utc),
+        );
+        assert_eq!(
+            EnrolmentState::Repudiated.offline_authority(not_after),
+            None
+        );
+    }
+
+    /// `repudiation()` is the accessor the sync loop asks before it tries to renew anything.
+    #[test]
+    fn only_a_repudiated_standing_carries_a_repudiation() {
+        assert_eq!(
+            TerminalStanding::Repudiated(Repudiation::Withdrawn).repudiation(),
+            Some(Repudiation::Withdrawn)
+        );
+        assert_eq!(TerminalStanding::Unaffected.repudiation(), None);
+        assert_eq!(TerminalStanding::SessionLapsed.repudiation(), None);
+        assert_eq!(TerminalStanding::NotProvisioned.repudiation(), None);
     }
 }

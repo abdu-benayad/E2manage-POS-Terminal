@@ -163,6 +163,40 @@ pub enum EnrolmentState {
     Repudiated,
 }
 
+/// Why the platform disowned this terminal's enrolment.
+///
+/// Both stop the till and neither may reach the local leg, so [`EnrolmentState`] folds them into
+/// one — the decision is the same. They are still two, because they are **two different sentences
+/// to the person standing at the drawer**, and only one of them has a remedy anybody there can
+/// reach. A till that says "this device has been withdrawn" when an administrator could restore it
+/// in thirty seconds sends someone home for the day.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, ThisError)]
+pub enum Repudiation {
+    /// The device was taken away. `POS_TERMINAL_GONE`, 403.
+    ///
+    /// Nothing at the till helps. The enrolment is over.
+    #[error("this terminal has been withdrawn from the fleet")]
+    Withdrawn,
+
+    /// The terminal is enrolled and not active. `POS_TERMINAL_NOT_ACTIVE`, 403.
+    ///
+    /// Distinct from [`Self::Withdrawn`] precisely because it is recoverable: an administrator can
+    /// reactivate it, and the person at the till has someone to call.
+    #[error("this terminal is enrolled and not active; an administrator can reactivate it")]
+    Suspended,
+}
+
+impl Repudiation {
+    /// Whether anybody at the till can do something about this. Never true for
+    /// [`Self::Withdrawn`].
+    pub const fn has_a_remedy_at_the_till(self) -> bool {
+        match self {
+            Self::Suspended => true,
+            Self::Withdrawn => false,
+        }
+    }
+}
+
 impl EnrolmentState {
     /// The authority a locally stored credential can confer.
     ///
@@ -369,6 +403,29 @@ pub enum UndeterminedCause {
     /// standing to ask the platform anything.
     #[error("the terminal session was rejected and could not be renewed")]
     ReauthFailed,
+
+    /// The platform has disowned this terminal's enrolment.
+    ///
+    /// **Terminal, and it must never fall through to the local leg.** That is the one branch where
+    /// the till would override a decision the server actually made: the platform was reached, it
+    /// answered, and the answer was that this device is not one of theirs. Retrying does not help
+    /// and neither does a local credential — which is why this is routed through
+    /// [`EnrolmentState::offline_authority`], the only source of an offline [`Authority`], and why
+    /// that method returns `None` for [`EnrolmentState::Repudiated`].
+    ///
+    /// Distinct from [`Self::ReauthFailed`], which is *"we could not renew"* — an answer about a
+    /// session. This is an answer about the device.
+    #[error("the platform has disowned this terminal: {0}")]
+    EnrolmentRepudiated(#[source] Repudiation),
+
+    /// The terminal has no `secretHash` on the platform, so no credential can be sealed for it.
+    ///
+    /// The enrolment is not disowned — the device is simply half-provisioned, and the remedy is to
+    /// pair it again. **Not worth retrying**, which is what separates it from
+    /// [`Self::ServerUnreachable`]: the answer will be the same every time until somebody pairs
+    /// the device.
+    #[error("this terminal is not fully provisioned; it must be paired again")]
+    TerminalNotProvisioned,
 
     /// The platform answered, and the till could not read the answer.
     ///
