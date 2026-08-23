@@ -26,6 +26,17 @@
 //!
 //! Worth the paragraph because the failure gives no hint of its cause: it reads as the
 //! provider being unreachable, not as anything about the contract.
+//!
+//! # Regeneration MERGES into the artifact; it does not replace it
+//!
+//! "Byte-stable regeneration" holds only while nothing changes. When an interaction's
+//! `description` or its `given` changes, the writer **adds** the new form and leaves the old one
+//! behind — so editing two interactions took the artifact from seven to nine, both stale copies
+//! looking exactly like real coverage, and the platform would have verified expectations the till
+//! no longer has.
+//!
+//! **Delete `pacts/e2manage-pos-terminal-wadi-dms-api.json` and re-run whenever you edit an
+//! existing interaction.** Adding a new one is safe; changing one is not.
 
 use pact_consumer::prelude::*;
 use pos_api::Enveloped;
@@ -474,6 +485,16 @@ async fn a_terminal_login_returns_a_session_the_till_can_read() {
     }
 }
 
+/// The session token the two authenticated 200s present in `X-Terminal-Token`.
+///
+/// A **fixed** value, because the provider state has to be able to create a session that matches
+/// it: `POS_TerminalSession` stores `SHA-256(token)` and never the token, so the fixture hashes
+/// this exact string into `tokenHash`. A token minted per run could not be named in the artifact.
+///
+/// `terminal-auth.middleware.ts:32,76` reads `x-terminal-token` and **nowhere else** — not the
+/// `Authorization` header the till also sets — so that is the header pinned here.
+const PACT_SESSION_TOKEN: &str = "pact-terminal-session-token-0001";
+
 /// The fleet heartbeat, which is the surface `till-api-client-disagrees-with-the-served-contract`
 /// repaired and therefore the one it earns the right to pin.
 ///
@@ -500,11 +521,14 @@ async fn a_heartbeat_reports_metrics_where_the_platform_reads_them() {
             "a heartbeat from an authenticated terminal reporting its metrics",
             "",
             |mut i| {
-                i.given("an active terminal holding a valid session token");
+                i.given(format!(
+                    "an active terminal whose session token is {PACT_SESSION_TOKEN}"
+                ));
                 i.request
                     .post()
                     .path("/api/pos/fleet/heartbeat")
                     .header("content-type", "application/json")
+                    .header("X-Terminal-Token", PACT_SESSION_TOKEN)
                     .json_body(json_pattern!({
                         // The nesting IS the contract. See the doc comment.
                         "metrics": {
@@ -550,6 +574,7 @@ async fn a_heartbeat_reports_metrics_where_the_platform_reads_them() {
     let url = format!("{}api/pos/fleet/heartbeat", pact.url());
     let response = reqwest::Client::new()
         .post(&url)
+        .header("X-Terminal-Token", PACT_SESSION_TOKEN)
         .json(&body)
         .send()
         .await
@@ -592,8 +617,13 @@ async fn a_token_refresh_returns_a_session_the_till_can_read() {
             "a token refresh from a terminal holding a valid session",
             "",
             |mut i| {
-                i.given("an active terminal holding a valid session token");
-                i.request.post().path("/api/pos/terminals/refresh");
+                i.given(format!(
+                    "an active terminal whose session token is {PACT_SESSION_TOKEN}"
+                ));
+                i.request
+                    .post()
+                    .path("/api/pos/terminals/refresh")
+                    .header("X-Terminal-Token", PACT_SESSION_TOKEN);
                 i.response
                     .status(200)
                     .header("content-type", "application/json")
@@ -611,6 +641,7 @@ async fn a_token_refresh_returns_a_session_the_till_can_read() {
     let url = format!("{}api/pos/terminals/refresh", pact.url());
     let response = reqwest::Client::new()
         .post(&url)
+        .header("X-Terminal-Token", PACT_SESSION_TOKEN)
         .send()
         .await
         .expect("the mock server did not answer");
@@ -648,9 +679,16 @@ async fn a_token_refresh_returns_a_session_the_till_can_read() {
 /// `e2manage/doc/pos-till-server-contract`'s coverage table and copy the artifact into the
 /// platform. That is the whole point: the edit is the reminder.
 ///
-/// It runs as its own test rather than inside one of the interactions above, because the artifact
-/// is only complete once every `PactBuilder` in this file has been dropped and flushed. Run the
-/// suite, then this reads what the suite wrote.
+/// # What this test can and cannot see
+///
+/// It reads the artifact **as it stands on disk**, and the interactions above write theirs
+/// concurrently with it, so within a single `cargo test` it is reading the *previous* run's file.
+/// That is a real limit and not a defect to paper over: it makes this a check on the artifact **as
+/// committed**, which is the thing the platform actually verifies against. A stale committed
+/// artifact is exactly what it exists to catch.
+///
+/// The consequence to know: after editing an interaction, one run is not enough. Delete the
+/// artifact, run, run again — the second run is the one that reports the truth.
 #[test]
 fn the_artifact_pins_exactly_the_interactions_this_crate_declares() {
     /// Raise this in the same commit that adds an interaction, updates the coverage table in

@@ -7,7 +7,7 @@
       "description": "a heartbeat from an authenticated terminal reporting its metrics",
       "providerStates": [
         {
-          "name": "an active terminal holding a valid session token"
+          "name": "an active terminal whose session token is pact-terminal-session-token-0001"
         }
       ],
       "request": {
@@ -22,6 +22,7 @@
           }
         },
         "headers": {
+          "X-Terminal-Token": "pact-terminal-session-token-0001",
           "content-type": "application/json"
         },
         "matchingRules": {
@@ -399,10 +400,13 @@
       "description": "a token refresh from a terminal holding a valid session",
       "providerStates": [
         {
-          "name": "an active terminal holding a valid session token"
+          "name": "an active terminal whose session token is pact-terminal-session-token-0001"
         }
       ],
       "request": {
+        "headers": {
+          "X-Terminal-Token": "pact-terminal-session-token-0001"
+        },
         "method": "POST",
         "path": "/api/pos/terminals/refresh"
       },
