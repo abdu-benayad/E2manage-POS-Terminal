@@ -50,7 +50,7 @@ pub use refusal_details::{
     PinInvalidDetails, PinPolicyViolationDetails, PinRotationRequiredDetails, RefusalDetails,
     SupervisorApprovalRequiredDetails,
 };
-pub use session::{BlankSessionToken, ReauthOutcome, SessionToken};
+pub use session::{BlankSessionToken, OperatorSession, ReauthOutcome, SessionToken};
 
 pub use auth::{
     // Pairing types

@@ -8,7 +8,9 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::client::Enveloped;
-use pos_models::OperatorId;
+use crate::failure::ApiFailure;
+use crate::session::OperatorSession;
+use pos_models::{OperatorId, OperatorPermissions, OperatorRole};
 
 // ============================================================================
 // REQUEST TYPES
@@ -103,11 +105,13 @@ pub struct VerifyPinRequest {
     pub operator_id: OperatorId,
     /// PIN to verify
     ///
-    /// Still a `String`. `pos_models::Pin` is the type that belongs here
-    /// (`05-pin-and-pin-policy`), and once it lands the `Debug` derive is safe to restore, because
-    /// `Pin`'s own `Debug` renders `Pin(****)`. Wiring it is `auth-outcome-and-offline-lockout`'s
-    /// work: the PIN has to reach this struct from a policy-aware parse — which needs the
-    /// terminal's configured PIN length — rather than as a bare string handed down from a caller.
+    /// Still a `String`. `pos_models::Pin` is the type that belongs here, and once it lands the
+    /// `Debug` derive is safe to restore, because `Pin`'s own `Debug` renders `Pin(****)`.
+    ///
+    /// The old note here said the wiring needed *a policy-aware parse — which needs the terminal's
+    /// configured PIN length*. It no longer does: `Pin::parse` takes no policy, because a tenant's
+    /// length rule governs minting and the till never mints a PIN. What remains is plumbing the
+    /// parsed value down from PIN entry instead of a bare string, which is task 07's work.
     pub pin: String,
 }
 
@@ -272,18 +276,65 @@ pub struct TerminalCommand {
     pub created_at: String,
 }
 
-/// PIN verification response
+/// What a **200** from `POST /api/pos/sync/operators/verify-pin` carries.
+///
+/// # There is no `valid` field, and its absence is the fix
+///
+/// This DTO required `valid: bool`, with no `#[serde(default)]`, unlike the two optional fields
+/// that sat beside it. The server has never sent one, so **a correct PIN online produced a
+/// deserialization failure** — which `AuthService::verify_pin` then absorbed as grounds to fall
+/// back to offline verification. The platform states the rule at the response it writes:
+///
+/// > there is deliberately no `valid` field: a 200 IS the affirmative answer, and a client that
+/// > needs a boolean to know it succeeded has not read the status. The till's DTO requires one;
+/// > that is fixed by deleting the requirement.
+///
+/// A refusal is a non-2xx and arrives as [`ApiFailure::Refused`](crate::ApiFailure::Refused) with
+/// a code and, since the `details` catalogue landed, the figures beside it. A server test asserts
+/// this body has no `valid` key. Unknown fields are ignored by serde's default, so a platform that
+/// starts over-supplying one does not break this till.
+///
+/// # `message` and `remaining_attempts` are gone too
+///
+/// Both were only ever populated on a refusal, which no longer arrives here. `remaining_attempts`
+/// now travels as `details.attemptsRemaining` on the 401 — typed, and never zero. See
+/// [`RefusalDetails`](crate::RefusalDetails).
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct VerifyPinResponse {
-    /// Whether PIN is valid
-    pub valid: bool,
-    /// Error message if invalid
+    /// The operator credential this verification minted.
+    ///
+    /// **Absent, not null**, when no terminal authenticated the request: the route falls back to
+    /// `authMiddleware`, and rather than bind a credential to nothing the server mints none.
+    ///
+    /// A till always presents a terminal token, so a till always gets a session. `None` here is
+    /// therefore a **till-side bug** — a request that went out without `X-Terminal-Token` — and
+    /// not an ordinary branch to write a fallback for. Task 07 logs it loudly rather than
+    /// degrading quietly.
     #[serde(default)]
-    pub message: Option<String>,
-    /// Remaining attempts before lockout
+    pub session: Option<OperatorSession>,
+    /// The operator whose PIN was verified.
+    pub operator_id: OperatorId,
+    /// The HR employee behind the operator profile.
+    pub employee_id: String,
+    /// The employee's number, e.g. `EMP001`. Non-null on `Employee`.
+    pub employee_number: String,
+    /// Full name, English.
+    ///
+    /// Two fields rather than one `OperatorName`, as in [`OperatorDto`](crate::OperatorDto): a
+    /// DTO is the shape of the wire, and the pair becomes one value at the boundary.
+    pub name: String,
+    /// Full name, Arabic. Null when either half is missing server-side.
     #[serde(default)]
-    pub remaining_attempts: Option<u32>,
+    pub name_ar: Option<String>,
+    /// The operator's POS role. No serde default — the column is non-null, so an absent or
+    /// unrecognised role means the contract moved.
+    pub role: OperatorRole,
+    /// The operator's capabilities. `POS_OperatorProfile.permissions` is `Json?`, so absent is a
+    /// real state; it is **not** defaulted to a permission set here, for the reason
+    /// `tests/guards.rs::operator_permissions_has_exactly_one_definition_and_no_default` exists.
+    #[serde(default)]
+    pub permissions: Option<OperatorPermissions>,
 }
 
 // ============================================================================
@@ -485,33 +536,39 @@ impl ApiClient {
         Ok(response.into_inner())
     }
 
-    /// Verifies an operator PIN with the backend (online verification)
+    /// Asks the platform whether this PIN is this operator's.
     ///
-    /// # Arguments
+    /// # The two drifts this route carried, and why only one is left
     ///
-    /// * `operator_id` - Operator ID
-    /// * `pin` - PIN to verify
+    /// The **envelope** was repaired earlier: `sync.controller.ts:1168` wraps its payload, so this
+    /// reads [`Enveloped`] rather than the raw `post` that was deserialising the envelope into the
+    /// DTO. The **`valid: bool` requirement** is gone as of this issue — see
+    /// [`VerifyPinResponse`], which is now the 200's real shape.
     ///
-    /// # Returns
+    /// The route is `/api/pos/sync/operators/verify-pin`, registered at `sync.controller.ts:207`.
+    /// It is not `/api/pos/sync/verify-pin`; the shorter spelling is a 404. It is CSRF-non-exempt
+    /// regardless.
     ///
-    /// Verification result
+    /// # It returns [`ApiFailure`], not `anyhow::Error`
+    ///
+    /// Every other method here widens the failure, which was fine while nothing branched on it.
+    /// This one is the reason the enum exists: a wrong PIN, a standing lockout and a rotation
+    /// requirement are three different 40x answers with three different things to say to the
+    /// person at the till, and each carries typed figures in `details`. A caller that had to
+    /// downcast to find that out would be one `?` away from treating all three as weather — which
+    /// is exactly what `AuthService::verify_pin` does today, and what task 07 replaces.
     pub async fn verify_operator_pin(
         &self,
         operator_id: &OperatorId,
         pin: &str,
-    ) -> Result<VerifyPinResponse> {
+    ) -> std::result::Result<VerifyPinResponse, ApiFailure> {
         let request = VerifyPinRequest {
             operator_id: operator_id.clone(),
             pin: pin.to_string(),
         };
 
-        // The envelope is repaired here (`sync.controller.ts:1168` wraps its payload). The DTO's
-        // required `valid: bool` is a SEPARATE drift - the platform deliberately stopped sending
-        // it, and says so at `sync.controller.ts:1172-1175` - and belongs to
-        // `auth-outcome-and-offline-lockout`. This call therefore still fails on the field; it is
-        // no longer also failing on the envelope. The route is CSRF-non-exempt regardless.
-        let response: Enveloped<_> = self
-            .post("/api/pos/sync/operators/verify-pin", &request)
+        let response: Enveloped<VerifyPinResponse> = self
+            .post_or_failure("/api/pos/sync/operators/verify-pin", &request)
             .await?;
         Ok(response.into_inner())
     }
@@ -803,5 +860,113 @@ mod tests {
 
         let json = serde_json::to_string(&request).unwrap();
         assert!(!json.contains("branchId")); // None should be skipped
+    }
+
+    // ========================================================================
+    // verify-pin: the 200's real shape
+    // ========================================================================
+
+    /// The body `sync.controller.ts` writes on a verified PIN, captured field for field.
+    const VERIFIED: &str = r#"{
+        "session": { "token": "op-sess-abc", "expiresAt": "2026-08-23T22:00:00.000Z" },
+        "operatorId": "op-001",
+        "employeeId": "emp-77",
+        "employeeNumber": "EMP001",
+        "name": "Sara Haddad",
+        "nameAr": "سارة حداد",
+        "role": "SUPERVISOR",
+        "permissions": { "canVoid": true, "canDiscount": true, "maxDiscount": 20 }
+    }"#;
+
+    /// A 200 parses, and **every field is asserted with a distinct value**.
+    ///
+    /// Distinct on purpose: three of these are opaque identifier strings, and a DTO that wired
+    /// `employeeId` to `operatorId` would read as correct against a fixture that reused one value.
+    #[test]
+    fn a_verified_pin_parses_with_its_operator_session() {
+        let verified: VerifyPinResponse =
+            serde_json::from_str(VERIFIED).expect("the response the controller writes");
+
+        let session = verified
+            .session
+            .expect("a till presents a terminal token, so it gets one");
+        assert_eq!(session.token().expose(), "op-sess-abc");
+        assert_eq!(
+            session.expires_at().to_rfc3339(),
+            "2026-08-23T22:00:00+00:00"
+        );
+        assert_eq!(verified.operator_id.as_str(), "op-001");
+        assert_eq!(verified.employee_id, "emp-77");
+        assert_eq!(verified.employee_number, "EMP001");
+        assert_eq!(verified.name, "Sara Haddad");
+        assert_eq!(verified.name_ar.as_deref(), Some("سارة حداد"));
+        assert_eq!(verified.role, OperatorRole::Supervisor);
+        let permissions = verified.permissions.expect("the fixture grants some");
+        assert!(permissions.allows(pos_models::Permission::VoidTransaction));
+    }
+
+    /// A server that starts sending `valid` again must not break the till.
+    ///
+    /// Serde ignores unknown fields by default, and that default is load-bearing here rather than
+    /// incidental: the whole defect being fixed is a required field the server does not send, and
+    /// swinging to `deny_unknown_fields` would be the same brittleness pointed the other way.
+    #[test]
+    fn a_body_that_still_carries_valid_parses_anyway() {
+        let over_supplying = VERIFIED.replacen('{', r#"{ "valid": true,"#, 1);
+
+        let verified: VerifyPinResponse =
+            serde_json::from_str(&over_supplying).expect("an extra field is not a breach");
+
+        assert_eq!(verified.operator_id.as_str(), "op-001");
+    }
+
+    /// `session` is **absent**, not null, when no terminal authenticated the request.
+    ///
+    /// A till always presents `X-Terminal-Token`, so reaching this state means the till sent a
+    /// request without one. It parses — the response is well-formed — and the `None` is the
+    /// signal.
+    #[test]
+    fn a_response_without_a_session_parses_and_says_so() {
+        let no_session = r#"{
+            "operatorId": "op-001",
+            "employeeId": "emp-77",
+            "employeeNumber": "EMP001",
+            "name": "Sara Haddad",
+            "nameAr": null,
+            "role": "CASHIER",
+            "permissions": null
+        }"#;
+
+        let verified: VerifyPinResponse =
+            serde_json::from_str(no_session).expect("an absent session is a shape the route emits");
+
+        assert!(verified.session.is_none());
+        assert!(verified.name_ar.is_none());
+        // Not defaulted to an empty permission set: an unreadable mapping and a legitimately
+        // unprivileged operator are different facts. See `tests/guards.rs`.
+        assert!(verified.permissions.is_none());
+        assert_eq!(verified.role, OperatorRole::Cashier);
+    }
+
+    /// A blank session token is a contract breach at the boundary, not a credential to present.
+    #[test]
+    fn a_blank_session_token_does_not_become_a_session() {
+        let blank = VERIFIED.replace(r#""token": "op-sess-abc""#, r#""token": "   ""#);
+
+        let error = serde_json::from_str::<VerifyPinResponse>(&blank)
+            .expect_err("a blank bearer token is unusable");
+
+        assert!(
+            error.to_string().contains("cannot be blank"),
+            "the refusal must name what is wrong: {error}"
+        );
+    }
+
+    /// A role the server's enum does not admit is a moved contract, not a cashier.
+    #[test]
+    fn an_unknown_role_is_refused_rather_than_defaulted() {
+        let unknown = VERIFIED.replace(r#""role": "SUPERVISOR""#, r#""role": "AUDITOR""#);
+
+        assert!(serde_json::from_str::<VerifyPinResponse>(&unknown).is_err());
     }
 }

@@ -410,6 +410,30 @@ impl ApiClient {
         T: Serialize,
         R: DeserializeOwned,
     {
+        Ok(self.post_or_failure(path, body).await?)
+    }
+
+    /// A POST whose failure keeps its type.
+    ///
+    /// [`Self::post`] is this, widened into `anyhow::Error` — one line, because `ApiFailure` is
+    /// `Error + Send + Sync + 'static` and `?` converts for free. That widening exists so the ~30
+    /// public signatures on this client did not all have to change at once, and it is the right
+    /// default for a caller that only reports the failure.
+    ///
+    /// It is the wrong default for a caller that **branches** on it. Downcasting back out of
+    /// `anyhow` to ask "was this a refusal, and which one" is a decision the type system should
+    /// have made, and one a later edit can silently stop satisfying. `verify_operator_pin` is the
+    /// first caller that needs the enum — three different 40x answers, three different things to
+    /// tell the person at the till — and it takes this door instead.
+    pub(crate) async fn post_or_failure<T, R>(
+        &self,
+        path: &str,
+        body: &T,
+    ) -> std::result::Result<R, ApiFailure>
+    where
+        T: Serialize,
+        R: DeserializeOwned,
+    {
         let url = format!("{}{}", self.base_url, path);
         debug!("POST {}", url);
 
@@ -422,7 +446,7 @@ impl ApiClient {
             .await
             .map_err(|e| self.handle_request_error(e))?;
 
-        Ok(self.handle_response(response).await?)
+        self.handle_response(response).await
     }
 
     /// Makes a DELETE request whose response body carries nothing the caller reads.

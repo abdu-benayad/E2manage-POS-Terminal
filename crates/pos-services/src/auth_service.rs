@@ -281,32 +281,38 @@ impl AuthService {
     }
 
     /// Verifies PIN with the backend API
+    ///
+    /// # The `else` branch this used to have was unreachable
+    ///
+    /// It read `response.message` when `valid` was false — and `valid` was never false, because a
+    /// refusal is a non-2xx and `handle_response` has always turned those into an `Err`. So the
+    /// branch that looked like the wrong-PIN path had not run since the client was written, and
+    /// the wrong-PIN path was the `Err` arm in [`Self::verify_pin`] above: *fall through to
+    /// offline*. That is this issue's defect, and it is still here.
+    ///
+    /// What this task fixes is the other half — a **correct** PIN used to fail deserialization on
+    /// a `valid` field the server does not send, so it fell through to offline as well. A 200 is
+    /// now read as the affirmative answer it is.
+    ///
+    /// The refusal still arrives as an `Err` carrying an [`ApiFailure`](pos_api::ApiFailure) with
+    /// its code and typed `details`, and the caller above still cannot tell it from a network
+    /// outage. Task 07 replaces both this signature and that caller.
     async fn verify_pin_online(
         &self,
         operator_id: &OperatorId,
         pin: &str,
     ) -> Result<PinVerificationResult> {
-        let response = self.api.verify_operator_pin(operator_id, pin).await?;
+        let _verified = self.api.verify_operator_pin(operator_id, pin).await?;
 
-        if response.valid {
-            // Get operator info from local database
-            let operator = self.get_operator_info(operator_id)?;
-            Ok(PinVerificationResult {
-                valid: true,
-                operator_id: operator_id.clone(),
-                operator_name: Some(operator.0),
-                operator_role: Some(operator.1),
-                message: None,
-            })
-        } else {
-            Ok(PinVerificationResult {
-                valid: false,
-                operator_id: operator_id.clone(),
-                operator_name: None,
-                operator_role: None,
-                message: response.message,
-            })
-        }
+        // Get operator info from local database
+        let operator = self.get_operator_info(operator_id)?;
+        Ok(PinVerificationResult {
+            valid: true,
+            operator_id: operator_id.clone(),
+            operator_name: Some(operator.0),
+            operator_role: Some(operator.1),
+            message: None,
+        })
     }
 
     /// Verifies PIN using local database (offline mode)

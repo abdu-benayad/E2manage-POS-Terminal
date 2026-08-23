@@ -1,9 +1,17 @@
-//! The terminal's session with the platform, and what happens when it has to be renewed.
+//! The two sessions a till holds, and what happens when the terminal's has to be renewed.
 //!
-//! Nothing here is wired in yet; `auth-outcome-and-offline-lockout` is the first consumer.
+//! **They are two credentials, not one.** The terminal session says *this device is enrolled*;
+//! the operator session says *this person proved their PIN at this device*. They are minted by
+//! different routes, live for different lengths (24 hours against 12), are revoked by different
+//! events, and travel in different headers — `X-Terminal-Token` and `X-Operator-Token`. They
+//! share the [`SessionToken`] type because a bearer token is a bearer token; presenting one where
+//! the other belongs is a bug the type cannot catch, which is why [`OperatorSession`] names its
+//! own.
 
 use std::fmt;
 
+use chrono::{DateTime, Utc};
+use serde::Deserialize;
 use thiserror::Error;
 
 // ============================================================================
@@ -57,6 +65,74 @@ impl fmt::Debug for SessionToken {
     /// length.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("SessionToken(****)")
+    }
+}
+
+// ============================================================================
+// OperatorSession
+// ============================================================================
+
+/// The credential a verified PIN mints: *this person is signed in at this till*.
+///
+/// Returned by `POST /api/pos/sync/operators/verify-pin` and by `.../operators/rotate-pin`, in the
+/// same shape, so a till has one code path for "I now hold an operator credential".
+///
+/// # Not the terminal's token
+///
+/// It is a [`SessionToken`] and it is **not interchangeable with the terminal's**. The terminal
+/// token authenticates the device for 24 hours and is refreshed by
+/// `POST /api/pos/terminals/refresh`; this one authenticates a person for 12 and is revoked by a
+/// PIN reset, a deactivation or a rotation. Sending one in the other's header is a 401 the till
+/// will read as "the session expired". See the module header.
+///
+/// # `expires_at` is a hint, not the authority
+///
+/// The server decides expiry and answers `POS_OPERATOR_SESSION_EXPIRED`; the till's clock is not
+/// authoritative. Acting on this early is safe — it fails **closed**, the till simply
+/// re-authenticates sooner than it had to — which is why this type derives an ordering where
+/// `pos_api::LockoutNotice` deliberately does not.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OperatorSession {
+    token: SessionToken,
+    expires_at: DateTime<Utc>,
+}
+
+impl OperatorSession {
+    /// Records a minted operator session.
+    pub const fn new(token: SessionToken, expires_at: DateTime<Utc>) -> Self {
+        Self { token, expires_at }
+    }
+
+    /// The token, to put in `X-Operator-Token`. Redacted in `Debug`; see [`SessionToken`].
+    pub const fn token(&self) -> &SessionToken {
+        &self.token
+    }
+
+    /// When the platform says this session lapses. A hint — see the type docs.
+    pub const fn expires_at(&self) -> DateTime<Utc> {
+        self.expires_at
+    }
+}
+
+/// The session as the wire carries it.
+///
+/// Private, and the reason [`OperatorSession`] has no `Deserialize` derive: [`SessionToken`]
+/// refuses a blank string, and that refusal has to happen at the boundary rather than be skipped
+/// by a derive that would rebuild the sentinel [`BlankSessionToken`] exists to end. A blank token
+/// here is a contract breach and reads as one — `ApiFailure::Unreadable`, not a session the till
+/// then presents and is refused for.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WireOperatorSession {
+    token: String,
+    expires_at: DateTime<Utc>,
+}
+
+impl<'de> Deserialize<'de> for OperatorSession {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let wire = WireOperatorSession::deserialize(deserializer)?;
+        let token = SessionToken::new(wire.token).map_err(serde::de::Error::custom)?;
+        Ok(Self::new(token, wire.expires_at))
     }
 }
 
