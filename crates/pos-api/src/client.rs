@@ -8,7 +8,7 @@ use reqwest::{
     header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE, IF_NONE_MATCH},
     Client, Response, StatusCode,
 };
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{de, de::DeserializeOwned, Deserialize, Deserializer, Serialize};
 
 use crate::failure::ServerErrorCode;
 use std::sync::Arc;
@@ -79,6 +79,76 @@ pub struct ApiEnvelope<T> {
     #[serde(default)]
     pub message: Option<String>,
     pub data: Option<T>,
+}
+
+/// A payload the platform carries inside its success envelope, `{ success, message, data }`.
+///
+/// The wire shape is declared **by the type of the thing being read**, at the one place the route
+/// is named, rather than by which of two helper families the call site happened to pick. That is
+/// the whole point: there is one helper family, so there is no wrong helper to choose.
+///
+/// # What it refuses, and why each refusal is load-bearing
+///
+/// - **`success: false`.** Only the deleted `_envelope` helpers ever checked this. A raw helper
+///   against an enveloped route answering `{"success": false, ...}` deserialised whatever happened
+///   to fit and reported nothing at all.
+/// - **`success: true` with `data` absent or null.** The route promised a payload and did not send
+///   one. Producing a default here would push a fabricated value into the domain.
+/// - **A bare, unenveloped body.** Deserialisation fails on the missing `success` field. This is
+///   the property that separates this design from "teach the client to recognise both shapes":
+///   accepting both is how a contract stops being a contract, and it would mask the day the
+///   platform stops wrapping.
+///
+/// A route that answers `{success, message}` with **no** `data` — `terminals/logout`
+/// (`terminal.controller.ts:281`), `platform/report-version` (`:409`) — is therefore *not*
+/// `Enveloped`. Reading its `success` at the top level with a plain DTO is correct, and wrapping it
+/// here would turn a working call into `no `data` payload`. Both directions of this mistake are
+/// live in the tree today; see `till/doc/till-consumer-surface-audit`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Enveloped<T>(T);
+
+impl<T> Enveloped<T> {
+    /// The payload, by value. Unwrapping is deliberate; there is no public field.
+    pub fn into_inner(self) -> T {
+        self.0
+    }
+}
+
+impl<'de, T> Deserialize<'de> for Enveloped<T>
+where
+    T: DeserializeOwned,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        /// The envelope exactly as the platform writes it. `data` carries `#[serde(default)]` so
+        /// that an absent payload reaches the check below with a message naming the route's
+        /// promise, rather than serde's generic "missing field `data`".
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        #[serde(bound(deserialize = "T: DeserializeOwned"))]
+        struct Wire<T> {
+            success: bool,
+            #[serde(default)]
+            message: Option<String>,
+            #[serde(default)]
+            data: Option<T>,
+        }
+
+        let wire = Wire::<T>::deserialize(deserializer)?;
+
+        if !wire.success {
+            return Err(de::Error::custom(format!(
+                "the platform refused the request: {}",
+                wire.message.as_deref().unwrap_or("no message given"),
+            )));
+        }
+
+        wire.data.map(Enveloped).ok_or_else(|| {
+            de::Error::custom("the platform answered success with no `data` payload")
+        })
+    }
 }
 
 /// Result of a GET request with ETag support
@@ -454,6 +524,38 @@ impl ApiClient {
         self.handle_response(response).await
     }
 
+    /// Makes a DELETE request whose response body carries nothing the caller reads.
+    ///
+    /// The status is still checked, and a refusal still goes through the platform's error envelope
+    /// — only the success body is skipped. This replaces the
+    /// `let _: serde_json::Value = self.delete(&url).await?;` idiom, which parsed a body solely to
+    /// drop it and left the route's shape unstatable: `serde_json::Value` accepts anything, so it
+    /// asserts nothing and cannot be `Enveloped`.
+    ///
+    /// Both routes it serves answer `{success, message}` with no `data`
+    /// (`parking.controller.ts:280`, `cart.controller.ts:246`).
+    pub async fn delete_discard(&self, path: &str) -> Result<()> {
+        let url = format!("{}{}", self.base_url, path);
+        debug!("DELETE (body discarded) {}", url);
+
+        let response = self
+            .client
+            .delete(&url)
+            .headers(self.build_headers().await)
+            .send()
+            .await
+            .map_err(|e| self.handle_request_error(e))?;
+
+        let status = response.status();
+        if status.is_success() {
+            return Ok(());
+        }
+
+        let request_url = response.url().to_string();
+        let body = response.text().await.unwrap_or_default();
+        Err(self.response_error(status, &request_url, body))
+    }
+
     /// Checks if the backend is reachable and the terminal session is valid.
     ///
     /// Returns [`OnlineStatus`] to distinguish three states:
@@ -543,35 +645,40 @@ impl ApiClient {
                 .map_err(|e| anyhow!("Failed to parse response: {}", e))?;
             Ok(data)
         } else {
-            // Try to parse error response
             let error_text = response.text().await.unwrap_or_default();
+            Err(self.response_error(status, &url, error_text))
+        }
+    }
 
-            match serde_json::from_str::<ApiErrorResponse>(&error_text) {
-                Ok(api_error) => {
-                    error!(
-                        "API error {} at {}: {}",
-                        status.as_u16(),
-                        url,
-                        api_error.message
-                    );
-                    Err(anyhow!(
-                        "API Error ({}): {}",
-                        status.as_u16(),
-                        api_error.message
-                    ))
-                }
-                Err(_) => {
-                    error!("HTTP error {} at {}: {}", status.as_u16(), url, error_text);
-                    Err(anyhow!(
-                        "HTTP Error {}: {}",
-                        status.as_u16(),
-                        if error_text.is_empty() {
-                            status.canonical_reason().unwrap_or("Unknown error")
-                        } else {
-                            &error_text
-                        }
-                    ))
-                }
+    /// Turns a non-2xx response into an error, through the platform's error envelope when the body
+    /// parses as one and through the raw text when it does not.
+    ///
+    /// Shared by [`ApiClient::handle_response`] and [`ApiClient::delete_discard`] so that a
+    /// discarded success body does not also mean a discarded refusal. The raw-text branch is what
+    /// a CSRF 403 lands in: `{success, error: "..."}` is flat, and [`ApiErrorResponse`] requires a
+    /// top-level `message` and reads `error` as an object, so it cannot parse that shape at all.
+    fn response_error(&self, status: StatusCode, url: &str, error_text: String) -> anyhow::Error {
+        match serde_json::from_str::<ApiErrorResponse>(&error_text) {
+            Ok(api_error) => {
+                error!(
+                    "API error {} at {}: {}",
+                    status.as_u16(),
+                    url,
+                    api_error.message
+                );
+                anyhow!("API Error ({}): {}", status.as_u16(), api_error.message)
+            }
+            Err(_) => {
+                error!("HTTP error {} at {}: {}", status.as_u16(), url, error_text);
+                anyhow!(
+                    "HTTP Error {}: {}",
+                    status.as_u16(),
+                    if error_text.is_empty() {
+                        status.canonical_reason().unwrap_or("Unknown error")
+                    } else {
+                        &error_text
+                    }
+                )
             }
         }
     }
@@ -591,6 +698,106 @@ impl Clone for ApiClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A payload used only to prove `Enveloped<T>` reaches the real type through the envelope.
+    #[derive(Debug, Deserialize, PartialEq, Eq)]
+    #[serde(rename_all = "camelCase")]
+    struct Session {
+        session_token: String,
+        expires_at: String,
+    }
+
+    fn read_enveloped(json: &str) -> Result<Session, serde_json::Error> {
+        serde_json::from_str::<Enveloped<Session>>(json).map(Enveloped::into_inner)
+    }
+
+    #[test]
+    fn enveloped_reads_the_payload_out_of_a_full_envelope() {
+        let session = read_enveloped(
+            r#"{"success":true,"message":"ok","data":{"sessionToken":"tok-1","expiresAt":"2026-01-01T00:00:00Z"}}"#,
+        )
+        .expect("a well-formed envelope must deserialize");
+
+        assert_eq!(
+            session,
+            Session {
+                session_token: "tok-1".to_string(),
+                expires_at: "2026-01-01T00:00:00Z".to_string(),
+            }
+        );
+    }
+
+    /// `message` is optional on the wire — several routes omit it — so its absence must not be
+    /// mistaken for a malformed envelope.
+    #[test]
+    fn enveloped_accepts_an_envelope_with_no_message() {
+        let session = read_enveloped(
+            r#"{"success":true,"data":{"sessionToken":"tok-2","expiresAt":"2026-01-02T00:00:00Z"}}"#,
+        )
+        .expect("message is optional");
+
+        assert_eq!(session.session_token, "tok-2");
+    }
+
+    /// The defect this type exists to end: only the removed `_envelope` helpers ever checked
+    /// `success`, so a raw helper against an enveloped route read a refusal as data.
+    ///
+    /// The server's own message must survive into the error. Dropping it rebuilds exactly the
+    /// conflation `ApiFailure` was written to end — a refusal that reads like weather.
+    #[test]
+    fn enveloped_refuses_success_false_and_keeps_the_servers_message() {
+        let error = read_enveloped(r#"{"success":false,"message":"Terminal not found"}"#)
+            .expect_err("success:false is a refusal, not a payload");
+
+        assert!(
+            error.to_string().contains("Terminal not found"),
+            "the server's message must survive into the error, got: {error}"
+        );
+    }
+
+    /// A route that promised a payload and sent none. A default here would push a fabricated value
+    /// into the domain, which is worse than the failure.
+    #[test]
+    fn enveloped_refuses_success_true_with_no_data() {
+        for body in [r#"{"success":true}"#, r#"{"success":true,"data":null}"#] {
+            let error = read_enveloped(body).expect_err("an absent payload is an error");
+            assert!(
+                error.to_string().contains("no `data` payload"),
+                "the error must name the missing payload, got: {error}"
+            );
+        }
+    }
+
+    /// The property that separates this design from "teach the client to recognise both shapes".
+    ///
+    /// Accepting a bare body here would make `Enveloped<T>` silently equivalent to reading the
+    /// payload raw, so the day the platform stopped wrapping would pass unnoticed — and a type
+    /// that accepts both shapes records no contract at all.
+    #[test]
+    fn enveloped_refuses_a_bare_unenveloped_body() {
+        read_enveloped(r#"{"sessionToken":"tok-3","expiresAt":"2026-01-03T00:00:00Z"}"#)
+            .expect_err("a bare body is not an envelope");
+    }
+
+    /// `terminals/logout` and `platform/report-version` answer `{success, message}` with no `data`.
+    /// Reading those with a plain DTO is correct; this test pins the boundary so that a later
+    /// "tidy-up" wrapping them in `Enveloped` fails here rather than in production.
+    #[test]
+    fn a_no_data_route_is_read_with_a_plain_dto_not_with_enveloped() {
+        #[derive(Debug, Deserialize)]
+        struct Acknowledged {
+            success: bool,
+        }
+
+        let body = r#"{"success":true,"message":"Version reported successfully"}"#;
+
+        let plain: Acknowledged =
+            serde_json::from_str(body).expect("a plain DTO reads the acknowledgement");
+        assert!(plain.success);
+
+        serde_json::from_str::<Enveloped<Acknowledged>>(body)
+            .expect_err("Enveloped would demand a `data` this route never sends");
+    }
 
     #[test]
     fn test_api_client_new() {

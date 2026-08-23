@@ -35,7 +35,7 @@ pub mod session;
 pub mod sync;
 
 // Re-export main types
-pub use client::{ApiClient, ApiErrorDetail, ApiErrorResponse, GetResult, OnlineStatus};
+pub use client::{ApiClient, ApiErrorDetail, ApiErrorResponse, Enveloped, GetResult, OnlineStatus};
 pub use failure::{ApiFailure, ServerErrorCode};
 pub use session::{BlankSessionToken, ReauthOutcome, SessionToken};
 
