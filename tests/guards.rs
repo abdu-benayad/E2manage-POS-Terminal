@@ -718,6 +718,102 @@ mod guards {
         );
     }
 
+    /// A lockout expiry is rendered and never stored.
+    ///
+    /// The server sends `lockedUntil` so a till can say *"locked until 14:32"* to the person at the
+    /// drawer. It is the one field in the refusal catalogue that will look like something it must
+    /// not be, and the mistake it invites is a single line: keep it, and unlock when the local
+    /// clock passes it.
+    ///
+    /// PCI DSS v4.0 §8.3.4 permits a lockout to end after thirty minutes **or** when the user's
+    /// identity is confirmed. The till takes the second branch, and
+    /// [`pos_models::LockState`](../crates/pos-models/src/verification.rs) has no expiry field on
+    /// purpose: the first branch is a timer read from the clock of whoever is holding the device,
+    /// so anyone who can set the date ends their own lockout. `CredentialExpiry` may hold a time
+    /// because expiry fails **closed**; a lockout that expires fails **open**.
+    ///
+    /// # What the type already refuses, and why this scan still earns its place
+    ///
+    /// `LockoutNotice` derives no `PartialOrd`, so `notice < Utc::now()` does not compile. That
+    /// closes the direct comparison and nothing else — `instant_to_render()` hands out a
+    /// `DateTime<Utc>` that compares fine, because rendering it in the operator's own zone is what
+    /// it is for. So the two shapes a type cannot refuse are checked here: **writing it down**, and
+    /// **reading it beside a clock**.
+    ///
+    /// This is the half of `auth-outcome-and-offline-lockout`'s acceptance row 16 that is a claim
+    /// about the tree rather than about a value. The other half — that the instant reaches the
+    /// caller at all — is `crates/pos-api/tests/transport_failures.rs`.
+    #[test]
+    fn a_lockout_notice_is_never_stored() {
+        /// The wire spelling, the Rust spelling, and the type. A concept has as many vocabularies
+        /// as it has boundaries, and a scan keyed on one of them is blind to the others.
+        const SPELLINGS: [&str; 3] = ["lockedUntil", "locked_until", "LockoutNotice"];
+        /// Statements that write or read a row. A lockout expiry belongs in none of them.
+        const SQL: [&str; 6] = [
+            "INSERT",
+            "UPDATE ",
+            "CREATE TABLE",
+            "SELECT",
+            "ALTER",
+            "REPLACE",
+        ];
+        /// The crate that owns the till's SQLite store.
+        const STORE: &str = "crates/pos-db/";
+
+        // The positive control. Without it this test passes forever the day the type is renamed,
+        // reporting a clean tree because it is scanning for a word nobody writes.
+        let declared: Vec<String> = scanned_lines()
+            .iter()
+            .filter(|line| line.code.contains("pub struct LockoutNotice"))
+            .map(|line| format!("{}:{}", line.path, line.number))
+            .collect();
+        assert_eq!(
+            declared.len(),
+            1,
+            "`LockoutNotice` must be declared exactly once for this guard to mean anything; \
+             found {declared:?}"
+        );
+
+        let persisted: Vec<String> = scanned_lines()
+            .iter()
+            .filter(|line| {
+                let names_it = SPELLINGS
+                    .iter()
+                    .any(|spelling| contains_word(&line.code, spelling));
+                let in_the_store = line.path.replace('\\', "/").contains(STORE);
+                let in_a_statement = SQL.iter().any(|keyword| line.code.contains(keyword));
+                names_it && (in_the_store || in_a_statement)
+            })
+            .map(|line| format!("{}:{} {}", line.path, line.number, line.code.trim()))
+            .collect();
+
+        assert!(
+            persisted.is_empty(),
+            "a lockout expiry is being written down in {} place(s). It is a sentence to draw on \
+             a screen, not a condition: an unlock the till decides from a stored instant is an \
+             unlock an attacker performs by changing the clock. A lock ends when someone confirms \
+             the operator identity behind it, and `LockState` has no expiry field for exactly \
+             this reason:\n  {}",
+            persisted.len(),
+            persisted.join("\n  ")
+        );
+
+        let compared: Vec<String> = scanned_lines()
+            .iter()
+            .filter(|line| line.code.contains("instant_to_render") && line.code.contains("now("))
+            .map(|line| format!("{}:{} {}", line.path, line.number, line.code.trim()))
+            .collect();
+
+        assert!(
+            compared.is_empty(),
+            "a lockout notice is being read beside a clock in {} place(s). `instant_to_render` \
+             exists to format the instant for a person; comparing it against the local time is \
+             the timer this whole design refuses:\n  {}",
+            compared.len(),
+            compared.join("\n  ")
+        );
+    }
+
     /// Only the crates that own transport may name a route.
     ///
     /// `doc/architecture` states it as an invariant — *"`pos-api` is the only thing that knows the

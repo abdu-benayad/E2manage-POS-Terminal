@@ -26,6 +26,7 @@
 
 use std::fmt;
 
+use crate::refusal_details::RefusalDetails;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -387,6 +388,14 @@ pub enum ApiFailure {
         code: ServerErrorCode,
         /// The human-readable message from the envelope.
         message: String,
+        /// The figures the refusal carried beside its code — how many attempts are left, when a
+        /// lock lifts, which length is now required. See [`RefusalDetails`].
+        ///
+        /// **Not in the `Display` string**, deliberately. These are values a caller branches on
+        /// and a screen renders; folding them into a message would be the same mistake as
+        /// spelling a status code with digits inside a sentence, which is what this enum exists
+        /// to undo.
+        details: Option<RefusalDetails>,
     },
 
     /// The server could not be reached at all.
@@ -506,7 +515,6 @@ mod tests {
     use super::*;
     use crate::client::ApiErrorResponse;
 
-
     /// `as_wire_str`, `From<String>`, `From<ServerErrorCode> for String` and serde must agree.
     ///
     /// Hand-written matches over the same 39 codes are that many chances to typo one, and a typo
@@ -590,7 +598,10 @@ mod tests {
             "POS_OFFLINE_REPORT_OVER_BUDGET",
         ] {
             let code = ServerErrorCode::from(wire.to_string());
-            assert!(code.is_recognised(), "`{wire}` still lands in `Unrecognised`");
+            assert!(
+                code.is_recognised(),
+                "`{wire}` still lands in `Unrecognised`"
+            );
             assert_eq!(code.as_wire_str(), wire);
         }
     }
@@ -697,6 +708,7 @@ mod tests {
             status: StatusCode::UNAUTHORIZED,
             code: ServerErrorCode::Unauthorized,
             message: "Invalid PIN".to_string(),
+            details: None,
         };
 
         assert_eq!(
@@ -734,6 +746,7 @@ mod tests {
             status: StatusCode::UNAUTHORIZED,
             code: ServerErrorCode::Unauthorized,
             message: "Invalid PIN".to_string(),
+            details: None,
         };
 
         assert!(!unreadable.is_transient());

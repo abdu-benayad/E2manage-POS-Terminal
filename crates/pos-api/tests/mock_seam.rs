@@ -58,5 +58,8 @@ async fn the_client_reads_a_body_from_a_mock_server() {
     // The request reached the server. `MockServer` verifies mounted expectations on drop, but
     // saying it here means a future edit that stops calling the endpoint fails loudly rather than
     // silently asserting over a default-constructed response.
-    assert_eq!(server.received_requests().await.unwrap_or_default().len(), 1);
+    assert_eq!(
+        server.received_requests().await.unwrap_or_default().len(),
+        1
+    );
 }

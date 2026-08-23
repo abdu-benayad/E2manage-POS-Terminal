@@ -8,6 +8,7 @@
 //! - **auth**: Terminal authentication, login, and heartbeat
 //! - **sync**: Sync DTOs for catalog, operators, and screens
 //! - **failure**: How a call to the platform failed — refused, unreachable, or unreadable
+//! - **refusal_details**: The typed figures a refusal carries beside its code
 //! - **session**: The terminal's session token and what happened when it was renewed
 //!
 //! ## Usage
@@ -32,6 +33,7 @@ pub mod failure;
 pub mod features;
 pub mod offline;
 pub mod platform;
+pub mod refusal_details;
 pub mod reports;
 pub mod returns;
 pub mod session;
@@ -42,6 +44,12 @@ pub mod transactions;
 // Re-export main types
 pub use client::{ApiClient, ApiErrorDetail, ApiErrorResponse, Enveloped, GetResult, OnlineStatus};
 pub use failure::{ApiFailure, ServerErrorCode};
+pub use refusal_details::{
+    CapabilityCode, HeldBy, LockoutNotice, OfflineReportExpiredDetails,
+    OfflineReportOverBudgetDetails, OperatorCapabilityDeniedDetails, OperatorLockedDetails,
+    PinInvalidDetails, PinPolicyViolationDetails, PinRotationRequiredDetails, RefusalDetails,
+    SupervisorApprovalRequiredDetails,
+};
 pub use session::{BlankSessionToken, ReauthOutcome, SessionToken};
 
 pub use auth::{

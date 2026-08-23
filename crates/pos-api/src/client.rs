@@ -11,6 +11,7 @@ use reqwest::{
 use serde::{de, de::DeserializeOwned, Deserialize, Deserializer, Serialize};
 
 use crate::failure::{ApiFailure, ServerErrorCode};
+use crate::refusal_details::RefusalDetails;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
@@ -63,11 +64,49 @@ pub struct ApiErrorResponse {
 }
 
 /// The machine-readable half of the error envelope.
-#[derive(Debug, Deserialize)]
+///
+/// `details` is nested **here**, beside the code, not at the top level — and it is typed by the
+/// code it travels with. See [`RefusalDetails`].
+#[derive(Debug)]
 pub struct ApiErrorDetail {
     /// See [`ServerErrorCode`] for how much this is currently worth.
     pub code: ServerErrorCode,
     pub message: String,
+    /// The figures this refusal carried, if it carried any and they could be read.
+    ///
+    /// `None` covers three different things — the code carries no payload, the payload was
+    /// omitted, the payload did not match — and [`RefusalDetails::read`] logs which. They are one
+    /// value here because a caller has the same move in all three: act on the code alone.
+    pub details: Option<RefusalDetails>,
+}
+
+/// The envelope as it arrives, before `details` is typed against its code.
+///
+/// Private, and the reason [`ApiErrorDetail`] does not derive `Deserialize`: `details` is
+/// discriminated by its **sibling** `code` field, which no serde attribute expresses. So the
+/// untyped value is read once, here, and converted immediately — a `serde_json::Value` never
+/// reaches a caller.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WireErrorDetail {
+    code: ServerErrorCode,
+    message: String,
+    #[serde(default)]
+    details: Option<serde_json::Value>,
+}
+
+impl<'de> Deserialize<'de> for ApiErrorDetail {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
+        let wire = WireErrorDetail::deserialize(deserializer)?;
+        // Total, and deliberately not a `?`: a figure the till could not read must not cost it
+        // the refusal that figure travelled on.
+        let details = RefusalDetails::read(&wire.code, wire.details.as_ref());
+        Ok(Self {
+            code: wire.code,
+            message: wire.message,
+            details,
+        })
+    }
 }
 
 /// API response envelope from backend
@@ -552,13 +591,13 @@ impl ApiClient {
     fn refusal_from_body(&self, status: StatusCode, url: &str, body: &str) -> ApiFailure {
         match serde_json::from_str::<ApiErrorResponse>(body) {
             Ok(envelope) => {
-                let (code, message) = match envelope.error {
-                    Some(detail) => (detail.code, detail.message),
+                let (code, message, details) = match envelope.error {
+                    Some(detail) => (detail.code, detail.message, detail.details),
                     // The envelope parsed and carries no `error` object — a shape the platform
                     // really does emit. So it is a refusal, not a breach; the code is *absent*
                     // rather than unknown, and an empty `Unrecognised` says exactly that without
                     // inventing one. `is_recognised()` answers false either way.
-                    None => (ServerErrorCode::from(String::new()), envelope.message),
+                    None => (ServerErrorCode::from(String::new()), envelope.message, None),
                 };
 
                 error!("API refused {} at {}: {} ({})", status, url, message, code);
@@ -566,6 +605,7 @@ impl ApiClient {
                     status,
                     code,
                     message,
+                    details,
                 }
             }
             Err(e) => self.unreadable(url, status, e),

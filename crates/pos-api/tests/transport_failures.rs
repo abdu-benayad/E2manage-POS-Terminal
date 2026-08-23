@@ -16,7 +16,7 @@
 //! path**. If a future edit rebuilds a parallel string error, the downcast returns `None` and these
 //! fail.
 
-use pos_api::{ApiClient, ApiFailure, ServerErrorCode};
+use pos_api::{ApiClient, ApiFailure, RefusalDetails, ServerErrorCode};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -68,11 +68,15 @@ async fn a_refusal_keeps_its_status_and_its_code() {
             status,
             code,
             message,
+            details,
         } => {
             assert_eq!(status.as_u16(), 401);
             assert_eq!(*code, ServerErrorCode::Unauthorized);
             assert!(code.is_recognised());
             assert_eq!(message, "Session expired");
+            // `UNAUTHORIZED` is one of the status-derived codes and the catalogue gives it no
+            // payload, so an absent `details` here is the contract, not a gap.
+            assert!(details.is_none());
         }
         other => panic!("a 401 with a well-formed envelope must be `Refused`, got: {other:?}"),
     }
@@ -129,7 +133,9 @@ async fn an_unparseable_refusal_is_not_given_a_guessed_code() {
 fn closed_port_uri() -> String {
     let listener =
         std::net::TcpListener::bind("127.0.0.1:0").expect("the OS can assign a loopback port");
-    let addr = listener.local_addr().expect("a bound listener has an address");
+    let addr = listener
+        .local_addr()
+        .expect("a bound listener has an address");
     drop(listener);
     format!("http://{addr}")
 }
@@ -174,7 +180,10 @@ async fn only_unreachable_is_worth_retrying() {
         .await
         .expect_err("nothing is listening on that port");
 
-    assert!(!failure_of(&refused).is_transient(), "a refusal is an answer");
+    assert!(
+        !failure_of(&refused).is_transient(),
+        "a refusal is an answer"
+    );
     assert!(
         !failure_of(&unreadable).is_transient(),
         "a contract breach is a bug, and retrying it just repeats it"
@@ -183,4 +192,98 @@ async fn only_unreachable_is_worth_retrying() {
         failure_of(&unreachable).is_transient(),
         "a server that was not there may be there later"
     );
+}
+
+/// A refusal's figures survive the transport, over a real socket.
+///
+/// The unit tests in `refusal_details` read the `error` object directly. This one proves the
+/// wiring in between: `handle_response` → `refusal_from_body` → `ApiFailure::Refused`. Before this
+/// task the till deserialized this exact envelope successfully and dropped `details` on the floor,
+/// which is why asserting it at the type level would not have caught anything.
+///
+/// **This is half of acceptance row 16.** `lockedUntil` reaches the outcome. The other half —
+/// that nothing stores it as an unlock timer — is `tests/guards.rs::a_lockout_notice_is_never_stored`,
+/// because "no code does X" is a claim about the tree and not about a value.
+#[tokio::test]
+async fn a_lockout_refusal_carries_its_instant_all_the_way_out() {
+    let server = server_answering(
+        401,
+        serde_json::json!({
+            "success": false,
+            "message": "Operator locked",
+            "error": {
+                "code": "POS_OPERATOR_LOCKED",
+                "message": "Operator locked",
+                "details": { "lockedUntil": "2026-08-23T14:32:00.000Z" }
+            }
+        }),
+    )
+    .await;
+
+    let error = drive(&server).await;
+
+    match failure_of(&error) {
+        ApiFailure::Refused { code, details, .. } => {
+            assert_eq!(*code, ServerErrorCode::PosOperatorLocked);
+            let Some(RefusalDetails::OperatorLocked(locked)) = details else {
+                panic!("the lockout instant must reach the caller, got {details:?}");
+            };
+            assert_eq!(
+                locked.locked_until.instant_to_render().to_rfc3339(),
+                "2026-08-23T14:32:00+00:00"
+            );
+        }
+        other => panic!("a 401 with a well-formed envelope must be `Refused`, got: {other:?}"),
+    }
+
+    // The message is the server's sentence, not the figure. A number concatenated into a
+    // translated string cannot be parsed, compared or filtered by the client that needs it —
+    // which is the whole reason the platform sends `details` as fields.
+    assert!(
+        !error.to_string().contains("14:32"),
+        "the instant travels as a field, never inside the message: {error}"
+    );
+}
+
+/// A wrong PIN carries how many tries are left, and a zero is read as the lock it means.
+#[tokio::test]
+async fn a_wrong_pin_carries_its_remaining_attempts() {
+    for (remaining, expected) in [
+        (
+            2,
+            RefusalDetails::PinInvalid(pos_api::PinInvalidDetails {
+                attempts_remaining: pos_models::AttemptsRemaining::new(2).expect("2 is not 0"),
+            }),
+        ),
+        // The server contradicting its own partition: the attempt that empties the budget is
+        // supposed to answer POS_OPERATOR_LOCKED.
+        (0, RefusalDetails::PinBudgetExhausted),
+    ] {
+        let server = server_answering(
+            401,
+            serde_json::json!({
+                "success": false,
+                "message": "Invalid PIN",
+                "error": {
+                    "code": "POS_PIN_INVALID",
+                    "message": "Invalid PIN",
+                    "details": { "attemptsRemaining": remaining }
+                }
+            }),
+        )
+        .await;
+
+        let error = drive(&server).await;
+
+        match failure_of(&error) {
+            ApiFailure::Refused { details, .. } => {
+                assert_eq!(
+                    details.as_ref(),
+                    Some(&expected),
+                    "for {remaining} remaining"
+                )
+            }
+            other => panic!("a 401 must be `Refused`, got: {other:?}"),
+        }
+    }
 }
