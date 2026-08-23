@@ -31,9 +31,10 @@
 //! println!("Synced: {}, Failed: {}", result.synced, result.failed);
 //! ```
 
+use crate::operator_sign_in::OperatorSignIn;
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
-use pos_api::{ApiClient, UploadOfflineTransactionRequest};
+use pos_api::{ApiClient, ApiFailure, OperatorSessionRefusal, UploadOfflineTransactionRequest};
 use pos_db::transactions::{OfflineTransactionRow, SyncStatus};
 use pos_db::Database;
 use pos_models::transaction::Transaction;
@@ -56,6 +57,15 @@ pub enum SyncFailureType {
     Conflict,
     /// Invalid data - won't ever succeed, stop retrying
     Permanent,
+    /// Nothing is wrong with the transaction. Nobody is signed in at this till, or the platform
+    /// will not honour the session it holds.
+    ///
+    /// **Its own variant because the other three all cost the transaction something**, and this
+    /// one must not. `POS_OPERATOR_SESSION_INVALID` contains the word "invalid", so
+    /// [`Self::classify`]'s substring match read it as [`Self::Permanent`] — which calls
+    /// `set_transaction_max_retries` and abandons the sale forever. A whole shift's queue could be
+    /// permanently killed by one cashier's session lapsing, and the data was never the problem.
+    Unauthorized(OperatorSessionRefusal),
 }
 
 impl SyncFailureType {
@@ -69,6 +79,16 @@ impl SyncFailureType {
     ///
     /// The appropriate SyncFailureType for handling
     pub fn classify(error: &anyhow::Error) -> Self {
+        // Asked first, and asked of the **machine code** rather than the message. Everything below
+        // this line reads a rendered string, which is why `POS_OPERATOR_SESSION_INVALID` used to
+        // land in `Permanent` on the word "invalid" and abandon the transaction for good.
+        if let Some(refusal) = error
+            .downcast_ref::<ApiFailure>()
+            .and_then(OperatorSessionRefusal::of)
+        {
+            return Self::Unauthorized(refusal);
+        }
+
         let msg = error.to_string().to_lowercase();
 
         // Conflict errors - need manager resolution
@@ -140,6 +160,11 @@ impl OfflineService {
     /// * `db` - Shared database for local storage
     pub fn new(api: Arc<ApiClient>, db: Arc<Database>) -> Self {
         Self { api, db }
+    }
+
+    /// Who is signed in at this till, over the same client and store this service holds.
+    fn sign_in(&self) -> OperatorSignIn {
+        OperatorSignIn::new(Arc::clone(&self.api), Arc::clone(&self.db))
     }
 
     /// Calculates backoff delay in seconds based on retry count
@@ -353,6 +378,28 @@ impl OfflineService {
                     let error_msg = e.to_string();
                     let failure_type = SyncFailureType::classify(&e);
 
+                    if let SyncFailureType::Unauthorized(refusal) = failure_type {
+                        // The transaction is untouched: not marked failed, no retry counted, no
+                        // max-retries ceiling set. Nothing about it was wrong.
+                        //
+                        // And the drain stops here rather than continuing. Every remaining
+                        // transaction would meet the same refusal, and under the old
+                        // classification each one would spend a retry against a ceiling it cannot
+                        // come back from — the queue destroying itself over a lapsed credential.
+                        self.sign_in().sign_out_if_refused(refusal).await;
+                        warn!(
+                            "Offline queue paused after {}: {refusal}. {}",
+                            txn.offline_id,
+                            if refusal.a_pin_can_fix_it() {
+                                "An operator must sign in again."
+                            } else {
+                                "This operator cannot sign in; an administrator must act."
+                            }
+                        );
+                        result.skipped += 1;
+                        break;
+                    }
+
                     match failure_type {
                         SyncFailureType::Conflict => {
                             // Mark as conflict - needs manager resolution
@@ -395,6 +442,10 @@ impl OfflineService {
                             );
                             result.failed += 1;
                         }
+                        // Handled above, before anything is written to the transaction.
+                        SyncFailureType::Unauthorized(_) => unreachable!(
+                            "an unauthorized failure breaks out of the loop before this match"
+                        ),
                         SyncFailureType::Transient => {
                             // Normal failure - will retry with backoff
                             if let Err(db_err) =
@@ -562,6 +613,7 @@ pub struct QueueStats {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pos_api::ServerErrorCode;
     use pos_db::init_memory_database;
     use pos_db::operators::OperatorRow;
     use pos_models::cart::{Cart, CartItem};
@@ -1009,6 +1061,72 @@ mod tests {
                 error_msg
             );
         }
+    }
+
+    /// **The classification that used to destroy a queue.**
+    ///
+    /// `POS_OPERATOR_SESSION_INVALID` contains the word "invalid", so the substring match below
+    /// read it as `Permanent` — which calls `set_transaction_max_retries` and abandons the sale
+    /// forever. A cashier's session lapsing mid-drain could permanently kill every transaction in
+    /// the batch, and nothing was wrong with any of them.
+    ///
+    /// Asked of the machine code, ahead of every string test, so the two cannot race.
+    #[test]
+    fn an_operator_session_refusal_never_abandons_the_transaction() {
+        let table = [
+            (
+                ServerErrorCode::PosOperatorSessionRequired,
+                OperatorSessionRefusal::NotPresented,
+            ),
+            (
+                ServerErrorCode::PosOperatorSessionInvalid,
+                OperatorSessionRefusal::NotHonoured,
+            ),
+            (
+                ServerErrorCode::PosOperatorSessionExpired,
+                OperatorSessionRefusal::Lapsed,
+            ),
+            (
+                ServerErrorCode::PosOperatorSessionRevoked,
+                OperatorSessionRefusal::Revoked,
+            ),
+            (
+                ServerErrorCode::PosOperatorLocked,
+                OperatorSessionRefusal::OperatorLocked,
+            ),
+        ];
+
+        for (code, expected) in table {
+            // Through `anyhow`, because that is how it arrives: `upload_offline_transaction`
+            // returns `anyhow::Result`, and the `ApiFailure` is recovered by downcast.
+            let error = anyhow::Error::new(ApiFailure::Refused {
+                status: pos_api::StatusCode::UNAUTHORIZED,
+                code: code.clone(),
+                // The message the platform actually sends, containing the very words the
+                // substring matcher below keys on.
+                message: "Operator session is invalid or not found".to_string(),
+                details: None,
+            });
+
+            assert_eq!(
+                SyncFailureType::classify(&error),
+                SyncFailureType::Unauthorized(expected),
+                "for {code:?}"
+            );
+        }
+    }
+
+    /// An error that is not an `ApiFailure` still falls through to the string tests.
+    ///
+    /// The downcast is an addition, not a replacement: parse failures and database errors reach
+    /// `classify` as plain `anyhow` errors and must classify the way they always did.
+    #[test]
+    fn a_non_api_failure_still_reaches_the_string_classification() {
+        let error = anyhow!("Failed to parse items JSON: invalid type at line 1");
+        assert_eq!(
+            SyncFailureType::classify(&error),
+            SyncFailureType::Permanent
+        );
     }
 
     #[test]

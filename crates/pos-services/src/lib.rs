@@ -92,6 +92,7 @@ pub mod emv_service;
 pub mod feature_service;
 pub mod log_service;
 pub mod offline_service;
+pub mod operator_sign_in;
 pub mod pairing_service;
 pub mod parse;
 pub mod platform_heartbeat_service;
@@ -131,6 +132,7 @@ pub use log_service::{LogEntry, LogError, LogLevel, LogResult, LogService};
 pub use offline_service::{
     OfflineService, QueueStats, SyncFailureType, SyncResult, BATCH_SIZE, MAX_RETRY_COUNT,
 };
+pub use operator_sign_in::{HeldOperatorSession, OperatorSignIn};
 pub use pairing_service::{PairingService, PairingState, TerminalRegistration};
 pub use parse::ParseError;
 pub use platform_heartbeat_service::{

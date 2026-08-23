@@ -31,7 +31,8 @@
 //! conflict_service.discard("offline-id-456")?;
 //! ```
 
-use pos_api::{ApiClient, UploadOfflineTransactionRequest};
+use crate::operator_sign_in::OperatorSignIn;
+use pos_api::{ApiClient, ApiFailure, OperatorSessionRefusal, UploadOfflineTransactionRequest};
 use pos_db::transactions::OfflineTransactionRow;
 use pos_db::Database;
 use pos_models::OperatorId;
@@ -134,6 +135,13 @@ pub struct ResolutionResult {
 pub struct ConflictService {
     api: Arc<ApiClient>,
     db: Arc<Database>,
+}
+
+impl ConflictService {
+    /// Who is signed in at this till, over the same client and store this service holds.
+    fn sign_in(&self) -> OperatorSignIn {
+        OperatorSignIn::new(Arc::clone(&self.api), Arc::clone(&self.db))
+    }
 }
 
 impl ConflictService {
@@ -329,6 +337,19 @@ impl ConflictService {
                 })
             }
             Err(e) => {
+                // A refusal about the operator's session is not about this transaction. Discard
+                // the credential the platform declined — keeping it means presenting it again on
+                // the next request — and say which of the seven it was, so the manager retrying
+                // this by hand is told to sign in rather than shown "force sync failed".
+                if let Some(refusal) = e
+                    .downcast_ref::<ApiFailure>()
+                    .and_then(OperatorSessionRefusal::of)
+                {
+                    self.sign_in().sign_out_if_refused(refusal).await;
+                    error!("Force sync for {offline_id} was not authorized: {refusal}");
+                    return Err(ConflictError::ApiError(refusal.to_string()));
+                }
+
                 error!("Force sync failed for {}: {}", offline_id, e);
                 Err(ConflictError::ApiError(e.to_string()))
             }

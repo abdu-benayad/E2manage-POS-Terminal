@@ -12,6 +12,7 @@ use serde::{de, de::DeserializeOwned, Deserialize, Deserializer, Serialize};
 
 use crate::failure::{ApiFailure, ServerErrorCode};
 use crate::refusal_details::RefusalDetails;
+use crate::session::SessionToken;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
@@ -40,6 +41,16 @@ pub const HEADER_TERMINAL_TOKEN: &str = "X-Terminal-Token";
 
 /// Custom header for terminal identification
 pub const HEADER_TERMINAL_ID: &str = "X-Terminal-ID";
+
+/// The header `attendedOperatorAuthMiddleware` reads.
+///
+/// A **different credential** from [`HEADER_TERMINAL_TOKEN`], not a second spelling of it: the
+/// terminal token says *this device is enrolled* and lives 24 hours; this one says *this person
+/// proved their PIN at this device* and lives 12. `POST /api/pos/offline/upload` and the six
+/// `/api/pos/till/*` routes mount `requireTerminalAuth, attendedOperatorAuthMiddleware` and demand
+/// both. The till sent only the first, so every write it ever attempted answered 401
+/// `POS_OPERATOR_SESSION_REQUIRED`.
+pub const HEADER_OPERATOR_TOKEN: &str = "X-Operator-Token";
 
 /// API error response from server
 ///
@@ -229,6 +240,9 @@ pub struct ApiClient {
     base_url: String,
     session_token: Arc<RwLock<Option<String>>>,
     terminal_id: Arc<RwLock<Option<String>>>,
+    /// The operator's session, when one is held. `SessionToken` and not `String`, so the blank
+    /// that `build_headers` must never send is unrepresentable rather than checked.
+    operator_token: Arc<RwLock<Option<SessionToken>>>,
 }
 
 impl ApiClient {
@@ -256,6 +270,7 @@ impl ApiClient {
             base_url: base_url.trim_end_matches('/').to_string(),
             session_token: Arc::new(RwLock::new(None)),
             terminal_id: Arc::new(RwLock::new(None)),
+            operator_token: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -287,6 +302,25 @@ impl ApiClient {
         self.terminal_id.read().await.clone()
     }
 
+    /// Presents this operator's session on every subsequent request.
+    ///
+    /// Takes the token by value from a [`SessionToken`], so there is no path here for the empty
+    /// string: absent and blank are different answers to `attendedOperatorAuthMiddleware`, and
+    /// blank is the sloppier bug — it reads as a token that simply is not one the platform knows.
+    pub async fn set_operator_token(&self, token: SessionToken) {
+        *self.operator_token.write().await = Some(token);
+    }
+
+    /// Stops presenting an operator session. Called when the platform refuses one, and at sign-out.
+    pub async fn clear_operator_token(&self) {
+        *self.operator_token.write().await = None;
+    }
+
+    /// The operator session currently being presented, if any.
+    pub async fn operator_token(&self) -> Option<SessionToken> {
+        self.operator_token.read().await.clone()
+    }
+
     /// Checks if the client is authenticated
     pub async fn is_authenticated(&self) -> bool {
         self.get_token().await.is_some()
@@ -312,6 +346,17 @@ impl ApiClient {
         if let Some(terminal_id) = self.get_terminal_id().await {
             if let Ok(value) = HeaderValue::from_str(&terminal_id) {
                 headers.insert(HEADER_TERMINAL_ID, value);
+            }
+        }
+
+        // The operator's session, and only when one is held. `attendedOperatorAuthMiddleware`
+        // distinguishes an absent header (`POS_OPERATOR_SESSION_REQUIRED` — verify a PIN) from a
+        // present one it cannot honour (`POS_OPERATOR_SESSION_INVALID` — discard and verify), so
+        // sending an empty header would turn "nobody is signed in" into "the token you hold is
+        // not ours". `SessionToken` cannot be blank, so that is closed by construction here.
+        if let Some(token) = self.operator_token().await {
+            if let Ok(value) = HeaderValue::from_str(token.expose()) {
+                headers.insert(HEADER_OPERATOR_TOKEN, value);
             }
         }
 
@@ -657,6 +702,9 @@ impl Clone for ApiClient {
             base_url: self.base_url.clone(),
             session_token: Arc::clone(&self.session_token),
             terminal_id: Arc::clone(&self.terminal_id),
+            // Shared, like the other two: a clone that held its own operator session would keep
+            // presenting one after the original signed the cashier out.
+            operator_token: Arc::clone(&self.operator_token),
         }
     }
 }
@@ -763,6 +811,60 @@ mod tests {
 
         serde_json::from_str::<Enveloped<Acknowledged>>(body)
             .expect_err("Enveloped would demand a `data` this route never sends");
+    }
+
+    /// The operator session is presented only when one is held, and never as a blank header.
+    ///
+    /// `attendedOperatorAuthMiddleware` distinguishes the two: an absent header is
+    /// `POS_OPERATOR_SESSION_REQUIRED` (nobody is signed in — verify a PIN) and a present one it
+    /// cannot honour is `POS_OPERATOR_SESSION_INVALID` (discard what you hold). Sending `""` turns
+    /// the first situation into the second, which is the sloppier bug: the till would report a
+    /// credential problem to a cashier who has simply not signed in yet.
+    #[tokio::test]
+    async fn the_operator_token_is_sent_only_when_one_is_held() {
+        let client = ApiClient::new("https://api.example.com");
+
+        let headers = client.build_headers().await;
+        assert!(
+            !headers.contains_key(HEADER_OPERATOR_TOKEN),
+            "with nobody signed in the header must be absent, not empty"
+        );
+
+        client
+            .set_operator_token(SessionToken::new("op-sess-abc").expect("not blank"))
+            .await;
+        let headers = client.build_headers().await;
+        assert_eq!(
+            headers
+                .get(HEADER_OPERATOR_TOKEN)
+                .and_then(|value| value.to_str().ok()),
+            Some("op-sess-abc")
+        );
+
+        // It is a *second* credential, not a replacement: the terminal token and the operator
+        // token travel together, and a route behind both guards needs both.
+        client.set_token("terminal-tok".to_string()).await;
+        let headers = client.build_headers().await;
+        assert_eq!(
+            headers
+                .get(HEADER_TERMINAL_TOKEN)
+                .and_then(|value| value.to_str().ok()),
+            Some("terminal-tok")
+        );
+        assert_eq!(
+            headers
+                .get(HEADER_OPERATOR_TOKEN)
+                .and_then(|value| value.to_str().ok()),
+            Some("op-sess-abc")
+        );
+
+        client.clear_operator_token().await;
+        let headers = client.build_headers().await;
+        assert!(!headers.contains_key(HEADER_OPERATOR_TOKEN));
+        assert!(
+            headers.contains_key(HEADER_TERMINAL_TOKEN),
+            "signing the operator out must not un-enrol the device"
+        );
     }
 
     #[test]

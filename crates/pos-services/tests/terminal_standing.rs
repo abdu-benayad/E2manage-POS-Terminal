@@ -25,6 +25,14 @@
 //! is a thing `pos-services` genuinely knows because it supplies it — the PIN request carries an
 //! `operatorId`, and the session renewal has no body at all.
 //!
+//! # Acceptance row 17 is at the bottom of this file
+//!
+//! The last two tests are about the *operator's* session rather than the terminal's, and they live
+//! here because they need the same three fixtures — a mock discriminating on the request body, a
+//! store holding a synced operator, and a verified-PIN response. Splitting them into their own
+//! file would mean a second copy of all three, in the file least likely to be updated with the
+//! first. The two subjects are named where each test starts.
+//!
 //! # What is not here
 //!
 //! *A renewal that reaches nobody*, which falls to the local leg. `ApiClient` carries a 30-second
@@ -355,4 +363,112 @@ async fn a_renewal_refused_with_a_named_standing_keeps_that_standing() {
     };
     assert_eq!(repudiation, Repudiation::Withdrawn);
     assert_eq!(requests_made(&server).await, 2);
+}
+
+// ============================================================================
+// Acceptance row 17 — the operator session reaches the wire
+// ============================================================================
+
+/// A verified PIN leaves the till holding a session, on disk and in the next request's headers.
+///
+/// **Acceptance row 17, the half a unit test cannot reach.** The platform mints the session on
+/// `verify-pin`; the till was logging it and dropping it, so every write it attempted answered 401
+/// `POS_OPERATOR_SESSION_REQUIRED`. Both halves are asserted here because either alone is a
+/// half-signed-in till: without the row the cashier is signed out by a restart, and without the
+/// header the platform never learns they signed in at all.
+#[tokio::test]
+async fn a_verified_pin_leaves_the_till_holding_the_operator_session() {
+    let server = MockServer::start().await;
+    asking_about_the_pin()
+        .respond_with(accepted())
+        .mount(&server)
+        .await;
+
+    let db = Arc::new(pos_db::init_memory_database().expect("an in-memory database"));
+    {
+        let conn = db.connection();
+        let conn = conn.lock();
+        conn.execute(
+            r#"INSERT INTO operators (id, code, name, role, is_active)
+               VALUES ('op-001', 'C001', 'Ahmed', 'CASHIER', 1)"#,
+            [],
+        )
+        .expect("the fixture row inserts");
+    }
+    let api = Arc::new(ApiClient::new(&server.uri()));
+    let service = AuthService::new(Arc::clone(&api), Arc::clone(&db));
+
+    // Nothing held before the PIN.
+    assert_eq!(api.operator_token().await, None);
+
+    let outcome = service.verify_pin(&operator(), &pin(), &policy()).await;
+    assert!(
+        matches!(outcome, PinVerification::Accepted { .. }),
+        "the fixture answers a verified PIN: {outcome:?}"
+    );
+
+    // On the wire, for the next request.
+    assert_eq!(
+        api.operator_token()
+            .await
+            .expect("a verified PIN mints a session the till presents")
+            .expose(),
+        "op-sess-abc"
+    );
+
+    // And on disk, so a restart mid-shift does not sign the cashier out.
+    let held = service
+        .operator_sign_in()
+        .held()
+        .expect("the row reads")
+        .expect("the session was stored");
+    assert_eq!(held.operator_id.as_str(), "op-001");
+    assert_eq!(held.session.token().expose(), "op-sess-abc");
+}
+
+/// A refusal about the session takes it back out of both places.
+///
+/// Driven through `verify_pin` rather than through `OperatorSignIn` directly, so what is asserted
+/// is the wiring: a real 401 over a real socket, classified from its code, reaching the discard.
+#[tokio::test]
+async fn a_revoked_session_is_dropped_from_the_wire_and_the_store() {
+    let server = MockServer::start().await;
+    asking_about_the_pin()
+        .respond_with(accepted())
+        .up_to_n_times(1)
+        .mount(&server)
+        .await;
+
+    let db = Arc::new(pos_db::init_memory_database().expect("an in-memory database"));
+    let api = Arc::new(ApiClient::new(&server.uri()));
+    let service = AuthService::new(Arc::clone(&api), Arc::clone(&db));
+
+    let outcome = service.verify_pin(&operator(), &pin(), &policy()).await;
+    assert!(matches!(outcome, PinVerification::Accepted { .. }));
+    assert!(api.operator_token().await.is_some());
+
+    let revoked = pos_api::ApiFailure::Refused {
+        status: pos_api::StatusCode::UNAUTHORIZED,
+        code: pos_api::ServerErrorCode::PosOperatorSessionRevoked,
+        message: "Operator session revoked".to_string(),
+        details: None,
+    };
+
+    let read = service
+        .operator_sign_in()
+        .read_refusal_of(&revoked)
+        .await
+        .expect("a session refusal is read as one");
+    assert_eq!(read, pos_api::OperatorSessionRefusal::Revoked);
+    assert!(
+        read.a_pin_can_fix_it(),
+        "a revoked session is fixed by signing in again"
+    );
+
+    assert_eq!(api.operator_token().await, None, "off the wire");
+    assert_eq!(
+        service.operator_sign_in().held().expect("the row reads"),
+        None,
+        "and out of the store"
+    );
 }

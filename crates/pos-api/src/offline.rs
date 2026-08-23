@@ -71,3 +71,53 @@ impl ApiClient {
         Ok(response.into_inner())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `operatorId` reaches the wire under the name the platform's validator reads.
+    ///
+    /// Confirmed rather than assumed, and that distinction is the point: `a94cae3e` made
+    /// `principalForRequest` write `operatorId` where the write path used to hard-code
+    /// `cashierId: req.user!.userId`, so this field started mattering — and the defect it replaced
+    /// was hidden for exactly this reason, by everyone assuming the name arrived. `rename_all`
+    /// applies to the struct, `OperatorId` serializes as the bare string it wraps, and neither is
+    /// visible from the field declaration alone.
+    #[test]
+    fn the_operator_id_reaches_the_wire_as_camel_case() {
+        let request = UploadOfflineTransactionRequest {
+            offline_id: "off-1".to_string(),
+            transaction_number: None,
+            transaction_type: "SALE".to_string(),
+            items: serde_json::json!([]),
+            payments: serde_json::json!([]),
+            subtotal: Decimal::ZERO,
+            tax_total: Decimal::ZERO,
+            discount_total: Decimal::ZERO,
+            grand_total: Decimal::ZERO,
+            customer_id: None,
+            customer_name: None,
+            shift_id: None,
+            operator_id: Some(OperatorId::new("op-001").expect("not blank")),
+            terminal_id: None,
+            receipt_number: None,
+            notes: None,
+            created_at: "2026-08-23T10:00:00.000Z".to_string(),
+            catalog_etag: None,
+            force: false,
+        };
+
+        let body = serde_json::to_value(&request).expect("the request serializes");
+
+        assert_eq!(
+            body.get("operatorId").and_then(serde_json::Value::as_str),
+            Some("op-001"),
+            "the platform reads `operatorId`; the whole body was {body}"
+        );
+        assert!(
+            body.get("operator_id").is_none(),
+            "the snake_case spelling must not also appear"
+        );
+    }
+}

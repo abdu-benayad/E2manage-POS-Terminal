@@ -3,6 +3,7 @@
 //! Handles terminal login, operator PIN verification, and session management.
 //! Supports both online verification (via API) and offline verification (via local DB).
 
+use crate::operator_sign_in::OperatorSignIn;
 use anyhow::{Context, Result};
 use pos_api::{
     ApiClient, ApiFailure, HeartbeatRequest, HeartbeatResponse, LoginTerminalResponse,
@@ -372,7 +373,7 @@ impl AuthService {
             .verify_operator_pin(operator_id, pin.expose_digits())
             .await
         {
-            Ok(verified) => self.accepted_by_platform(operator_id, verified),
+            Ok(verified) => self.accepted_by_platform(operator_id, verified).await,
             Err(ApiFailure::Unreachable(error)) => {
                 debug!("the platform could not be reached, verifying locally: {error}");
                 self.verify_pin_offline(operator_id, pin, policy)
@@ -486,7 +487,7 @@ impl AuthService {
             .verify_operator_pin(operator_id, pin.expose_digits())
             .await
         {
-            Ok(verified) => self.accepted_by_platform(operator_id, verified),
+            Ok(verified) => self.accepted_by_platform(operator_id, verified).await,
             Err(ApiFailure::Unreachable(error)) => {
                 debug!("the platform went away between the renewal and the retry: {error}");
                 self.verify_pin_offline(operator_id, pin, policy)
@@ -520,19 +521,24 @@ impl AuthService {
     /// server-confirmed operator whose row had not synced yet. The platform just told the till who
     /// this is; asking the till's own stale copy to confirm it is how a correct PIN produces
     /// "operator not found".
-    fn accepted_by_platform(
+    async fn accepted_by_platform(
         &self,
         operator_id: &OperatorId,
         verified: VerifyPinResponse,
     ) -> PinVerification {
         // A till always presents `X-Terminal-Token`, so the server always mints a session. Absent
         // means this request went out without one, which is a bug on this side of the wire, not a
-        // branch to write a fallback for. Persisting it needs the column task 10 adds.
+        // branch to write a fallback for.
         match &verified.session {
-            Some(session) => debug!(
-                "operator session minted, expiring {}",
-                session.expires_at().to_rfc3339()
-            ),
+            Some(session) => {
+                debug!(
+                    "operator session minted, expiring {}",
+                    session.expires_at().to_rfc3339()
+                );
+                self.operator_sign_in()
+                    .record_and_present(operator_id, session)
+                    .await;
+            }
             None => error!(
                 "the platform minted no operator session for {operator_id}: this till sent a \
                  verify-pin request without a terminal token"
@@ -562,6 +568,15 @@ impl AuthService {
             ),
             decided_by: Authority::Platform,
         }
+    }
+
+    /// Who is signed in at this till, over the same client and store this service holds.
+    ///
+    /// Built per call rather than stored: [`OperatorSignIn`] is two `Arc` clones and no state of
+    /// its own, and keeping a fourth field in sync with the two it is made of would be the kind of
+    /// duplicated truth this whole task exists to remove.
+    pub fn operator_sign_in(&self) -> OperatorSignIn {
+        OperatorSignIn::new(Arc::clone(&self.api), Arc::clone(&self.db))
     }
 
     /// Maps a refusal the platform actually made onto the outcome it means.

@@ -43,13 +43,21 @@ pub mod transactions;
 
 // Re-export main types
 pub use client::{ApiClient, ApiErrorDetail, ApiErrorResponse, Enveloped, GetResult, OnlineStatus};
-pub use failure::{ApiFailure, ServerErrorCode, TerminalStanding};
+pub use failure::{ApiFailure, OperatorSessionRefusal, ServerErrorCode, TerminalStanding};
+
 pub use refusal_details::{
     CapabilityCode, HeldBy, LockoutNotice, OfflineReportExpiredDetails,
     OfflineReportOverBudgetDetails, OperatorCapabilityDeniedDetails, OperatorLockedDetails,
     PinInvalidDetails, PinPolicyViolationDetails, PinRotationRequiredDetails, RefusalDetails,
     SupervisorApprovalRequiredDetails,
 };
+/// The status type [`ApiFailure::Refused`] carries.
+///
+/// Re-exported because that field is public: a caller outside this crate can already *read* the
+/// status and could not *name* it, so anything wanting to construct a refusal — every test that
+/// exercises a downstream branch on one — had to depend on `reqwest` directly to do it. That is
+/// the dependency `pos-api` exists to keep to itself.
+pub use reqwest::StatusCode;
 pub use session::{BlankSessionToken, OperatorSession, ReauthOutcome, SessionToken};
 
 pub use auth::{

@@ -6,8 +6,8 @@ use rusqlite::{Connection, Result as SqliteResult};
 use tracing::{debug, info};
 
 use super::schema::{
-    CURRENT_SCHEMA_VERSION, SCHEMA_V1, SCHEMA_V13, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5,
-    SCHEMA_V6, SCHEMA_V7, SCHEMA_V8, SCHEMA_V9,
+    CURRENT_SCHEMA_VERSION, SCHEMA_V1, SCHEMA_V13, SCHEMA_V14, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4,
+    SCHEMA_V5, SCHEMA_V6, SCHEMA_V7, SCHEMA_V8, SCHEMA_V9,
 };
 
 /// Runs all pending migrations on the database
@@ -97,6 +97,11 @@ pub fn run_migrations(conn: &Connection) -> SqliteResult<()> {
     if current_version < 13 {
         info!("Applying migration v13: the operator PIN hash leaves the till");
         apply_v13(conn)?;
+    }
+
+    if current_version < 14 {
+        info!("Applying migration v14: the operator session survives a restart");
+        apply_v14(conn)?;
     }
 
     Ok(())
@@ -416,6 +421,24 @@ fn apply_v13(conn: &Connection) -> SqliteResult<()> {
     Ok(())
 }
 
+/// Applies version 14: the `operator_sessions` table.
+///
+/// `CREATE TABLE IF NOT EXISTS`, so this is a no-op on a database created fresh from
+/// [`SCHEMA_V1`], which declares the same table. No guard beyond that is needed — unlike
+/// [`apply_v13`], which drops a column and has to ask whether it is there.
+fn apply_v14(conn: &Connection) -> SqliteResult<()> {
+    conn.execute_batch(SCHEMA_V14)?;
+
+    conn.execute(
+        "INSERT INTO schema_version (version, description) \
+         VALUES (14, 'The operator session survives a restart')",
+        [],
+    )?;
+
+    info!("Migration v14 applied successfully");
+    Ok(())
+}
+
 fn apply_v12(conn: &Connection) -> SqliteResult<()> {
     // Add product type columns if they don't exist
     let columns_to_add = vec![
@@ -499,6 +522,88 @@ mod tests {
         assert_eq!(version, CURRENT_SCHEMA_VERSION);
     }
 
+    /// A device upgrading from v13 gains the `operator_sessions` table, and a fresh one has it
+    /// from [`SCHEMA_V1`].
+    ///
+    /// Both directions, because they are different code paths: `apply_v1` runs the `CREATE TABLE`
+    /// inside the v1 batch and `apply_v14` runs it as a migration. A table declared in only one of
+    /// them works everywhere except on the devices that took the other route, and which route a
+    /// device took is invisible afterwards.
+    #[test]
+    fn v14_gives_every_till_an_operator_sessions_table() {
+        let upgraded = Connection::open_in_memory().unwrap();
+        upgraded
+            .execute_batch(
+                r#"CREATE TABLE schema_version (
+                       version INTEGER PRIMARY KEY,
+                       description TEXT,
+                       applied_at TEXT DEFAULT (datetime('now'))
+                   );"#,
+            )
+            .unwrap();
+        apply_v14(&upgraded).unwrap();
+
+        let fresh = Connection::open_in_memory().unwrap();
+        run_migrations(&fresh).unwrap();
+
+        for (route, conn) in [("upgraded from v13", &upgraded), ("created fresh", &fresh)] {
+            let exists: i32 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master \
+                     WHERE type = 'table' AND name = 'operator_sessions'",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(exists, 1, "a till {route} must have the session table");
+
+            // The one-row invariant, asserted rather than assumed: two operators signed in at once
+            // would make `SELECT ... WHERE id = 1` pick whichever the insert order left behind.
+            conn.execute(
+                "INSERT INTO operator_sessions (id, operator_id, token, expires_at) \
+                 VALUES (1, 'op-1', 'tok', '2026-08-24T06:00:00+00:00')",
+                [],
+            )
+            .unwrap();
+            let second = conn.execute(
+                "INSERT INTO operator_sessions (id, operator_id, token, expires_at) \
+                 VALUES (2, 'op-2', 'tok2', '2026-08-24T06:00:00+00:00')",
+                [],
+            );
+            assert!(
+                second.is_err(),
+                "a till {route} must not be able to hold two operator sessions at once"
+            );
+        }
+    }
+
+    /// Re-running v14 is not an error, the way re-running any migration must not be.
+    #[test]
+    fn v14_is_a_no_op_on_a_schema_that_already_has_the_table() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+
+        conn.execute(
+            "INSERT INTO operator_sessions (id, operator_id, token, expires_at) \
+             VALUES (1, 'op-1', 'tok', '2026-08-24T06:00:00+00:00')",
+            [],
+        )
+        .unwrap();
+
+        // `CREATE TABLE IF NOT EXISTS`, so the row survives. A migration that silently recreated
+        // the table would sign the cashier out on every upgrade.
+        conn.execute_batch(SCHEMA_V14).unwrap();
+
+        let held: String = conn
+            .query_row(
+                "SELECT operator_id FROM operator_sessions WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(held, "op-1");
+    }
+
     /// A till that already holds operators loses their PIN hashes, and keeps everything else.
     ///
     /// The migration that matters most on a real device: `pin_hash` was `NOT NULL`, so the drop
@@ -579,7 +684,21 @@ mod tests {
             .unwrap();
         assert_eq!(has_column, 0);
         assert_eq!(get_schema_version(&conn).unwrap(), CURRENT_SCHEMA_VERSION);
-        assert_eq!(CURRENT_SCHEMA_VERSION, 13);
+
+        // This used to read `assert_eq!(CURRENT_SCHEMA_VERSION, 13)`, which is a tripwire that has
+        // to be edited by every migration that follows — so it fires on the correct change and
+        // teaches whoever hits it to bump a number. What it was actually guarding is worth
+        // keeping: that the constant was not raised without a migration to match. Counting the
+        // recorded rows says the same thing and stays true, because every `apply_vN` writes
+        // exactly one.
+        let recorded: i32 = conn
+            .query_row("SELECT COUNT(*) FROM schema_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(
+            recorded, CURRENT_SCHEMA_VERSION,
+            "CURRENT_SCHEMA_VERSION is {CURRENT_SCHEMA_VERSION} and {recorded} migrations recorded \
+             themselves; a version was bumped without a migration, or one does not record itself"
+        );
     }
 
     #[test]

@@ -26,6 +26,29 @@ CREATE TABLE IF NOT EXISTS terminal_config (
 );
 
 -- ============================================================================
+-- OPERATOR SESSION
+-- ============================================================================
+
+-- The credential a verified PIN mints: *this person is signed in at this till*.
+--
+-- Its own table, not a column on `terminal_config`, for two reasons. The session belongs to an
+-- operator and the device row belongs to the device; and `terminal_config` is rewritten wholesale
+-- by `INSERT OR REPLACE` on every login and config sync, which would silently sign the cashier
+-- out mid-shift.
+--
+-- One row, like `terminal_config`: this till is attended by one operator at a time, and the CHECK
+-- says so rather than leaving a second row to be picked by whichever `SELECT` runs first.
+CREATE TABLE IF NOT EXISTS operator_sessions (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    operator_id TEXT NOT NULL,
+    token TEXT NOT NULL,
+    -- RFC 3339, as the platform sent it. A hint and not the authority: the server decides expiry
+    -- and answers POS_OPERATOR_SESSION_EXPIRED, and this till's clock is not authoritative.
+    expires_at TEXT NOT NULL,
+    established_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ============================================================================
 -- SYNC STATE TRACKING
 -- ============================================================================
 
@@ -650,5 +673,29 @@ pub const SCHEMA_V13: &str = r#"
 ALTER TABLE operators DROP COLUMN pin_hash;
 "#;
 
+/// Version 14 Schema - the operator session survives a restart
+///
+/// `POST /api/pos/offline/upload` mounts `requireTerminalAuth, attendedOperatorAuthMiddleware`
+/// (`offline.controller.ts:110-116`), and since `bf0d84bf`/`b927baab` six `/api/pos/till/*` routes
+/// sit behind the same pair. The till holds a terminal token and presented no operator one, so
+/// every one of those answers 401 `POS_OPERATOR_SESSION_REQUIRED`. The session the platform mints
+/// on a verified PIN is what satisfies them, and it was being logged and dropped.
+///
+/// Held on disk rather than in memory because a till restarted mid-shift would otherwise sign its
+/// cashier out — and the queue it then tries to drain is exactly the work that needs the
+/// credential.
+///
+/// **Not a column on `terminal_config`.** That row is rewritten by `INSERT OR REPLACE` on every
+/// terminal login, so the operator's session would vanish on a routine re-authentication.
+pub const SCHEMA_V14: &str = r#"
+CREATE TABLE IF NOT EXISTS operator_sessions (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    operator_id TEXT NOT NULL,
+    token TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    established_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+"#;
+
 /// Returns the current schema version
-pub const CURRENT_SCHEMA_VERSION: i32 = 13;
+pub const CURRENT_SCHEMA_VERSION: i32 = 14;

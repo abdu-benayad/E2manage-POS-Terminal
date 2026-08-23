@@ -862,6 +862,220 @@ impl TerminalStanding {
     }
 }
 
+// ============================================================================
+// OperatorSessionRefusal
+// ============================================================================
+
+/// Why the platform would not accept the operator session this till presented.
+///
+/// `attendedOperatorAuthMiddleware` refuses in seven distinguishable ways and every one of them
+/// arrives as a 401. Four are about the **session**; three are about the **operator**, and the
+/// difference decides whether entering a PIN again can plausibly help.
+///
+/// # The two that are folded, and the two that are not
+///
+/// `INVALID` covers both an unknown token and one **bound to another terminal** — folded by the
+/// platform on purpose, so that a refusal cannot confirm to whoever holds a stolen token that it
+/// is live somewhere. Mirroring that fold here is not laziness; splitting it locally would be
+/// inventing a distinction the wire deliberately does not carry.
+///
+/// `REVOKED` and `EXPIRED` are *not* folded, because they are different sentences: expired is
+/// "sign in again", revoked is "something happened to your account". The platform tests revoked
+/// **before** expired, so a session that is both reports as revoked. That ordering lives on the
+/// server; nothing here re-derives it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Error)]
+pub enum OperatorSessionRefusal {
+    /// `POS_OPERATOR_SESSION_REQUIRED` — no session was presented.
+    #[error("no operator is signed in at this till")]
+    NotPresented,
+
+    /// `POS_OPERATOR_SESSION_INVALID` — unknown, or issued to another terminal.
+    #[error("this operator session is not one the platform will honour here")]
+    NotHonoured,
+
+    /// `POS_OPERATOR_SESSION_EXPIRED` — the twelve hours are up.
+    #[error("this operator session has expired; sign in again")]
+    Lapsed,
+
+    /// `POS_OPERATOR_SESSION_REVOKED` — a PIN reset, a deactivation, or a rotation took it away.
+    #[error("this operator session has been revoked")]
+    Revoked,
+
+    /// `POS_OPERATOR_INACTIVE` — the operator is re-read on every presentation, so employment
+    /// status ends a live session mid-shift.
+    #[error("this operator is no longer active")]
+    OperatorInactive,
+
+    /// `POS_OPERATOR_LOCKED` — locked elsewhere, while this session was open.
+    #[error("this operator is locked")]
+    OperatorLocked,
+
+    /// `POS_OPERATOR_NOT_FOUND` — the operator behind a session the platform itself issued.
+    #[error("the platform does not know this operator")]
+    OperatorUnknown,
+}
+
+impl OperatorSessionRefusal {
+    /// Reads a refusal for what it says about the operator's session.
+    ///
+    /// `None` when the refusal was about something else — including every non-`Refused` failure,
+    /// because an unreachable server has made no claim about anybody's session.
+    pub fn of(failure: &ApiFailure) -> Option<Self> {
+        let ApiFailure::Refused { code, .. } = failure else {
+            return None;
+        };
+
+        match code {
+            ServerErrorCode::PosOperatorSessionRequired => Some(Self::NotPresented),
+            ServerErrorCode::PosOperatorSessionInvalid => Some(Self::NotHonoured),
+            ServerErrorCode::PosOperatorSessionExpired => Some(Self::Lapsed),
+            ServerErrorCode::PosOperatorSessionRevoked => Some(Self::Revoked),
+            ServerErrorCode::PosOperatorInactive => Some(Self::OperatorInactive),
+            ServerErrorCode::PosOperatorLocked => Some(Self::OperatorLocked),
+            ServerErrorCode::PosOperatorNotFound => Some(Self::OperatorUnknown),
+            _ => None,
+        }
+    }
+
+    /// Whether the session this till is holding must be thrown away.
+    ///
+    /// False for exactly one: [`Self::NotPresented`] means there was nothing to hold. Every other
+    /// refusal is the platform declining a credential the till still has, and keeping it would
+    /// mean presenting it again on the next request — the shape that turns one refusal into a
+    /// steady stream of them.
+    pub const fn discards_the_held_session(self) -> bool {
+        match self {
+            Self::NotPresented => false,
+            Self::NotHonoured
+            | Self::Lapsed
+            | Self::Revoked
+            | Self::OperatorInactive
+            | Self::OperatorLocked
+            | Self::OperatorUnknown => true,
+        }
+    }
+
+    /// Whether entering a PIN again can plausibly fix this.
+    ///
+    /// False for the three that are about the operator rather than the session: a locked,
+    /// deactivated or unknown operator will be refused at the PIN too, and a till that answers
+    /// "please sign in again" to a locked cashier sends them round a loop that spends their
+    /// lockout budget on every pass.
+    pub const fn a_pin_can_fix_it(self) -> bool {
+        match self {
+            Self::NotPresented | Self::NotHonoured | Self::Lapsed | Self::Revoked => true,
+            Self::OperatorInactive | Self::OperatorLocked | Self::OperatorUnknown => false,
+        }
+    }
+}
+
+#[cfg(test)]
+mod operator_session_refusal_tests {
+    use super::*;
+
+    fn refusal(code: ServerErrorCode) -> ApiFailure {
+        ApiFailure::Refused {
+            status: StatusCode::UNAUTHORIZED,
+            code,
+            message: "refused".to_string(),
+            details: None,
+        }
+    }
+
+    /// The seven, each read from its own code, as a table.
+    #[test]
+    fn each_operator_code_gets_its_own_refusal() {
+        let table = [
+            (
+                ServerErrorCode::PosOperatorSessionRequired,
+                OperatorSessionRefusal::NotPresented,
+            ),
+            (
+                ServerErrorCode::PosOperatorSessionInvalid,
+                OperatorSessionRefusal::NotHonoured,
+            ),
+            (
+                ServerErrorCode::PosOperatorSessionExpired,
+                OperatorSessionRefusal::Lapsed,
+            ),
+            (
+                ServerErrorCode::PosOperatorSessionRevoked,
+                OperatorSessionRefusal::Revoked,
+            ),
+            (
+                ServerErrorCode::PosOperatorInactive,
+                OperatorSessionRefusal::OperatorInactive,
+            ),
+            (
+                ServerErrorCode::PosOperatorLocked,
+                OperatorSessionRefusal::OperatorLocked,
+            ),
+            (
+                ServerErrorCode::PosOperatorNotFound,
+                OperatorSessionRefusal::OperatorUnknown,
+            ),
+        ];
+
+        for (code, expected) in table {
+            assert_eq!(
+                OperatorSessionRefusal::of(&refusal(code.clone())),
+                Some(expected),
+                "for {code:?}"
+            );
+        }
+
+        // A refusal about the PIN, not about a session. `None` and not a default — this is what
+        // keeps `verify-pin`'s own refusals out of the sign-out path.
+        assert_eq!(
+            OperatorSessionRefusal::of(&refusal(ServerErrorCode::PosPinInvalid)),
+            None
+        );
+        // And a terminal-level refusal, which `TerminalStanding` answers instead.
+        assert_eq!(
+            OperatorSessionRefusal::of(&refusal(ServerErrorCode::PosTerminalGone)),
+            None
+        );
+    }
+
+    /// Exactly one refusal leaves the held session in place, and exactly three cannot be fixed by
+    /// entering a PIN.
+    #[test]
+    fn the_two_questions_a_caller_asks_have_different_answers() {
+        assert!(!OperatorSessionRefusal::NotPresented.discards_the_held_session());
+        for refusal in [
+            OperatorSessionRefusal::NotHonoured,
+            OperatorSessionRefusal::Lapsed,
+            OperatorSessionRefusal::Revoked,
+            OperatorSessionRefusal::OperatorInactive,
+            OperatorSessionRefusal::OperatorLocked,
+            OperatorSessionRefusal::OperatorUnknown,
+        ] {
+            assert!(
+                refusal.discards_the_held_session(),
+                "{refusal:?} is the platform declining a credential the till still holds"
+            );
+        }
+
+        // The three that are about the operator rather than the session. Sending a locked cashier
+        // back to the PIN pad spends their lockout budget on every pass.
+        for refusal in [
+            OperatorSessionRefusal::OperatorInactive,
+            OperatorSessionRefusal::OperatorLocked,
+            OperatorSessionRefusal::OperatorUnknown,
+        ] {
+            assert!(!refusal.a_pin_can_fix_it(), "{refusal:?}");
+        }
+        for refusal in [
+            OperatorSessionRefusal::NotPresented,
+            OperatorSessionRefusal::NotHonoured,
+            OperatorSessionRefusal::Lapsed,
+            OperatorSessionRefusal::Revoked,
+        ] {
+            assert!(refusal.a_pin_can_fix_it(), "{refusal:?}");
+        }
+    }
+}
+
 #[cfg(test)]
 mod terminal_standing_tests {
     use super::*;
