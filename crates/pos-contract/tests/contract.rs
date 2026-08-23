@@ -16,6 +16,17 @@
 //! assertions. A contract that restates the DTO instead of using it records what the test
 //! author believed, not what the till does.
 
+//! # Never declare an empty JSON request body
+//!
+//! An interaction declaring `json_body(json_pattern!({}))` records `"body": {}` with a
+//! `content-type` header, and the provider verification then **hangs for 30 seconds and
+//! reports `error sending request`** — measured twice, against two different databases,
+//! while the same route answered `supertest` in milliseconds. A route that ignores its
+//! request body must declare no body at all.
+//!
+//! Worth the paragraph because the failure gives no hint of its cause: it reads as the
+//! provider being unreachable, not as anything about the contract.
+
 use pact_consumer::prelude::*;
 use pos_api::{ApiErrorResponse, ServerErrorCode};
 
@@ -121,5 +132,195 @@ async fn a_refusal_carries_the_nested_error_envelope() {
     assert!(
         detail.code.is_recognised(),
         "a code the till cannot model is not worth pinning"
+    );
+}
+
+/// The pairing handshake's first step: the till asks for a code to display.
+///
+/// **The first 2xx interaction in this contract**, and it matters more than its size
+/// suggests. Every refusal pinned so far travels the shared error serialiser, so until this
+/// existed the contract proved the real error path runs and said nothing about any
+/// controller's success path.
+///
+/// The till reads this through `post_envelope`, which unwraps `{success, message, data}` and
+/// hands back `data` — so `data.{pairingCode, expiresAt, hardwareId}` is the till's actual
+/// expectation and the envelope around it is incidental. Both are pinned: the envelope
+/// because `post_envelope` requires `success` to be present and true before it will unwrap,
+/// and the payload because that is what `RequestPairingResponse` deserialises.
+///
+/// `pairingCode` and `expiresAt` are `like!` — they are minted per request and the till only
+/// displays them. `hardwareId` is a literal because the platform echoes back what was sent,
+/// and an echo that stops echoing is a real change: the till uses it to confirm the code it
+/// is showing belongs to this device.
+#[tokio::test]
+async fn a_pairing_request_returns_a_code_to_display() {
+    const HARDWARE_ID: &str = "pact-hardware-id";
+
+    let pact = PactBuilder::new("e2manage-pos-terminal", "wadi-dms-api")
+        .with_output_dir("./pacts")
+        .interaction(
+            "a pairing request from an unpaired terminal",
+            "",
+            |mut i| {
+                i.given(format!(
+                    "no pairing request exists for the hardware id {HARDWARE_ID}"
+                ));
+                i.request
+                    .post()
+                    .path("/api/pos/terminals/pairing/request")
+                    .header("content-type", "application/json")
+                    .json_body(json_pattern!({ "hardwareId": HARDWARE_ID }));
+                i.response
+                    .status(200)
+                    .header("content-type", "application/json")
+                    .json_body(json_pattern!({
+                        "success": true,
+                        "data": {
+                            "pairingCode": like!("ABC123"),
+                            "expiresAt": like!("2026-08-23T12:00:00.000Z"),
+                            "hardwareId": HARDWARE_ID,
+                        }
+                    }));
+                i
+            },
+        )
+        .start_mock_server(None, None);
+
+    let url = format!("{}api/pos/terminals/pairing/request", pact.url());
+    let response = reqwest::Client::new()
+        .post(&url)
+        .json(&serde_json::json!({ "hardwareId": HARDWARE_ID }))
+        .send()
+        .await
+        .expect("the mock server did not answer");
+
+    assert_eq!(response.status().as_u16(), 200);
+    let body: serde_json::Value = response.json().await.expect("the response was not json");
+    assert_eq!(body["success"], true);
+    assert_eq!(body["data"]["hardwareId"], HARDWARE_ID);
+}
+
+/// A terminal-authenticated route reached with no `X-Terminal-Token` at all.
+///
+/// Pinned on `logout` because it is both CSRF-exempt and unconditionally
+/// terminal-authenticated (`terminal.controller.ts:113`), so the refusal is reachable with no
+/// fixture beyond sending nothing.
+///
+/// The code is a literal. The till does not yet branch on `POS_TERMINAL_*` — `ServerErrorCode`
+/// models seven generic codes and carries the rest as `Unrecognised`, whose contract is "no
+/// information" — but it does read the spelling verbatim, and
+/// `auth-outcome-and-offline-lockout` is about to start branching on it. Pinning it now is
+/// what makes that safe: a rename between here and there would otherwise be silent, and
+/// silent renames of refusal codes are the thing this whole contract exists to stop.
+#[tokio::test]
+async fn a_terminal_route_without_a_token_says_the_token_is_missing() {
+    let pact = PactBuilder::new("e2manage-pos-terminal", "wadi-dms-api")
+        .with_output_dir("./pacts")
+        .interaction(
+            "a terminal-authenticated request with no token",
+            "",
+            |mut i| {
+                i.given("no terminal state is required");
+                // No request body and no `content-type`: the route ignores the body, and a
+                // declared-but-empty JSON body deadlocks the verification. See the module note.
+                i.request.post().path("/api/pos/terminals/logout");
+                i.response
+                    .status(401)
+                    .header("content-type", "application/json")
+                    .json_body(json_pattern!({
+                        "message": like!("Terminal token is missing"),
+                        "error": {
+                            "code": "POS_TERMINAL_TOKEN_MISSING",
+                            "message": like!("Terminal token is missing"),
+                        }
+                    }));
+                i
+            },
+        )
+        .start_mock_server(None, None);
+
+    let url = format!("{}api/pos/terminals/logout", pact.url());
+    let response = reqwest::Client::new()
+        .post(&url)
+        .send()
+        .await
+        .expect("the mock server did not answer");
+
+    assert_eq!(response.status().as_u16(), 401);
+    let refusal: ApiErrorResponse = response
+        .json()
+        .await
+        .expect("the till's ApiErrorResponse could not parse the refusal");
+    let detail = refusal
+        .error
+        .expect("the refusal carried no `error` object");
+    assert_eq!(
+        detail.code,
+        ServerErrorCode::Unrecognised("POS_TERMINAL_TOKEN_MISSING".to_string()),
+        "the till carries POS_* codes verbatim until it models them"
+    );
+    assert!(
+        !detail.code.is_recognised(),
+        "an unmodelled code must read as `no information`, never as a particular refusal"
+    );
+}
+
+/// The same route reached with a token the platform cannot verify.
+///
+/// A distinct branch from the missing-token case above and a distinct code
+/// (`terminal-auth.middleware.ts:103` versus `:66`), which is the platform being careful:
+/// "you sent nothing" and "what you sent is not valid" are different facts and the till will
+/// eventually act on them differently — one is a bug, the other is an expired install.
+///
+/// Reachable with no fixture: any string that is not a live session token produces it.
+#[tokio::test]
+async fn a_terminal_route_with_an_unverifiable_token_says_the_token_is_invalid() {
+    const NOT_A_SESSION_TOKEN: &str = "pact-not-a-real-terminal-token";
+
+    let pact = PactBuilder::new("e2manage-pos-terminal", "wadi-dms-api")
+        .with_output_dir("./pacts")
+        .interaction(
+            "a terminal-authenticated request with an unverifiable token",
+            "",
+            |mut i| {
+                i.given("no terminal session exists for the token pact-not-a-real-terminal-token");
+                i.request
+                    .post()
+                    .path("/api/pos/terminals/logout")
+                    .header("X-Terminal-Token", NOT_A_SESSION_TOKEN);
+                i.response
+                    .status(401)
+                    .header("content-type", "application/json")
+                    .json_body(json_pattern!({
+                        "message": like!("Invalid terminal token"),
+                        "error": {
+                            "code": "POS_TERMINAL_TOKEN_INVALID",
+                            "message": like!("Invalid terminal token"),
+                        }
+                    }));
+                i
+            },
+        )
+        .start_mock_server(None, None);
+
+    let url = format!("{}api/pos/terminals/logout", pact.url());
+    let response = reqwest::Client::new()
+        .post(&url)
+        .header("X-Terminal-Token", NOT_A_SESSION_TOKEN)
+        .send()
+        .await
+        .expect("the mock server did not answer");
+
+    assert_eq!(response.status().as_u16(), 401);
+    let refusal: ApiErrorResponse = response
+        .json()
+        .await
+        .expect("the till's ApiErrorResponse could not parse the refusal");
+    let detail = refusal
+        .error
+        .expect("the refusal carried no `error` object");
+    assert_eq!(
+        detail.code,
+        ServerErrorCode::Unrecognised("POS_TERMINAL_TOKEN_INVALID".to_string())
     );
 }

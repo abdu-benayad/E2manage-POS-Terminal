@@ -4,6 +4,58 @@
   },
   "interactions": [
     {
+      "description": "a pairing request from an unpaired terminal",
+      "providerStates": [
+        {
+          "name": "no pairing request exists for the hardware id pact-hardware-id"
+        }
+      ],
+      "request": {
+        "body": {
+          "hardwareId": "pact-hardware-id"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "method": "POST",
+        "path": "/api/pos/terminals/pairing/request"
+      },
+      "response": {
+        "body": {
+          "data": {
+            "expiresAt": "2026-08-23T12:00:00.000Z",
+            "hardwareId": "pact-hardware-id",
+            "pairingCode": "ABC123"
+          },
+          "success": true
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "matchingRules": {
+          "body": {
+            "$.data.expiresAt": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.data.pairingCode": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      }
+    },
+    {
       "description": "a pairing-status request for a code that does not exist",
       "providerStates": [
         {
@@ -26,6 +78,99 @@
           "content-type": "application/json"
         },
         "status": 404
+      }
+    },
+    {
+      "description": "a terminal-authenticated request with an unverifiable token",
+      "providerStates": [
+        {
+          "name": "no terminal session exists for the token pact-not-a-real-terminal-token"
+        }
+      ],
+      "request": {
+        "headers": {
+          "X-Terminal-Token": "pact-not-a-real-terminal-token"
+        },
+        "method": "POST",
+        "path": "/api/pos/terminals/logout"
+      },
+      "response": {
+        "body": {
+          "error": {
+            "code": "POS_TERMINAL_TOKEN_INVALID",
+            "message": "Invalid terminal token"
+          },
+          "message": "Invalid terminal token"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "matchingRules": {
+          "body": {
+            "$.error.message": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.message": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "status": 401
+      }
+    },
+    {
+      "description": "a terminal-authenticated request with no token",
+      "providerStates": [
+        {
+          "name": "no terminal state is required"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/api/pos/terminals/logout"
+      },
+      "response": {
+        "body": {
+          "error": {
+            "code": "POS_TERMINAL_TOKEN_MISSING",
+            "message": "Terminal token is missing"
+          },
+          "message": "Terminal token is missing"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "matchingRules": {
+          "body": {
+            "$.error.message": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.message": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "status": 401
       }
     }
   ],
