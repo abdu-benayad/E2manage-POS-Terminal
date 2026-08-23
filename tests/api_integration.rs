@@ -647,8 +647,6 @@ pub struct TerminalAuthResponse {
     #[serde(default)]
     pub terminal_code: String,
     #[serde(default)]
-    pub tenant_id: String,
-    #[serde(default)]
     pub company_id: String,
 }
 

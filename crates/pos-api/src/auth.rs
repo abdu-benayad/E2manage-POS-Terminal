@@ -114,8 +114,6 @@ pub struct LoginTerminalResponse {
     pub terminal_id: String,
     /// Terminal code
     pub terminal_code: String,
-    /// Tenant ID
-    pub tenant_id: String,
     /// Company ID
     pub company_id: String,
     /// Branch ID (if applicable)
@@ -329,8 +327,6 @@ pub struct PairedTerminalInfo {
     pub terminal_code: String,
     /// Secret for authentication
     pub secret: String,
-    /// Tenant ID
-    pub tenant_id: String,
     /// Company name for display
     #[serde(default)]
     pub company_name: Option<String>,
@@ -562,7 +558,6 @@ mod tests {
             "sessionToken": "tok_123",
             "terminalId": "term_456",
             "terminalCode": "TERM-001",
-            "tenantId": "tenant_789",
             "companyId": "comp_012",
             "config": {
                 "locale": "ar",

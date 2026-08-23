@@ -16,7 +16,6 @@ CREATE TABLE IF NOT EXISTS terminal_config (
     terminal_code TEXT NOT NULL,
     hardware_id TEXT NOT NULL,
     session_token TEXT,
-    tenant_id TEXT,
     company_id TEXT,
     branch_id TEXT,
     locale TEXT DEFAULT 'ar',
@@ -408,7 +407,6 @@ CREATE TABLE IF NOT EXISTS terminal_registration (
     terminal_id TEXT,
     terminal_code TEXT,
     secret TEXT,                           -- Terminal secret for login
-    tenant_id TEXT,
     company_name TEXT,                     -- Company name for display
     registered_at TEXT,
     is_registered INTEGER DEFAULT 0        -- 0 = not registered, 1 = registered

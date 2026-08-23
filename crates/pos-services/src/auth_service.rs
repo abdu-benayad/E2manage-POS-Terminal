@@ -25,7 +25,6 @@ pub struct TerminalSession {
     pub terminal_code: String,
     pub hardware_id: String,
     pub session_token: String,
-    pub tenant_id: String,
     pub company_id: String,
     pub branch_id: Option<String>,
     pub locale: String,
@@ -108,7 +107,6 @@ impl AuthService {
             terminal_code: response.terminal_code,
             hardware_id: hardware_id.to_string(),
             session_token: response.session_token,
-            tenant_id: response.tenant_id,
             company_id: response.company_id,
             branch_id: response.branch_id,
             locale: response.config.locale.unwrap_or_else(|| "ar".to_string()),
@@ -149,16 +147,15 @@ impl AuthService {
             r#"
             INSERT OR REPLACE INTO terminal_config
             (id, terminal_id, terminal_code, hardware_id, session_token,
-             tenant_id, company_id, branch_id, locale, currency,
+             company_id, branch_id, locale, currency,
              tax_rate, tax_inclusive, sector, updated_at)
-            VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, datetime('now'))
+            VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, datetime('now'))
             "#,
             params![
                 response.terminal_id,
                 response.terminal_code,
                 hardware_id,
                 response.session_token,
-                response.tenant_id,
                 response.company_id,
                 response.branch_id,
                 response.config.locale,
@@ -193,7 +190,7 @@ impl AuthService {
         let result = conn.query_row(
             r#"
             SELECT terminal_id, terminal_code, hardware_id, session_token,
-                   tenant_id, company_id, branch_id, locale, currency,
+                   company_id, branch_id, locale, currency,
                    tax_rate, tax_inclusive, sector
             FROM terminal_config
             WHERE id = 1
@@ -205,19 +202,18 @@ impl AuthService {
                     terminal_code: row.get(1)?,
                     hardware_id: row.get(2)?,
                     session_token: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
-                    tenant_id: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
-                    company_id: row.get::<_, Option<String>>(5)?.unwrap_or_default(),
-                    branch_id: row.get(6)?,
+                    company_id: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
+                    branch_id: row.get(5)?,
                     locale: row
-                        .get::<_, Option<String>>(7)?
+                        .get::<_, Option<String>>(6)?
                         .unwrap_or_else(|| "ar".to_string()),
                     currency: row
-                        .get::<_, Option<String>>(8)?
+                        .get::<_, Option<String>>(7)?
                         .unwrap_or_else(|| "LYD".to_string()),
-                    tax_rate: row.get::<_, Option<f64>>(9)?.unwrap_or(0.0),
-                    tax_inclusive: row.get::<_, Option<i32>>(10)?.unwrap_or(0) != 0,
+                    tax_rate: row.get::<_, Option<f64>>(8)?.unwrap_or(0.0),
+                    tax_inclusive: row.get::<_, Option<i32>>(9)?.unwrap_or(0) != 0,
                     sector: row
-                        .get::<_, Option<String>>(11)?
+                        .get::<_, Option<String>>(10)?
                         .unwrap_or_else(|| "RETAIL".to_string()),
                     features: vec![], // Features need to be synced
                 })

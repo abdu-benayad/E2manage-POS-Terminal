@@ -29,8 +29,6 @@ pub struct TerminalRegistration {
     pub terminal_code: Option<String>,
     /// Secret for authentication
     pub secret: Option<String>,
-    /// Tenant ID
-    pub tenant_id: Option<String>,
     /// Company name for display
     pub company_name: Option<String>,
     /// Whether the terminal is registered
@@ -91,7 +89,7 @@ impl PairingService {
 
         let result = conn.query_row(
             r#"
-            SELECT hardware_id, terminal_id, terminal_code, secret, tenant_id,
+            SELECT hardware_id, terminal_id, terminal_code, secret,
                    company_name, is_registered, registered_at
             FROM terminal_registration
             WHERE id = 1
@@ -103,10 +101,9 @@ impl PairingService {
                     terminal_id: row.get(1)?,
                     terminal_code: row.get(2)?,
                     secret: row.get(3)?,
-                    tenant_id: row.get(4)?,
-                    company_name: row.get(5)?,
-                    is_registered: row.get::<_, i32>(6)? == 1,
-                    registered_at: row.get(7)?,
+                    company_name: row.get(4)?,
+                    is_registered: row.get::<_, i32>(5)? == 1,
+                    registered_at: row.get(6)?,
                 })
             },
         );
@@ -323,8 +320,7 @@ impl PairingService {
             SET terminal_id = ?1,
                 terminal_code = ?2,
                 secret = ?3,
-                tenant_id = ?4,
-                company_name = ?5,
+                company_name = ?4,
                 is_registered = 1,
                 registered_at = datetime('now')
             WHERE id = 1
@@ -333,7 +329,6 @@ impl PairingService {
                 terminal.terminal_id,
                 terminal.terminal_code,
                 terminal.secret,
-                terminal.tenant_id,
                 terminal.company_name,
             ],
         )?;
@@ -355,15 +350,14 @@ impl PairingService {
             r#"
             INSERT OR REPLACE INTO terminal_config
             (id, terminal_id, terminal_code, hardware_id, session_token,
-             tenant_id, company_id, branch_id, locale, currency, sector, updated_at)
-            VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, datetime('now'))
+             company_id, branch_id, locale, currency, sector, updated_at)
+            VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, datetime('now'))
             "#,
             params![
                 response.terminal_id,
                 response.terminal_code,
                 hardware_id,
                 response.session_token,
-                response.tenant_id,
                 response.company_id,
                 response.branch_id,
                 response.config.locale,
@@ -416,7 +410,6 @@ impl PairingService {
             SET terminal_id = NULL,
                 terminal_code = NULL,
                 secret = NULL,
-                tenant_id = NULL,
                 is_registered = 0,
                 registered_at = NULL
             WHERE id = 1
@@ -741,7 +734,6 @@ mod tests {
             terminal_id: "TERM-001".to_string(),
             terminal_code: "TERM-001".to_string(),
             secret: "secret123".to_string(),
-            tenant_id: "tenant-456".to_string(),
             company_name: None,
         };
 
@@ -768,7 +760,6 @@ mod tests {
             terminal_id: "TERM-001".to_string(),
             terminal_code: "TERM-001".to_string(),
             secret: "secret123".to_string(),
-            tenant_id: "tenant-456".to_string(),
             company_name: None,
         };
         service.save_registration(&terminal).unwrap();
