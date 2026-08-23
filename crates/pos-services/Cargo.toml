@@ -65,5 +65,6 @@ rust_decimal.workspace = true
 pos-escpos.workspace = true
 
 [dev-dependencies]
+wiremock.workspace = true
 tempfile = "3"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

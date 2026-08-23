@@ -82,6 +82,12 @@ parking_lot = "0.12"
 # `zeroize_derive` is deliberately absent: it is not vendored, so `Drop` is written by hand.
 zeroize = "1"
 
+# HTTP mocking, test-only.
+# `ApiClient` is a concrete `reqwest` struct on purpose: `new` takes a base URL, so a mock
+# server bound to 127.0.0.1 is reachable without a trait. A trait with one production
+# implementation would test a fake instead of the transport boundary where the defects are.
+wiremock = "0.6"
+
 # Internal crates
 pos-models = { path = "crates/pos-models" }
 pos-escpos = { path = "crates/pos-escpos" }
