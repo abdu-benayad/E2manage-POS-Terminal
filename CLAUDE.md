@@ -249,6 +249,36 @@ RUST_BACKTRACE=1 cargo test              # Full backtraces on panic
 RUST_BACKTRACE=full cargo test           # Even more detail
 ```
 
+## Committing — the index is shared with other sessions
+
+**Several Claude sessions share this checkout, and `git add <explicit paths>` does not protect
+you.** Never `git add -A`/`.` — but that rule is strictly weaker than the hazard. **The index is
+shared state.** A bare `git commit` commits *the whole index*, not the paths you added, so anything
+another session has staged rides along under your message.
+
+Measured 2026-08-23 in the sibling platform repo: a session staged three explicit paths, ran
+`git commit`, and committed three file deletions belonging to another lane. It had followed the
+`git add` rule exactly.
+
+**Commit with a pathspec, always, and read the resulting stat before moving on:**
+
+```bash
+git commit --only -F msg -- crates/pos-api/src/client.rs crates/pos-api/src/failure.rs
+```
+
+`--only` is load-bearing: it leaves everything else in the index staged and untouched, so another
+session's work survives. Recovering after the fact, without disturbing their staging:
+
+```bash
+git log -1 --format=%B > msg     # keep the message
+git reset --soft HEAD~1          # HEAD back, index untouched
+git commit --only -F msg -- <your paths>
+```
+
+This is timing, not discipline — the same commands are clean whenever nothing else happens to be
+staged, which is why it survives review and bites later. **`git stash` is forbidden here for the
+same reason**, and so is `git clean -fd` (see Vendor Directory below).
+
 ## Vendor Directory
 
 `vendor/` contains bundled crate sources for offline builds. It is 1.1 GB, produced by
