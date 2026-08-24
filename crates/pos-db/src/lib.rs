@@ -35,6 +35,7 @@ pub mod migrations;
 pub mod operators;
 pub mod parse;
 pub mod products;
+pub mod projection;
 pub mod schema;
 pub mod shared_drafts;
 pub mod shifts;
