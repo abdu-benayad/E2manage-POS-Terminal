@@ -46,7 +46,9 @@ impl ApiClient {
         &self,
         request: &CreateReturnRequest,
     ) -> ApiResult<CreateReturnResponse> {
-        let response: Enveloped<_> = self.post_or_failure("/api/pos/returns", request).await?;
+        let response: Enveloped<_> = self
+            .post_or_failure("/api/pos/till/returns", request)
+            .await?;
         Ok(response.into_inner())
     }
 }

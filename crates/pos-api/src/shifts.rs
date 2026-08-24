@@ -69,14 +69,14 @@ impl ApiClient {
     /// not on the CSRF exemption list.
     pub async fn start_shift(&self, request: &StartShiftRequest) -> ApiResult<StartShiftResponse> {
         let response: Enveloped<_> = self
-            .post_or_failure("/api/pos/shifts/start", request)
+            .post_or_failure("/api/pos/till/shifts/start", request)
             .await?;
         Ok(response.into_inner())
     }
 
     /// Closes a shift. `POST /api/pos/shifts/{shiftId}/end`
     pub async fn end_shift(&self, shift_id: &str, request: &EndShiftRequest) -> ApiResult<()> {
-        let path = format!("/api/pos/shifts/{}/end", urlencoding::encode(shift_id));
+        let path = format!("/api/pos/till/shifts/{}/end", urlencoding::encode(shift_id));
         let _: Enveloped<serde::de::IgnoredAny> = self.post_or_failure(&path, request).await?;
         Ok(())
     }

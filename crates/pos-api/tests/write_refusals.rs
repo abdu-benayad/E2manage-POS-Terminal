@@ -141,7 +141,7 @@ fn code_of(failure: ApiFailure) -> ServerErrorCode {
 async fn a_refused_sale_keeps_its_code() {
     let (server, client) = answering(
         "POST",
-        "/api/pos/transactions",
+        "/api/pos/till/transactions",
         403,
         refusal_body("POS_OPERATOR_CAPABILITY_DENIED", None),
     )
@@ -162,7 +162,7 @@ async fn a_refused_sale_keeps_its_code() {
 async fn a_refused_void_keeps_its_code() {
     let (server, client) = answering(
         "POST",
-        "/api/pos/transactions/txn-1/void",
+        "/api/pos/till/transactions/txn-1/void",
         403,
         refusal_body("POS_SUPERVISOR_APPROVAL_REQUIRED", None),
     )
@@ -188,7 +188,7 @@ async fn a_refused_void_keeps_its_code() {
 async fn a_refused_receipt_lookup_keeps_its_code() {
     let (server, client) = answering(
         "GET",
-        "/api/pos/transactions/by-receipt/R-1",
+        "/api/pos/till/transactions/by-receipt/R-1",
         403,
         refusal_body("POS_OPERATOR_SESSION_EXPIRED", None),
     )
@@ -206,7 +206,7 @@ async fn a_refused_receipt_lookup_keeps_its_code() {
 async fn a_refused_shift_opening_keeps_its_code() {
     let (server, client) = answering(
         "POST",
-        "/api/pos/shifts/start",
+        "/api/pos/till/shifts/start",
         403,
         refusal_body("POS_OPERATOR_CAPABILITY_DENIED", None),
     )
@@ -227,7 +227,7 @@ async fn a_refused_shift_opening_keeps_its_code() {
 async fn a_refused_shift_closing_keeps_its_code() {
     let (server, client) = answering(
         "POST",
-        "/api/pos/shifts/shift-1/end",
+        "/api/pos/till/shifts/shift-1/end",
         403,
         refusal_body("POS_SUPERVISOR_APPROVAL_REQUIRED", None),
     )
@@ -248,7 +248,7 @@ async fn a_refused_shift_closing_keeps_its_code() {
 async fn a_refused_return_keeps_its_code_and_the_roles_that_can_supply_it() {
     let (server, client) = answering(
         "POST",
-        "/api/pos/returns",
+        "/api/pos/till/returns",
         403,
         refusal_body(
             "POS_SUPERVISOR_APPROVAL_REQUIRED",
@@ -291,7 +291,7 @@ async fn a_refused_return_keeps_its_code_and_the_roles_that_can_supply_it() {
 async fn a_missing_receipt_is_a_refusal_carrying_not_found() {
     let (server, client) = answering(
         "GET",
-        "/api/pos/transactions/by-receipt/R-404",
+        "/api/pos/till/transactions/by-receipt/R-404",
         404,
         refusal_body("NOT_FOUND", None),
     )

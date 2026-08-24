@@ -886,6 +886,93 @@ mod guards {
         );
     }
 
+    /// The till's writes go through the till's own door, never the back office's.
+    ///
+    /// The platform did not solve "this till holds no credential the POS write routes accept" by
+    /// loosening `/api/pos/{transactions,shifts,returns}` — those are genuine user-session routes
+    /// and loosening them would have been a CSRF hole. It gave the till **six audience-filtered
+    /// routes of its own** at `/api/pos/till/*`, behind `[terminalAuth, attendedOperatorAuth]`
+    /// (`pos.routes.ts:163-165`). The back-office mounts are deliberately untouched and still
+    /// answer a cookieless caller.
+    ///
+    /// # Why this needs a guard rather than a code review
+    ///
+    /// The failure it prevents is **silent in the worst way**. When the till's paths drifted
+    /// before, the symptom was a 404. Here the old routes still exist and still refuse, so a
+    /// regression produces no new error at all — the write simply keeps failing exactly as it did
+    /// when nobody had noticed. That is why this issue existed: the platform moved *toward* the
+    /// till and nothing told the till.
+    ///
+    /// # Both halves, and the second is the one that matters
+    ///
+    /// A guard that only forbids the old literals passes trivially against a till that has deleted
+    /// all six methods, or repointed them somewhere else again. So it also asserts the six are
+    /// **present**. A rule matched only against the population it was written from certifies that
+    /// population; the positive half is what makes this a ratchet instead.
+    #[test]
+    fn the_till_writes_through_the_till_mounts() {
+        /// The six routes the platform opened, exactly as `ApiClient` must spell them.
+        const TILL_WRITE_ROUTES: [&str; 6] = [
+            "\"/api/pos/till/transactions\"",
+            "\"/api/pos/till/transactions/{}/void\"",
+            "\"/api/pos/till/transactions/by-receipt/{}\"",
+            "\"/api/pos/till/shifts/start\"",
+            "\"/api/pos/till/shifts/{}/end\"",
+            "\"/api/pos/till/returns\"",
+        ];
+
+        /// The back-office mounts. Reachable with a user JWT, which this till does not hold.
+        const BACK_OFFICE_MOUNTS: [&str; 3] = [
+            "\"/api/pos/transactions",
+            "\"/api/pos/shifts",
+            "\"/api/pos/returns",
+        ];
+
+        let scanned = scanned_lines();
+        let client_lines: Vec<&SourceLine> = scanned
+            .iter()
+            .filter(|line| line.path.starts_with("crates/pos-api/src/"))
+            .collect();
+
+        assert!(
+            !client_lines.is_empty(),
+            "the scan found no lines under crates/pos-api/src/, so both halves below would pass \
+             against an empty corpus. That is the no-answer-wearing-an-answer's-clothes failure, \
+             not a green"
+        );
+
+        let regressed: Vec<String> = client_lines
+            .iter()
+            .filter(|line| BACK_OFFICE_MOUNTS.iter().any(|m| line.code.contains(m)))
+            .map(|line| format!("{}:{} {}", line.path, line.number, line.code.trim()))
+            .collect();
+
+        assert!(
+            regressed.is_empty(),
+            "the till names a back-office write mount in {} place(s). Those routes want a user \
+             JWT this till has never held; the till's own mounts are `/api/pos/till/*`. This does \
+             not fail loudly at runtime — the old route exists and refuses, so the symptom is \
+             unchanged and there is no new error to notice:\n  {}",
+            regressed.len(),
+            regressed.join("\n  ")
+        );
+
+        let missing: Vec<&str> = TILL_WRITE_ROUTES
+            .iter()
+            .filter(|route| !client_lines.iter().any(|line| line.code.contains(*route)))
+            .copied()
+            .collect();
+
+        assert!(
+            missing.is_empty(),
+            "{} of the six till write routes is/are named nowhere in `pos-api`. Either a write was \
+             deleted, or one was repointed away from the door the platform opened for it — and \
+             the negative half of this guard would pass either way:\n  {}",
+            missing.len(),
+            missing.join("\n  ")
+        );
+    }
+
     /// `pos-models` knows nothing about storage or the network.
     ///
     /// It is the apex of the dependency diamond — `pos-db`, `pos-api`, `pos-printing` and

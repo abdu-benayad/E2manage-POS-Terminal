@@ -1,10 +1,18 @@
-//! Transaction endpoints — `/api/pos/transactions/*`.
+//! Transaction endpoints — `/api/pos/till/transactions/*`.
 //!
-//! These routes are **`authMiddleware` + a `POS_*` permission** (`transaction.controller.ts:129`,
-//! `:145`, `:170`), which is a user JWT the till does not hold, and the unsafe ones are not on the
-//! CSRF exemption list. So none of this is reachable today; see
-//! `the-till-holds-no-credential-the-pos-write-routes-accept`. The shapes are repaired regardless,
-//! because an unaudited call site reads as correct to the next person.
+//! **The till's own door, not the back office's.** `/api/pos/transactions/*` is
+//! `authMiddleware` + a `POS_*` permission — a user JWT this till does not hold — and it is
+//! deliberately untouched, still answering a cookieless caller. The three routes here are the
+//! till-audienced half of the same route table, mounted at `pos.routes.ts:163` behind
+//! `[terminalAuth, attendedOperatorAuth]`: an enrolled device, then the cashier who proved a PIN
+//! on it.
+//!
+//! Each was confirmed against its `audiences` declaration rather than by substituting `till/` into
+//! the old path — `transaction.controller.ts:167` (`POST /`, `POS_CREATE`), `:186`
+//! (`GET /by-receipt/:receiptNumber`, `POS_READ`), `:212` (`POST /:transactionId/void`,
+//! `POS_VOID`). The sibling declarations at `:175`, `:198` and `:205` are `['back-office']` only,
+//! so `GET /`, `/undeducted-lines` and `/:transactionId` have no till mount and are not reachable
+//! from here whatever URL is written.
 
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -149,7 +157,7 @@ pub struct TransactionDetailPaymentDto {
 }
 
 impl ApiClient {
-    /// Records a completed transaction. `POST /api/pos/transactions`
+    /// Records a completed transaction. `POST /api/pos/till/transactions`
     ///
     /// Returns [`ApiResult`] rather than `anyhow::Result`: this route can refuse for reasons the
     /// caller must tell apart — a capability the operator does not hold, a product the catalogue
@@ -160,7 +168,7 @@ impl ApiClient {
         request: &CreateTransactionRequest,
     ) -> ApiResult<CreateTransactionResponse> {
         let response: Enveloped<_> = self
-            .post_or_failure("/api/pos/transactions", request)
+            .post_or_failure("/api/pos/till/transactions", request)
             .await?;
         Ok(response.into_inner())
     }
@@ -172,7 +180,7 @@ impl ApiClient {
         request: &VoidTransactionRequest,
     ) -> ApiResult<CreateTransactionResponse> {
         let path = format!(
-            "/api/pos/transactions/{}/void",
+            "/api/pos/till/transactions/{}/void",
             urlencoding::encode(transaction_id)
         );
         let response: Enveloped<_> = self.post_or_failure(&path, request).await?;
@@ -190,7 +198,7 @@ impl ApiClient {
         receipt_number: &str,
     ) -> ApiResult<TransactionDetailDto> {
         let path = format!(
-            "/api/pos/transactions/by-receipt/{}",
+            "/api/pos/till/transactions/by-receipt/{}",
             urlencoding::encode(receipt_number)
         );
         let response: Enveloped<_> = self.get_or_failure(&path).await?;
