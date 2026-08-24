@@ -7,8 +7,12 @@
 //! avoided — a refused PIN and an undecided one have no type in common, so no element can render
 //! them alike. [`notice`] carries the reasoning.
 
+pub mod enquiry;
 pub mod notice;
 pub mod strings;
 
+pub use enquiry::{
+    AuthAnswer, AuthEnquiry, Discardable, DispatchedEnquiry, EnquiryId, EnquiryIds, PairingCode,
+};
 pub use notice::{PadOffer, Recheck, RefusalNotice, SignedInAtTheTill, UndecidedNotice};
 pub use strings::Sentence;
