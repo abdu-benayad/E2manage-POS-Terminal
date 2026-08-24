@@ -695,7 +695,17 @@ impl PolicyService {
     // CONVENIENCE METHODS FOR COMMON POLICIES
     // =========================================================================
 
-    /// Gets the minimum PIN length policy
+    /// The shortest PIN this till should accept.
+    ///
+    /// # Why `Option<u32>` and not `u32`
+    ///
+    /// This read `range.min as u32` — a saturating float-to-integer cast with no error path, so a
+    /// bound the till could not make sense of became **a minimum PIN length of zero**. That is the
+    /// one member of this family that reaches a person: a till accepting an empty PIN.
+    ///
+    /// `to_u32()` returns `None` where the cast invented a number. A minimum length the till could
+    /// not determine is not zero, and the type now says so rather than leaving it to whoever
+    /// writes the next caller.
     pub async fn get_min_pin_length(&self) -> Option<u32> {
         let policies = self.policies.read().await;
         let policy = policies.get("MIN_PIN_LENGTH")?;
@@ -712,18 +722,28 @@ impl PolicyService {
         let PolicyValue::Range(range) = &policy.value else {
             return None;
         };
-        // Return min as default, or could return a default value from range
         range.configured().to_u32()
     }
 
-    /// Gets the maximum offline transaction amount
-    pub async fn get_offline_max_amount(&self) -> Option<f64> {
+    /// The largest sale this till may complete while offline.
+    ///
+    /// # `Decimal`, and why that is not a formality here
+    ///
+    /// This is money — the value of a sale — and this codebase's first rule is that money is never
+    /// a float. It returned `Option<f64>` because the bound was decoded with `serde_json`'s
+    /// `as_f64()` at the point of use, back when the policy value arrived untyped and there was
+    /// nowhere to declare what it meant.
+    ///
+    /// `None` means the till cannot say: no such policy, or a value it could not read. **It does
+    /// not mean zero**, and a caller must not treat it as one — an offline ceiling of zero refuses
+    /// every sale, while an unknown ceiling is a decision for whoever owns the offline path.
+    pub async fn get_offline_max_amount(&self) -> Option<Decimal> {
         let policies = self.policies.read().await;
         let policy = policies.get("OFFLINE_MAX_AMOUNT")?;
         let PolicyValue::Range(range) = &policy.value else {
             return None;
         };
-        range.configured().to_f64()
+        Some(range.configured())
     }
 
     /// Gets the heartbeat interval in seconds
