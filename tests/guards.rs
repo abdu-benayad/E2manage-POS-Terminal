@@ -2018,4 +2018,191 @@ mod guards {
             offenders.join("\n  ")
         );
     }
+
+    /// Every column of `terminal_registration` is either cleared by `clear_registration` or
+    /// exempt on the record.
+    ///
+    /// # Why this exists
+    ///
+    /// `clear_registration` is the operation that severs this terminal from a company. It named
+    /// five of the seven columns that describe an enrolment and left two standing: `company_name`
+    /// since schema V3 and `license_key` since V8. **Five schema versions apart, one mechanism** —
+    /// a hand-maintained SQL column list that nobody revisits when a column is added — and nothing
+    /// caught either, because `clear_tenant_data` empties nineteen tables first and the appearance
+    /// was a thorough wipe. `license_key` was a live cross-tenant credential leak.
+    ///
+    /// Fixing both instances does not stop the third. This does.
+    ///
+    /// # The column set is read from the schema, never restated here
+    ///
+    /// A guard that carries its own copy of a column list has the defect it is guarding against:
+    /// it would go stale the same way and by the same mechanism. Both the `CREATE TABLE` and every
+    /// `ALTER TABLE … ADD COLUMN` are parsed, because `license_key` arrived by the second route and
+    /// a guard reading only the first would have been blind to the very column that motivated it.
+    ///
+    /// # The contract with the sum-type work, stated here rather than in a plan
+    ///
+    /// If `clear_registration`'s SQL is ever relocated — into a row-lifecycle type, or into
+    /// `pos-db` — **this guard turns red rather than silent**, because control 1 below asserts the
+    /// extraction still finds a `SET` list. That is deliberate. A guard whose passing result is an
+    /// empty set cannot tell *clean* from *blind*, and this one would otherwise pass forever the
+    /// moment the statement it inspects moves. Whoever relocates that SQL owns updating this.
+    ///
+    /// # What the extractor matches, learned from a mutation that did not fire
+    ///
+    /// It locates the function by the **prefix** `pub fn clear_registration`. The first attempt to
+    /// mutate toward the blind spot renamed it to `clear_registration_RENAMED` — which still
+    /// contains that prefix, so the guard passed and the probe proved nothing. **A probe that does
+    /// not fire is a claim about the probe before it is a claim about the guard.** Renaming to a
+    /// name sharing no prefix turns it red, as intended.
+    ///
+    /// The residual property, stated so nobody rediscovers it: a rename that *extends* the name is
+    /// followed silently, and a second function whose name starts with the same prefix, declared
+    /// earlier in the file, would be read instead. Neither is true today.
+    ///
+    /// `tests/guards.rs` lives in the **root package**, so `cargo test -p pos-services` does not
+    /// build it. Run `cargo test -p e2manage-pos-terminal --test guards`.
+    #[test]
+    fn clear_registration_accounts_for_every_column_terminal_registration_has() {
+        /// Columns deliberately NOT cleared, each with the reason it is exempt.
+        ///
+        /// Adding a column here is a decision on the record. Adding one to satisfy a red guard
+        /// without a reason is the defect wearing the guard's clothes.
+        const EXEMPT: [(&str, &str); 2] = [
+            (
+                "id",
+                "the singleton discriminator — it appears in the WHERE, and clearing it would \
+                 destroy the row rather than the enrolment",
+            ),
+            (
+                "hardware_id",
+                "identifies the DEVICE, not the enrolment; it is NOT NULL and must survive so the \
+                 platform sees a known device re-enrolling rather than a new one",
+            ),
+        ];
+
+        let schema = fs::read_to_string(repo_root().join("crates/pos-db/src/schema.rs"))
+            .expect("cannot read crates/pos-db/src/schema.rs");
+
+        // Columns from `CREATE TABLE … terminal_registration ( … )`.
+        let mut columns: Vec<String> = Vec::new();
+        if let Some(start) = schema.find("CREATE TABLE IF NOT EXISTS terminal_registration (") {
+            let body = &schema[start..];
+            let end = body.find(");").expect("the CREATE TABLE is not terminated");
+            for line in body[..end].lines().skip(1) {
+                let trimmed = line.trim();
+                if trimmed.is_empty() || trimmed.starts_with("--") {
+                    continue;
+                }
+                if let Some(name) = trimmed.split_whitespace().next() {
+                    columns.push(name.trim_matches(',').to_string());
+                }
+            }
+        }
+
+        // …plus every column added later by migration. `license_key` arrives this way.
+        for line in schema.lines() {
+            let trimmed = line.trim();
+            if let Some(rest) = trimmed.strip_prefix("ALTER TABLE terminal_registration ADD COLUMN")
+            {
+                if let Some(name) = rest.split_whitespace().next() {
+                    columns.push(name.to_string());
+                }
+            }
+        }
+
+        // The `SET` list of `clear_registration`, read from the function itself.
+        let service =
+            fs::read_to_string(repo_root().join("crates/pos-services/src/pairing_service.rs"))
+                .expect("cannot read crates/pos-services/src/pairing_service.rs");
+        let cleared: Vec<String> = match service.find("pub fn clear_registration") {
+            Some(at) => {
+                let body = &service[at..];
+                let update = body
+                    .find("UPDATE terminal_registration")
+                    .expect("clear_registration issues no UPDATE on terminal_registration");
+                let where_at = body[update..]
+                    .find("WHERE")
+                    .expect("the UPDATE in clear_registration has no WHERE clause");
+                body[update..update + where_at]
+                    .lines()
+                    .filter_map(|line| {
+                        let trimmed = line.trim().trim_start_matches("SET ").trim();
+                        trimmed
+                            .split_once(" = ")
+                            .map(|(name, _)| name.trim().to_string())
+                    })
+                    .collect()
+            }
+            None => Vec::new(),
+        };
+
+        // --- Control 1: the extraction can still see. -----------------------------------------
+        // An empty result here is indistinguishable from a clean tree, so the guard proves it
+        // found something before it asserts it found nothing wrong.
+        assert!(
+            !columns.is_empty(),
+            "no columns were extracted for terminal_registration — the schema moved or its shape \
+             changed, and this guard is now blind rather than clean"
+        );
+        assert!(
+            !cleared.is_empty(),
+            "no SET list was extracted from clear_registration — the statement was renamed or \
+             relocated, and this guard would otherwise pass forever while checking nothing. \
+             Whoever moved it owns updating this guard"
+        );
+
+        // --- Control 2: the detector fires on a known positive. -------------------------------
+        // Two halves, and the canary is deliberately NOT `license_key`. That column is the one a
+        // regression is most likely to drop, and using it here would make a real omission report
+        // "the extractor is broken" instead of "you dropped a column" — a control that mislabels
+        // the defect it was built to expose.
+        //
+        // (a) everything extracted is a real column of this table. A parser grabbing text from the
+        //     wrong region returns names the schema does not have, and this catches that without
+        //     depending on any single column surviving.
+        let strays: Vec<&String> = cleared.iter().filter(|c| !columns.contains(c)).collect();
+        assert!(
+            strays.is_empty(),
+            "the SET-list extractor produced {strays:?}, which are not columns of \
+             terminal_registration — it is reading the wrong region, not the SET list"
+        );
+
+        // (b) the column whose clearing IS the definition of de-registration is present. If this
+        //     is ever absent the till has a far worse problem than a stale guard.
+        assert!(
+            cleared.iter().any(|c| c == "secret"),
+            "the extractor did not find `secret` in clear_registration's SET list; either the \
+             extractor is broken or de-registration has stopped clearing the terminal secret"
+        );
+
+        // --- Control 3: the detector does NOT fire on a known negative. ------------------------
+        // Without this, a detector broken OPEN passes controls 1 and 2 and then reports every
+        // column as cleared — which reads as a clean run rather than as a broken instrument.
+        assert!(
+            !cleared.iter().any(|c| c == "hardware_id"),
+            "the extractor claims clear_registration clears `hardware_id`, which it must not — the \
+             extractor is matching more than the SET list"
+        );
+
+        // --- The assertion this guard is named for. -------------------------------------------
+        let unaccounted: Vec<&String> = columns
+            .iter()
+            .filter(|c| {
+                !cleared.iter().any(|x| &x == c)
+                    && !EXEMPT.iter().any(|(name, _)| *name == c.as_str())
+            })
+            .collect();
+
+        assert!(
+            unaccounted.is_empty(),
+            "terminal_registration has {} column(s) that clear_registration neither clears nor \
+             exempts: {:?}.\n\nThis is how `company_name` (schema V3) and `license_key` (V8) each \
+             survived a de-registration whose whole purpose is severing the terminal from a \
+             company. Either add the column to the SET list, or add it to EXEMPT with the reason \
+             it must survive.",
+            unaccounted.len(),
+            unaccounted
+        );
+    }
 }
