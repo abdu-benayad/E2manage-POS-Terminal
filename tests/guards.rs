@@ -1565,4 +1565,245 @@ mod guards {
             );
         }
     }
+
+    // ========================================================================
+    // The pact artifact's matcher paths
+    // ========================================================================
+
+    /// The artifact the platform replays. Read here, not in `crates/pos-contract`, on purpose:
+    /// that crate is excluded from the workspace (`Cargo.toml:35`), so `cargo test --workspace`
+    /// cannot see its suite — and the failure this guards is a **hand-edited or merge-polluted
+    /// artifact**, whose author is exactly the person who did not run the generator.
+    const PACT_ARTIFACT: &str = "crates/pos-contract/pacts/e2manage-pos-terminal-wadi-dms-api.json";
+
+    /// How a matcher path relates to the body declared beside it.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum PathStanding {
+        /// Every segment resolved against the declared body.
+        Resolves,
+        /// The unresolvable tail `[*].*` over an array of **scalars**, which
+        /// `EachLike::extract_matching_rules` emits unconditionally — see the test's doc comment.
+        LibraryEachLikeOverScalars,
+        /// Unresolvable for any other reason. A rule that can never fire.
+        Drift,
+    }
+
+    /// One `.`-separated step of a matcher path: a key, then any number of index suffixes.
+    struct Step<'a> {
+        key: &'a str,
+        indexes: usize,
+    }
+
+    fn parse_path(path: &str) -> Vec<Step<'_>> {
+        path.trim_start_matches('$')
+            .split('.')
+            .filter(|segment| !segment.is_empty())
+            .map(|segment| {
+                let key = segment.split('[').next().unwrap_or(segment);
+                Step {
+                    key,
+                    indexes: segment.matches('[').count(),
+                }
+            })
+            .collect()
+    }
+
+    /// Walk a matcher path against a declared body **literally**, without collapsing `[*]` or `*`.
+    ///
+    /// The collapsing is the whole hazard: normalising `heldBy[*].*` to `heldBy` makes it resolve,
+    /// and a checker that does so reports a clean artifact while looking straight at the case it
+    /// exists to find.
+    fn stand_path(path: &str, body: Option<&serde_json::Value>) -> PathStanding {
+        let Some(body) = body else {
+            return PathStanding::Drift;
+        };
+        let steps = parse_path(path);
+        let mut node = body;
+
+        for (position, step) in steps.iter().enumerate() {
+            // A bare `*` means "any key of this object". It resolves only over an object.
+            let descended = if step.key == "*" {
+                match node.as_object().and_then(|map| map.values().next()) {
+                    Some(child) => child,
+                    None => return tail_standing(&steps, position),
+                }
+            } else {
+                match node.get(step.key) {
+                    Some(child) => child,
+                    None => return tail_standing(&steps, position),
+                }
+            };
+
+            node = descended;
+            for _ in 0..step.indexes {
+                match node.as_array().and_then(|items| items.first()) {
+                    Some(element) => node = element,
+                    None => return tail_standing(&steps, position),
+                }
+            }
+        }
+
+        PathStanding::Resolves
+    }
+
+    /// Classify a path that stopped resolving at `position`.
+    ///
+    /// The one tolerated shape is a final `*` step, reached because the step before it carried an
+    /// index into an array whose elements are not objects. Anything else is drift.
+    fn tail_standing(steps: &[Step<'_>], position: usize) -> PathStanding {
+        let is_final_wildcard = position + 1 == steps.len() && steps[position].key == "*";
+        let previous_indexed = position
+            .checked_sub(1)
+            .is_some_and(|before| steps[before].indexes > 0);
+
+        if is_final_wildcard && previous_indexed {
+            PathStanding::LibraryEachLikeOverScalars
+        } else {
+            PathStanding::Drift
+        }
+    }
+
+    /// Every `(path, body)` pair the artifact declares, flattened across interactions and parts.
+    fn artifact_rule_paths(
+        artifact: &serde_json::Value,
+    ) -> Vec<(String, String, Option<&serde_json::Value>)> {
+        let mut found = Vec::new();
+        for interaction in artifact["interactions"].as_array().into_iter().flatten() {
+            let description = interaction["description"].as_str().unwrap_or("<unnamed>");
+            for part in ["request", "response"] {
+                let body = interaction[part].get("body");
+                let rules = interaction[part]["matchingRules"].get("body");
+                for path in rules.and_then(|r| r.as_object()).into_iter().flatten() {
+                    found.push((description.to_string(), path.0.clone(), body));
+                }
+            }
+        }
+        found
+    }
+
+    /// Every matching rule in the pact points at a key the interaction's own body declares.
+    ///
+    /// # The failure this exists for
+    ///
+    /// A matching rule attached to a path the body does not contain **is silence, not an error**.
+    /// Measured 2026-08-24 against the real verifier: a rule at `$.error.details.notAField` passes,
+    /// exit 0, unmentioned in the output, while the same unsatisfiable rule at a valid path fails
+    /// loudly and names the path. So a rule that can never fire is indistinguishable from coverage,
+    /// and the pact would report green while pinning nothing.
+    ///
+    /// Regeneration **merges** on `(description, providerState)`, so an interaction whose body
+    /// changes while an old entry survives can leave a rule pointing at a key the new body lost.
+    /// That is the mechanism; a hand-edited artifact is the other.
+    ///
+    /// # Why this is not "no absent paths"
+    ///
+    /// `EachLike::extract_matching_rules` (`pact_consumer-1.4.10/src/patterns/special_rules.rs:152-158`)
+    /// pushes `[*]` then `*` and adds a `Type` rule there **unconditionally** — whether or not the
+    /// elements are objects. So every `each_like!` over an array of strings emits a path with a
+    /// field wildcard under a scalar, which cannot resolve and never will. pact_consumer's own
+    /// documented `each_like!("tag")` example produces it. It is library output, not drift, and a
+    /// guard that refused it would fail on a correct artifact.
+    ///
+    /// # The trap, and why the tolerated case is asserted as a POSITIVE
+    ///
+    /// The obvious implementation of this check normalises `[*]` and `*` away, which collapses
+    /// `$.error.details.heldBy[*].*` to `heldBy` — and `heldBy` resolves. Written that way, the
+    /// scan looks straight at the one path in this artifact that does not resolve and reports it
+    /// clean. That version was written while reviewing this guard and did exactly that.
+    ///
+    /// So it is not enough to assert that nothing drifts. This asserts that the
+    /// `LibraryEachLikeOverScalars` class is **non-empty** — a normalising walker would classify
+    /// that path as `Resolves`, the count would fall to zero, and this test would fail. The
+    /// tolerated case is the control for the walker that tolerates it.
+    ///
+    /// # Guarding the guard
+    ///
+    /// A corpus assertion, both classes asserted non-empty, and two mutations checked in-process:
+    /// a fabricated absent key must read as drift, and a deeper path under the tolerated tail must
+    /// **also** read as drift, so the tolerance is exactly that two-step tail and not a prefix rule
+    /// anything can hide under.
+    #[test]
+    fn every_matcher_in_the_pact_points_at_a_key_its_body_declares() {
+        let path = repo_root().join(PACT_ARTIFACT);
+        let text = fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("{PACT_ARTIFACT} could not be read: {e}"));
+        let artifact: serde_json::Value =
+            serde_json::from_str(&text).expect("the pact artifact is not valid JSON");
+
+        let rules = artifact_rule_paths(&artifact);
+
+        // Guarding the guard: a scan over an empty corpus reports no drift for the same reason a
+        // correct artifact does.
+        assert!(
+            artifact["interactions"]
+                .as_array()
+                .is_some_and(|i| !i.is_empty()),
+            "{PACT_ARTIFACT} declares no interactions, so every assertion below is vacuous"
+        );
+        assert!(
+            rules.len() >= 10,
+            "only {} matching rules found in {PACT_ARTIFACT}; the reader has stopped seeing them \
+             and this guard is passing over an empty set",
+            rules.len()
+        );
+
+        let mut resolving = 0usize;
+        let mut library = 0usize;
+        let mut drifted = Vec::new();
+        for (description, rule_path, body) in &rules {
+            match stand_path(rule_path, *body) {
+                PathStanding::Resolves => resolving += 1,
+                PathStanding::LibraryEachLikeOverScalars => library += 1,
+                PathStanding::Drift => drifted.push(format!("  {rule_path}  <- {description}")),
+            }
+        }
+
+        assert!(
+            drifted.is_empty(),
+            "{} matching rule(s) in {PACT_ARTIFACT} point at a path their own declared body does \
+             not contain. Such a rule NEVER FIRES and the verifier reports nothing about it, so \
+             the interaction pins less than it appears to:\n{}\n\nIf an interaction was edited: \
+             regeneration merges on `(description, providerState)`, so `rm` the artifact and \
+             re-run `cargo test` in crates/pos-contract rather than editing the JSON.",
+            drifted.len(),
+            drifted.join("\n")
+        );
+
+        assert!(
+            resolving > 0,
+            "no matcher path resolved at all, which means the walker is broken rather than the \
+             artifact clean"
+        );
+
+        // The anti-normalisation control. See this test's doc comment: a walker that collapses
+        // `[*]` and `*` classifies the library's own output as `Resolves`, and this count falls to
+        // zero while `drifted` stays empty — a clean-looking pass over a blind scan.
+        assert!(
+            library > 0,
+            "no path classified as the library's `[*].*`-over-scalars shape. Either the artifact \
+             genuinely contains no `each_like!` over an array of scalars — in which case delete \
+             this assertion deliberately — or the walker has started normalising `[*]`/`*` away, \
+             which makes the drift check above blind in exactly the case it exists to catch"
+        );
+
+        // Mutation 1: a fabricated absent key must read as drift.
+        let sample = &rules
+            .iter()
+            .find(|(_, _, body)| body.is_some())
+            .expect("no interaction declares a body")
+            .2;
+        assert_eq!(
+            stand_path("$.error.details.notAField", *sample),
+            PathStanding::Drift,
+            "a fabricated absent path did not read as drift, so the check above cannot fail"
+        );
+
+        // Mutation 2: the tolerance is the two-step tail exactly, not a prefix anything hides under.
+        assert_eq!(
+            stand_path("$.error.details.heldBy[*].*.deeper", *sample),
+            PathStanding::Drift,
+            "a path deeper than the tolerated `[*].*` tail was tolerated, so the exemption is a \
+             prefix rule rather than the one library shape it is meant to admit"
+        );
+    }
 }
