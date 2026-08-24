@@ -687,13 +687,33 @@ impl PairingService {
         Ok(())
     }
 
-    /// Gets the stored platform license key
+    /// Gets the stored platform license key, if this till is enrolled.
+    ///
+    /// # The `is_registered` scope is defence in depth and is NOT what closes the leak
+    ///
+    /// Read this before deleting anything from [`Self::clear_registration`]'s `SET` list on the
+    /// grounds that "the read is guarded". It is not enough on its own, and the order of events is
+    /// why:
+    ///
+    /// 1. the till is enrolled with company A and stores A's key;
+    /// 2. [`Self::clear_registration`] runs — `is_registered` goes to 0;
+    /// 3. the till enrols with company B — **`is_registered` is back to 1**;
+    /// 4. nothing has revisited `license_key` in between, because its only writer is
+    ///    [`Self::save_platform_license`], reached only from `register_with_platform`.
+    ///
+    /// At step 4 this filter passes and would hand back **A's key while the till is enrolled with
+    /// B**. Clearing the column in step 2 is what actually prevents that; this scope only covers
+    /// the window where the column holds a value and no enrolment is in force.
+    ///
+    /// [`Self::get_credentials`] has carried the same scope on the same table for far longer. The
+    /// right shape was three hundred lines away from the wrong one, which makes this a missing
+    /// constraint rather than a knowledge gap.
     pub fn get_platform_license(&self) -> Result<Option<String>> {
         let conn = self.db.connection();
         let conn = conn.lock();
 
         let result = conn.query_row(
-            "SELECT license_key FROM terminal_registration WHERE id = 1",
+            "SELECT license_key FROM terminal_registration WHERE id = 1 AND is_registered = 1",
             [],
             |row| row.get::<_, Option<String>>(0),
         );
@@ -957,6 +977,41 @@ mod tests {
         assert_eq!(
             hardware, "TEST-HW-123",
             "the hardware id is not part of an enrolment and must survive de-registration"
+        );
+    }
+
+    /// A licence key sitting on a row that is not enrolled must not be handed back.
+    ///
+    /// **This is the only state that distinguishes the guarded read from the unguarded one**, and
+    /// the scenario the task originally specified — enrol, store, clear, re-enrol, assert `None` —
+    /// no longer does. Once `clear_registration` clears `license_key`, that sequence answers
+    /// `None` whether or not the `WHERE` clause carries `AND is_registered = 1`: a test that
+    /// cannot come out differently.
+    ///
+    /// The reachable discriminating state is a licence with no enrolment behind it.
+    /// `save_platform_license` writes `license_key` and never touches `is_registered`, so it is
+    /// one call away.
+    #[test]
+    fn an_unenrolled_till_does_not_hand_back_a_licence_key() {
+        let service = create_test_service();
+        service
+            .save_platform_license("ORPHAN-LICENCE-9999")
+            .unwrap();
+
+        assert!(
+            !service.is_registered().unwrap(),
+            "the fixture is wrong: this test needs an UNenrolled till"
+        );
+
+        // Positive control. Without it this passes against a column that was never written, and
+        // the assertion below would be about an empty row rather than about the read's scope.
+        let (_, licence, _) = enrolment_columns(&service);
+        assert_eq!(licence.as_deref(), Some("ORPHAN-LICENCE-9999"));
+
+        assert_eq!(
+            service.get_platform_license().unwrap(),
+            None,
+            "the till handed back a platform licence key while holding no enrolment"
         );
     }
 
