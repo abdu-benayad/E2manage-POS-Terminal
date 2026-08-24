@@ -304,6 +304,45 @@
       }
     },
     {
+      "description": "a pairing-status request for a pending re-pair",
+      "providerStates": [
+        {
+          "name": "a pending re-pair request with the code PACTREPAIRCODE"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/api/pos/terminals/pairing/status/PACTREPAIRCODE"
+      },
+      "response": {
+        "body": {
+          "data": {
+            "expiresAt": "2026-08-24T12:00:00.000Z",
+            "isRePair": true,
+            "pairingCode": "PACTREPAIRCODE",
+            "status": "PENDING"
+          },
+          "success": true
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "matchingRules": {
+          "body": {
+            "$.data.expiresAt": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      }
+    },
+    {
       "description": "a terminal-authenticated request with an unverifiable token",
       "providerStates": [
         {

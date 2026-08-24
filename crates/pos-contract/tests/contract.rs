@@ -41,9 +41,10 @@
 use pact_consumer::prelude::*;
 use pos_api::Enveloped;
 use pos_api::{
-    ApiErrorResponse, HeartbeatRequest, HeartbeatResponse, LoginTerminalResponse, RefreshResponse,
-    ServerErrorCode,
+    ApiErrorResponse, HeartbeatRequest, HeartbeatResponse, LoginTerminalResponse, PairingStatus,
+    PairingStatusResponse, RefreshResponse, ServerErrorCode,
 };
+use pos_models::HardwareEnrolment;
 
 /// The nested error envelope, which every refusal the till handles is carried in.
 ///
@@ -213,6 +214,109 @@ async fn a_pairing_request_returns_a_code_to_display() {
     let body: serde_json::Value = response.json().await.expect("the response was not json");
     assert_eq!(body["success"], true);
     assert_eq!(body["data"]["hardwareId"], HARDWARE_ID);
+}
+
+/// The one enrolment signal the till can read: `isRePair` on the pairing-status poll.
+///
+/// # Why the status route and not the pairing *request*
+///
+/// The obvious place to pin *"the platform knows this hardware"* is the request route — post a
+/// pairing request from already-enrolled hardware and assert the answer says so. **That
+/// interaction cannot come out differently, so it is not worth writing.**
+/// `pairing.handler.ts:38-42` builds `RequestPairingResult` from three fields, and
+/// `terminal.controller.ts:667-675` sends exactly those three, so the 200 is byte-identical for
+/// a first enrolment and a re-pair. An expectation there would hold whatever the platform did
+/// with the flag, while its name reported that the flag was pinned — worse than no pin, because
+/// a named check retires the question.
+///
+/// `terminal.controller.ts:703` is the **sole** `isRePair` occurrence in that controller, so the
+/// status poll is the only place this claim is falsifiable. That is the whole reason for the
+/// choice, and it is why the request-side pin stays deferred rather than written weakly.
+///
+/// # What is a literal and what is not
+///
+/// `status` and `isRePair` are literals because together they *are* the claim: a request that is
+/// still pending and reports itself a re-pair. Splitting them would pin two facts neither of
+/// which is the one the till acts on. `pairingCode` is a literal because the provider state
+/// chose it. `expiresAt` is `like!` — the fixture mints it as `now + 1 hour`, so any literal
+/// would be a timestamp that is wrong by the time it is read.
+///
+/// # The sibling this is only load-bearing beside
+///
+/// [`HardwareEnrolment`] defaults to `Undetermined` when `isRePair` is absent, deliberately: a
+/// server predating the platform's re-pair change asserts no negative. That default is exactly
+/// what makes a *vanished* field quiet here — this interaction alone cannot tell a renamed field
+/// from a removed one. It is paired with
+/// `pos-api/src/auth.rs::an_absent_is_re_pair_is_undetermined_not_a_denial`, which pins the
+/// absence against a `true` positive control, and with the platform's own state handler
+/// (`provider-states.ts`), which writes `isRePair: true` on the row.
+///
+/// Verified by mutation rather than assumed: flipping the fixture's `isRePair` to `false` turns
+/// this interaction red on the platform's `test:contracts:till`.
+#[tokio::test]
+async fn a_pending_re_pair_says_so_on_the_status_poll() {
+    // Chosen by the platform's provider state, not here — see `PACT_REPAIR_PAIRING_CODE`.
+    const REPAIR_PAIRING_CODE: &str = "PACTREPAIRCODE";
+
+    let pact = PactBuilder::new("e2manage-pos-terminal", "wadi-dms-api")
+        .with_output_dir("./pacts")
+        .interaction(
+            "a pairing-status request for a pending re-pair",
+            "",
+            |mut i| {
+                i.given(format!(
+                    "a pending re-pair request with the code {REPAIR_PAIRING_CODE}"
+                ));
+                i.request.get().path(format!(
+                    "/api/pos/terminals/pairing/status/{REPAIR_PAIRING_CODE}"
+                ));
+                i.response
+                    .status(200)
+                    .header("content-type", "application/json")
+                    .json_body(json_pattern!({
+                        "success": true,
+                        "data": {
+                            "status": "PENDING",
+                            "pairingCode": REPAIR_PAIRING_CODE,
+                            "expiresAt": like!("2026-08-24T12:00:00.000Z"),
+                            "isRePair": true,
+                        }
+                    }));
+                i
+            },
+        )
+        .start_mock_server(None, None);
+
+    let url = format!(
+        "{}api/pos/terminals/pairing/status/{REPAIR_PAIRING_CODE}",
+        pact.url()
+    );
+    let response = reqwest::Client::new()
+        .get(&url)
+        .send()
+        .await
+        .expect("the mock server did not answer");
+
+    assert_eq!(response.status().as_u16(), 200);
+
+    // `Enveloped<PairingStatusResponse>` is the till's actual read path
+    // (`auth.rs::check_pairing_status`), not a restatement of it. The two assertions below are
+    // about wiring that has no other test on this route: `PENDING` reaching a manual
+    // `Deserialize` impl, and `isRePair` reaching a field named `enrolment` — which only works
+    // because of an explicit `rename`, `rename_all = "camelCase"` being a no-op on a
+    // single-word name.
+    let status: PairingStatusResponse = response
+        .json::<Enveloped<PairingStatusResponse>>()
+        .await
+        .expect("the till's PairingStatusResponse could not parse the status payload")
+        .into_inner();
+
+    assert_eq!(status.status, PairingStatus::Pending);
+    assert_eq!(
+        status.enrolment,
+        HardwareEnrolment::AlreadyEnrolled,
+        "the platform said this pairing request is a re-pair and the till read it otherwise"
+    );
 }
 
 /// A terminal-authenticated route reached with no `X-Terminal-Token` at all.
@@ -774,7 +878,9 @@ async fn a_till_write_route_without_a_terminal_token(
         .json()
         .await
         .expect("the till's ApiErrorResponse could not parse the refusal");
-    let detail = refusal.error.expect("the refusal carried no `error` object");
+    let detail = refusal
+        .error
+        .expect("the refusal carried no `error` object");
     assert_eq!(detail.code, ServerErrorCode::PosTerminalTokenMissing);
     assert!(
         detail.code.is_recognised(),
@@ -886,7 +992,7 @@ async fn the_till_return_route_exists_behind_terminal_auth() {
 fn the_artifact_pins_exactly_the_interactions_this_crate_declares() {
     /// Raise this in the same commit that adds an interaction, updates the coverage table in
     /// `e2manage/doc/pos-till-server-contract`, and copies the artifact to the platform.
-    const EXPECTED: usize = 13;
+    const EXPECTED: usize = 14;
 
     let path = std::path::Path::new("./pacts/e2manage-pos-terminal-wadi-dms-api.json");
     let Ok(text) = std::fs::read_to_string(path) else {

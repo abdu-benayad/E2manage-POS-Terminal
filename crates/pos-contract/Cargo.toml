@@ -15,6 +15,12 @@ publish = false
 # changes, this test stops compiling, which is the point.
 pos-api = { path = "../pos-api" }
 
+# The domain vocabulary the transport DTOs are written in. Costs nothing in the
+# resolve — `pos-api` already depends on it — and it is how every other consumer
+# names these types (`pos-services/src/pairing_service.rs:17`,
+# `pos-services/src/auth_service.rs:14`) rather than through a re-export.
+pos-models = { path = "../pos-models" }
+
 # `default-features = false` drops plugins, tls, xml, multipart and colour.
 # Do not restore them — `plugins` alone pulls the plugin driver, prost and tonic.
 pact_consumer = { version = "1.4.10", default-features = false }
