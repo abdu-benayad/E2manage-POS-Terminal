@@ -226,26 +226,44 @@ something the till can land alone.
   *is* verified — and a rule whose path the *response* lacks is never checked. **The only way to know a rule is attached is to make it fail on purpose**: mutate
   it to something unsatisfiable, watch it go red, restore.
 
-  **How that arises here is not a typo, and the difference matters.** Every matcher path in this
-  crate is *derived from where the matcher sits in the declared body* — `json_pattern!` (14 uses)
-  and `like!` (35) are the only matcher constructors, and no API here takes an explicit rule path.
-  Measured 2026-08-24: **0 of 14** committed rule paths are absent from their own declared body, so
-  the paths cannot drift from the body through this API. The live route is instead **a declared body
-  that is wrong about the response shape** — believe `heldBy` sits at `$.error.heldBy`, declare it
-  there, and the matcher attaches to a path the real response does not have.
+  **How that arises here is not a typo, and the difference matters.** No API in this crate takes an
+  explicit rule path — a matcher's path is *derived from where the matcher sits in the declared
+  body* — so you cannot name a path and therefore cannot name a wrong one. The live route is instead
+  **a declared body that is wrong about the response shape**: believe `heldBy` sits at
+  `$.error.heldBy`, declare it there, and the matcher attaches to a path the real response lacks.
+
+  **That paragraph used to end with "so the paths cannot drift from the body through this API,"
+  measured as 0 of 14. It is refuted, and how it was wrong is the transferable part.**
+  `EachLike::extract_matching_rules` emits `$.error.details.heldBy[*].*` **unconditionally** for
+  scalar elements — a path absent from the declared body, written by the library rather than by
+  anyone. The original measurement was taken over a sample containing no `each_like!`, so it
+  established a property of *that sample* and was stated as a property of *the builder*: a survey
+  certifying the survey, in the same document that warns about it. **Do not repeat the count.** The
+  constructor set is not closed — `each_like!` was the third to appear and there is no reason to
+  think it is the last — and a fresh count regenerates the same wrong conclusion with a bigger
+  number.
+
+  **And the obvious check is blind to precisely this case.** A script resolving each rule path
+  against its declared body has to decide what `[*]` and `*` mean; normalise them away and
+  `$.error.details.heldBy[*].*` collapses to `heldBy`, which resolves — so the scan reports zero
+  absent paths while looking straight at the counter-example. Verified 2026-08-24: it does. A
+  checker for this must compare the *literal* path against the body's actual depth, and until one
+  exists, treat "no absent paths" as **"my resolver normalised them,"** not as a result.
 
   **That route is caught, measured 2026-08-24.** Renaming `sessionToken` → `sessionTokan` in a
   declared body *and moving its rule with it* — exactly what a `json_pattern!` typo produces — fails
   the verifier: `$.data -> Actual map is missing the following keys: sessionTokan`. So the two
   instruments are complementary and neither subsumes the other: **a path-vs-body checker sees
   rule-vs-*declared* drift; the verifier sees declared-vs-*actual* drift.** The silent case needs the
-  rule to point somewhere the declared body does not — which the builder cannot produce, leaving
-  hand-edits and the `(description, providerState)` merge as the routes in.
+  rule to point somewhere the declared body does not — **which the builder does produce**, via
+  `each_like!`, in addition to hand-edits and the `(description, providerState)` merge.
 
-  **That protection is conditional, and the condition is checkable.** This artifact is pact spec
-  `3.0.0` and **all 36 of its matchers are plain `type`** (30 on responses, 6 on requests — the two
-  counts name different populations, not a disagreement), with **zero** `eachKey`/`eachValue` nodes.
-  Control: injecting a `regex` matcher makes the scan report it, so the reading discriminates.
+  **That protection is conditional, and the condition is checkable — by re-running the scan, never
+  by reading a number here.** As of 2026-08-24 the artifact is pact spec `3.0.0`, every matcher in it
+  is plain `type`, and it holds **zero** `eachKey`/`eachValue` nodes. The counts that used to sit in
+  this sentence are gone on purpose: they moved twice in one day as interactions landed, and a stale
+  total reads as a measurement. Control: injecting a `regex` matcher makes the scan report it, so the
+  reading discriminates.
   Adding an each-key matcher switches missing-key detection off **at that node** — the rule directly
   below — so this protection is re-checked, never assumed.
 - **A pact detects a field *moving*, never one *appearing*.** It cannot police data
