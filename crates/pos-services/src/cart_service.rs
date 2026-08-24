@@ -1011,4 +1011,75 @@ mod tests {
 
         assert_eq!(service.item_count(), Decimal::from(3));
     }
+
+    // ------------------------------------------------------------------------------------------
+    // Crash recovery. Nothing covered this path before task 09 touched both ends of it.
+    // ------------------------------------------------------------------------------------------
+
+    fn persistent_service() -> (Arc<Database>, CartService) {
+        let db = Arc::new(Database::in_memory().expect("an in-memory database"));
+        {
+            let conn = db.connection();
+            let conn = conn.lock();
+            pos_db::run_migrations(&conn).expect("migrations");
+        }
+        let service = CartService::with_persistence(Arc::clone(&db));
+        (db, service)
+    }
+
+    /// What was rung up before the crash comes back, and so does who rang it up.
+    ///
+    /// `persist` and `restore` are the two ends of the `ActiveCart` row, and until this test they
+    /// were checked by nothing but the compiler — which will happily agree that two `String`-ish
+    /// members of a struct went where they were put. The operator assertion is the load-bearing
+    /// half: `operator_id` and `cart_json` are adjacent, both nullable-text-shaped at the store,
+    /// and a swap between them survives every type check on this path.
+    #[test]
+    fn a_cart_and_its_operator_survive_a_restart() {
+        let (db, before) = persistent_service();
+        before.set_operator(Some(OperatorId::new("op-1").unwrap()));
+        before
+            .add_item(
+                &create_test_product("p1", "Test Product", Decimal::from(10)),
+                Decimal::from(2),
+            )
+            .unwrap();
+
+        // A second service over the same store is the restart.
+        let after = CartService::with_persistence(db);
+        assert!(after.restore(), "nothing was restored");
+        assert_eq!(after.item_count(), Decimal::from(2));
+        assert_eq!(
+            after.get_cart().items[0].product_id,
+            "p1",
+            "the restored cart is not the cart that was persisted"
+        );
+        assert_eq!(
+            *after.operator_id.read(),
+            Some(OperatorId::new("op-1").unwrap()),
+            "the cart came back without the operator who owns it"
+        );
+    }
+
+    /// An empty cart is not worth restoring, and `restore` must say so.
+    ///
+    /// The control for the test above: without it, `restore` returning `true` unconditionally
+    /// would pass there and this path would never be distinguished.
+    #[test]
+    fn an_empty_persisted_cart_restores_nothing() {
+        let (db, before) = persistent_service();
+        before.set_operator(Some(OperatorId::new("op-1").unwrap()));
+        before.clear();
+
+        let after = CartService::with_persistence(db);
+        assert!(!after.restore());
+        assert!(after.is_empty());
+    }
+
+    /// A service with no store restores nothing and does not fail doing it.
+    #[test]
+    fn a_service_without_persistence_restores_nothing() {
+        let service = CartService::new();
+        assert!(!service.restore());
+    }
 }
