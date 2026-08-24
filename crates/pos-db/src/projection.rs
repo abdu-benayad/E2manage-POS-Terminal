@@ -443,6 +443,21 @@ pub const DECLARED_SHAPES: &[DeclaredShape] = &[
         inserted: || crate::products::PRODUCT_ROW.insert_column_names().collect(),
     },
     DeclaredShape {
+        name: "OFFLINE_TRANSACTION_ROW",
+        table: || Some(crate::transactions::OFFLINE_TRANSACTION_ROW.table()),
+        projected: || {
+            crate::transactions::OFFLINE_TRANSACTION_ROW
+                .reader()
+                .column_names()
+                .collect()
+        },
+        inserted: || {
+            crate::transactions::OFFLINE_TRANSACTION_ROW
+                .insert_column_names()
+                .collect()
+        },
+    },
+    DeclaredShape {
         name: "CATEGORY_ROW",
         table: || Some(crate::products::CATEGORY_ROW.table()),
         projected: || {

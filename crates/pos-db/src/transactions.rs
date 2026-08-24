@@ -5,15 +5,17 @@
 use std::str::FromStr;
 
 use chrono::Utc;
-use rusqlite::{OptionalExtension, Result as SqliteResult};
+use rusqlite::Result as SqliteResult;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use pos_models::OperatorId;
 
-use super::{decimal_from_sqlite, decimal_to_sqlite, Database};
+use super::Database;
 use crate::column;
 use crate::parse::ParseError;
+use crate::projection::OnConflict;
+use crate::row_mapping;
 
 /// Transaction type
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -119,144 +121,77 @@ pub struct OfflineTransactionRow {
     pub catalog_etag: Option<String>,
 }
 
-impl Database {
-    /// Saves an offline transaction
-    pub fn save_offline_transaction(&self, txn: &OfflineTransactionRow) -> SqliteResult<()> {
-        let subtotal_f64 = decimal_to_sqlite(&txn.subtotal);
-        let tax_total_f64 = decimal_to_sqlite(&txn.tax_total);
-        let discount_total_f64 = decimal_to_sqlite(&txn.discount_total);
-        let grand_total_f64 = decimal_to_sqlite(&txn.grand_total);
+row_mapping! {
+    /// Every column of `offline_transactions` this till reads or writes, declared once.
+    ///
+    /// This is the shape the design opens with. The `INSERT` list and the first `SELECT` sat forty
+    /// lines apart and were **byte-identical** — same twenty-three names, same order — and three
+    /// more copies of the same list followed. Five unlinked lists of twenty-three columns, and a
+    /// round-trip test asserting three fields.
+    ///
+    /// No `managed` entry: `offline_transactions` has no `updated_at`, so twenty-three columns are
+    /// both projected and inserted. `created_at` is a plain column the caller supplies, which is
+    /// why it is not `managed` — the till records when the sale happened, not when the row was
+    /// written, and those differ for a transaction queued offline.
+    pub const OFFLINE_TRANSACTION_ROW: RowMapping<OfflineTransactionRow> =
+        for "offline_transactions" {
+            offline_id,
+            transaction_number  via column::OPTIONAL_TEXT,
+            transaction_type,
+            items_json,
+            payments_json,
+            subtotal            via column::DECIMAL,
+            tax_total           via column::DECIMAL,
+            discount_total      via column::DECIMAL,
+            grand_total         via column::DECIMAL,
+            customer_id         via column::OPTIONAL_TEXT,
+            customer_name       via column::OPTIONAL_TEXT,
+            shift_id            via column::OPTIONAL_TEXT,
+            operator_id         via column::OPTIONAL_OPERATOR_ID,
+            terminal_id         via column::OPTIONAL_TEXT,
+            receipt_number      via column::OPTIONAL_TEXT,
+            notes               via column::OPTIONAL_TEXT,
+            created_at,
+            sync_status,
+            server_id           via column::OPTIONAL_TEXT,
+            retry_count,
+            last_error          via column::OPTIONAL_TEXT,
+            last_retry_at       via column::OPTIONAL_TEXT,
+            catalog_etag        via column::OPTIONAL_TEXT,
+        } on_conflict OnConflict::Replace;
+}
 
-        self.execute(
-            r#"INSERT OR REPLACE INTO offline_transactions
-               (offline_id, transaction_number, transaction_type, items_json, payments_json,
-                subtotal, tax_total, discount_total, grand_total, customer_id, customer_name,
-                shift_id, operator_id, terminal_id, receipt_number, notes, created_at,
-                sync_status, server_id, retry_count, last_error, last_retry_at, catalog_etag)
-               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)"#,
-            &[
-                &txn.offline_id,
-                &txn.transaction_number,
-                &txn.transaction_type,
-                &txn.items_json,
-                &txn.payments_json,
-                &subtotal_f64,
-                &tax_total_f64,
-                &discount_total_f64,
-                &grand_total_f64,
-                &txn.customer_id,
-                &txn.customer_name,
-                &txn.shift_id,
-                &txn.operator_id.as_ref().map(OperatorId::as_str),
-                &txn.terminal_id,
-                &txn.receipt_number,
-                &txn.notes,
-                &txn.created_at,
-                &txn.sync_status,
-                &txn.server_id,
-                &txn.retry_count,
-                &txn.last_error,
-                &txn.last_retry_at,
-                &txn.catalog_etag,
-            ],
-        )?;
+impl Database {
+    /// Saves an offline transaction.
+    pub fn save_offline_transaction(&self, txn: &OfflineTransactionRow) -> SqliteResult<()> {
+        self.insert(&OFFLINE_TRANSACTION_ROW, txn)?;
         Ok(())
     }
 
-    /// Gets an offline transaction by ID
+    /// Gets an offline transaction by ID.
     pub fn get_offline_transaction(
         &self,
         offline_id: &str,
     ) -> SqliteResult<Option<OfflineTransactionRow>> {
-        let conn = self.connection();
-        let conn = conn.lock();
-
-        conn.query_row(
-            r#"SELECT offline_id, transaction_number, transaction_type, items_json, payments_json,
-                      subtotal, tax_total, discount_total, grand_total, customer_id, customer_name,
-                      shift_id, operator_id, terminal_id, receipt_number, notes, created_at,
-                      sync_status, server_id, retry_count, last_error, last_retry_at, catalog_etag
-               FROM offline_transactions WHERE offline_id = ?1"#,
+        self.select_one(
+            OFFLINE_TRANSACTION_ROW.reader(),
+            "FROM offline_transactions WHERE offline_id = ?1",
             [offline_id],
-            |row| {
-                Ok(OfflineTransactionRow {
-                    offline_id: row.get(0)?,
-                    transaction_number: row.get(1)?,
-                    transaction_type: row.get(2)?,
-                    items_json: row.get(3)?,
-                    payments_json: row.get(4)?,
-                    subtotal: decimal_from_sqlite(row.get(5)?),
-                    tax_total: decimal_from_sqlite(row.get(6)?),
-                    discount_total: decimal_from_sqlite(row.get(7)?),
-                    grand_total: decimal_from_sqlite(row.get(8)?),
-                    customer_id: row.get(9)?,
-                    customer_name: row.get(10)?,
-                    shift_id: row.get(11)?,
-                    operator_id: column::optional_operator_id(row, 12)?,
-                    terminal_id: row.get(13)?,
-                    receipt_number: row.get(14)?,
-                    notes: row.get(15)?,
-                    created_at: row.get(16)?,
-                    sync_status: row.get(17)?,
-                    server_id: row.get(18)?,
-                    retry_count: row.get(19)?,
-                    last_error: row.get(20)?,
-                    last_retry_at: row.get(21)?,
-                    catalog_etag: row.get(22)?,
-                })
-            },
         )
-        .optional()
     }
 
-    /// Gets all pending offline transactions
+    /// Gets the transactions still waiting to reach the server, oldest first.
     pub fn get_pending_transactions(&self, limit: i32) -> SqliteResult<Vec<OfflineTransactionRow>> {
-        let conn = self.connection();
-        let conn = conn.lock();
-
-        let mut stmt = conn.prepare(
-            r#"SELECT offline_id, transaction_number, transaction_type, items_json, payments_json,
-                      subtotal, tax_total, discount_total, grand_total, customer_id, customer_name,
-                      shift_id, operator_id, terminal_id, receipt_number, notes, created_at,
-                      sync_status, server_id, retry_count, last_error, last_retry_at, catalog_etag
-               FROM offline_transactions
-               WHERE sync_status IN ('PENDING', 'FAILED')
-               ORDER BY created_at ASC
-               LIMIT ?1"#,
-        )?;
-
-        let rows = stmt.query_map([limit], |row: &rusqlite::Row| {
-            Ok(OfflineTransactionRow {
-                offline_id: row.get(0)?,
-                transaction_number: row.get(1)?,
-                transaction_type: row.get(2)?,
-                items_json: row.get(3)?,
-                payments_json: row.get(4)?,
-                subtotal: decimal_from_sqlite(row.get(5)?),
-                tax_total: decimal_from_sqlite(row.get(6)?),
-                discount_total: decimal_from_sqlite(row.get(7)?),
-                grand_total: decimal_from_sqlite(row.get(8)?),
-                customer_id: row.get(9)?,
-                customer_name: row.get(10)?,
-                shift_id: row.get(11)?,
-                operator_id: column::optional_operator_id(row, 12)?,
-                terminal_id: row.get(13)?,
-                receipt_number: row.get(14)?,
-                notes: row.get(15)?,
-                created_at: row.get(16)?,
-                sync_status: row.get(17)?,
-                server_id: row.get(18)?,
-                retry_count: row.get(19)?,
-                last_error: row.get(20)?,
-                last_retry_at: row.get(21)?,
-                catalog_etag: row.get(22)?,
-            })
-        })?;
-
-        rows.collect()
+        self.select_all(
+            OFFLINE_TRANSACTION_ROW.reader(),
+            "FROM offline_transactions
+             WHERE sync_status IN ('PENDING', 'FAILED')
+             ORDER BY created_at ASC
+             LIMIT ?1",
+            [limit],
+        )
     }
 
-    /// Gets count of pending transactions
     pub fn get_pending_transaction_count(&self) -> SqliteResult<i64> {
         let conn = self.connection();
         let conn = conn.lock();
@@ -325,56 +260,18 @@ impl Database {
         self.get_transactions_by_status("CONFLICT")
     }
 
-    /// Gets transactions by sync status
+    /// Gets every transaction in one sync status, newest first.
     pub fn get_transactions_by_status(
         &self,
         status: &str,
     ) -> SqliteResult<Vec<OfflineTransactionRow>> {
-        let conn = self.connection();
-        let conn = conn.lock();
-
-        let mut stmt = conn.prepare(
-            r#"SELECT offline_id, transaction_number, transaction_type, items_json, payments_json,
-                      subtotal, tax_total, discount_total, grand_total, customer_id, customer_name,
-                      shift_id, operator_id, terminal_id, receipt_number, notes, created_at,
-                      sync_status, server_id, retry_count, last_error, last_retry_at, catalog_etag
-               FROM offline_transactions
-               WHERE sync_status = ?1
-               ORDER BY created_at DESC"#,
-        )?;
-
-        let rows = stmt.query_map([status], |row: &rusqlite::Row| {
-            Ok(OfflineTransactionRow {
-                offline_id: row.get(0)?,
-                transaction_number: row.get(1)?,
-                transaction_type: row.get(2)?,
-                items_json: row.get(3)?,
-                payments_json: row.get(4)?,
-                subtotal: decimal_from_sqlite(row.get(5)?),
-                tax_total: decimal_from_sqlite(row.get(6)?),
-                discount_total: decimal_from_sqlite(row.get(7)?),
-                grand_total: decimal_from_sqlite(row.get(8)?),
-                customer_id: row.get(9)?,
-                customer_name: row.get(10)?,
-                shift_id: row.get(11)?,
-                operator_id: column::optional_operator_id(row, 12)?,
-                terminal_id: row.get(13)?,
-                receipt_number: row.get(14)?,
-                notes: row.get(15)?,
-                created_at: row.get(16)?,
-                sync_status: row.get(17)?,
-                server_id: row.get(18)?,
-                retry_count: row.get(19)?,
-                last_error: row.get(20)?,
-                last_retry_at: row.get(21)?,
-                catalog_etag: row.get(22)?,
-            })
-        })?;
-
-        rows.collect()
+        self.select_all(
+            OFFLINE_TRANSACTION_ROW.reader(),
+            "FROM offline_transactions WHERE sync_status = ?1 ORDER BY created_at DESC",
+            [status],
+        )
     }
 
-    /// Resets a transaction for retry (clears retry count and status)
     pub fn reset_transaction_for_retry(&self, offline_id: &str) -> SqliteResult<()> {
         self.execute(
             r#"UPDATE offline_transactions
@@ -408,53 +305,16 @@ impl Database {
         )
     }
 
-    /// Gets transactions by shift
+    /// Gets every transaction recorded during one shift, oldest first.
     pub fn get_transactions_by_shift(
         &self,
         shift_id: &str,
     ) -> SqliteResult<Vec<OfflineTransactionRow>> {
-        let conn = self.connection();
-        let conn = conn.lock();
-
-        let mut stmt = conn.prepare(
-            r#"SELECT offline_id, transaction_number, transaction_type, items_json, payments_json,
-                      subtotal, tax_total, discount_total, grand_total, customer_id, customer_name,
-                      shift_id, operator_id, terminal_id, receipt_number, notes, created_at,
-                      sync_status, server_id, retry_count, last_error, last_retry_at, catalog_etag
-               FROM offline_transactions
-               WHERE shift_id = ?1
-               ORDER BY created_at DESC"#,
-        )?;
-
-        let rows = stmt.query_map([shift_id], |row: &rusqlite::Row| {
-            Ok(OfflineTransactionRow {
-                offline_id: row.get(0)?,
-                transaction_number: row.get(1)?,
-                transaction_type: row.get(2)?,
-                items_json: row.get(3)?,
-                payments_json: row.get(4)?,
-                subtotal: decimal_from_sqlite(row.get(5)?),
-                tax_total: decimal_from_sqlite(row.get(6)?),
-                discount_total: decimal_from_sqlite(row.get(7)?),
-                grand_total: decimal_from_sqlite(row.get(8)?),
-                customer_id: row.get(9)?,
-                customer_name: row.get(10)?,
-                shift_id: row.get(11)?,
-                operator_id: column::optional_operator_id(row, 12)?,
-                terminal_id: row.get(13)?,
-                receipt_number: row.get(14)?,
-                notes: row.get(15)?,
-                created_at: row.get(16)?,
-                sync_status: row.get(17)?,
-                server_id: row.get(18)?,
-                retry_count: row.get(19)?,
-                last_error: row.get(20)?,
-                last_retry_at: row.get(21)?,
-                catalog_etag: row.get(22)?,
-            })
-        })?;
-
-        rows.collect()
+        self.select_all(
+            OFFLINE_TRANSACTION_ROW.reader(),
+            "FROM offline_transactions WHERE shift_id = ?1 ORDER BY created_at ASC",
+            [shift_id],
+        )
     }
 
     /// Deletes synced transactions older than days
@@ -641,5 +501,371 @@ mod tests {
         let found = db.get_offline_transaction("txn-1").unwrap().unwrap();
         assert_eq!(found.sync_status, "SYNCED");
         assert_eq!(found.server_id, Some("server-id-123".to_string()));
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // `OFFLINE_TRANSACTION_ROW`. The three patterns from task 04.
+    // ------------------------------------------------------------------------------------------
+
+    /// A database holding the shift and operator the fixture points at.
+    ///
+    /// `offline_transactions.shift_id` and `.operator_id` are real foreign keys. Blanking either
+    /// to dodge them would make it indistinguishable from the ten other absent columns, which is
+    /// the failure the distinct-value discipline exists to avoid.
+    fn setup_db_with_referents() -> Database {
+        let db = setup_db();
+        create_test_operator(&db, "operator-id-column");
+        db.execute(
+            "INSERT INTO shifts (id, shift_number, operator_id, terminal_id, opening_cash, started_at)
+             VALUES ('shift-id-column', 'S1', 'operator-id-column', 'T1', 0, datetime('now'))",
+            &[],
+        )
+        .expect("a referent shift");
+        db
+    }
+
+    /// A transaction whose every column holds a value found nowhere else in the row.
+    fn a_transaction_with_no_two_columns_alike() -> OfflineTransactionRow {
+        OfflineTransactionRow {
+            offline_id: "offline-id-column".to_string(),
+            transaction_number: Some("transaction-number-column".to_string()),
+            transaction_type: "RETURN".to_string(),
+            items_json: r#"["items-json-column"]"#.to_string(),
+            payments_json: r#"["payments-json-column"]"#.to_string(),
+            subtotal: Decimal::from_str("11.11").unwrap(),
+            tax_total: Decimal::from_str("22.22").unwrap(),
+            discount_total: Decimal::from_str("33.33").unwrap(),
+            grand_total: Decimal::from_str("44.44").unwrap(),
+            customer_id: Some("customer-id-column".to_string()),
+            customer_name: Some("customer-name-column".to_string()),
+            shift_id: Some("shift-id-column".to_string()),
+            operator_id: Some(OperatorId::new("operator-id-column").unwrap()),
+            terminal_id: Some("terminal-id-column".to_string()),
+            receipt_number: Some("receipt-number-column".to_string()),
+            notes: Some("notes-column".to_string()),
+            created_at: "2026-08-24T10:00:00Z".to_string(),
+            // Not `PENDING`: that is the column's SQL `DEFAULT`, so a value that never reached the
+            // store would read back as one that did.
+            sync_status: "CONFLICT".to_string(),
+            server_id: Some("server-id-column".to_string()),
+            // Not 0, for the same reason.
+            retry_count: 7,
+            last_error: Some("last-error-column".to_string()),
+            last_retry_at: Some("2026-08-24T11:00:00Z".to_string()),
+            catalog_etag: Some("catalog-etag-column".to_string()),
+        }
+    }
+
+    #[test]
+    fn the_transaction_mapping_names_every_column_it_writes_in_the_order_it_reads_them() {
+        // The list the `INSERT` and all four `SELECT`s used to spell separately, byte for byte.
+        assert_eq!(
+            OFFLINE_TRANSACTION_ROW.reader().select_list(),
+            "offline_id, transaction_number, transaction_type, items_json, payments_json, \
+             subtotal, tax_total, discount_total, grand_total, customer_id, customer_name, \
+             shift_id, operator_id, terminal_id, receipt_number, notes, created_at, sync_status, \
+             server_id, retry_count, last_error, last_retry_at, catalog_etag"
+        );
+        assert_eq!(OFFLINE_TRANSACTION_ROW.reader().width(), 23);
+        // No `managed` column on this table, so the two lists are the same length — the one
+        // mapping so far where they are.
+        assert_eq!(OFFLINE_TRANSACTION_ROW.insert_column_names().count(), 23);
+    }
+
+    #[test]
+    fn every_column_of_a_fully_distinct_transaction_survives_the_round_trip() {
+        let db = setup_db_with_referents();
+        let written = a_transaction_with_no_two_columns_alike();
+        db.save_offline_transaction(&written).unwrap();
+
+        let read = db
+            .get_offline_transaction("offline-id-column")
+            .unwrap()
+            .expect("the transaction this test just wrote");
+
+        assert_eq!(read.offline_id, written.offline_id);
+        assert_eq!(read.transaction_number, written.transaction_number);
+        assert_eq!(read.transaction_type, written.transaction_type);
+        assert_eq!(read.items_json, written.items_json);
+        assert_eq!(read.payments_json, written.payments_json);
+        assert_eq!(read.subtotal, written.subtotal);
+        assert_eq!(read.tax_total, written.tax_total);
+        assert_eq!(read.discount_total, written.discount_total);
+        assert_eq!(read.grand_total, written.grand_total);
+        assert_eq!(read.customer_id, written.customer_id);
+        assert_eq!(read.customer_name, written.customer_name);
+        assert_eq!(read.shift_id, written.shift_id);
+        assert_eq!(read.operator_id, written.operator_id);
+        assert_eq!(read.terminal_id, written.terminal_id);
+        assert_eq!(read.receipt_number, written.receipt_number);
+        assert_eq!(read.notes, written.notes);
+        assert_eq!(read.created_at, written.created_at);
+        assert_eq!(read.sync_status, written.sync_status);
+        assert_eq!(read.server_id, written.server_id);
+        assert_eq!(read.retry_count, written.retry_count);
+        assert_eq!(read.last_error, written.last_error);
+        assert_eq!(read.last_retry_at, written.last_retry_at);
+        assert_eq!(read.catalog_etag, written.catalog_etag);
+    }
+
+    /// Reads every column of the single stored transaction back **by name** and asserts it holds
+    /// the value belonging to it. The asymmetric half — a round trip is invariant under a
+    /// permutation applied to both the write and the read.
+    fn assert_every_transaction_column_holds_its_own_value(db: &Database) {
+        let conn = db.connection();
+        let conn = conn.lock();
+
+        for (column, expected) in [
+            ("offline_id", "offline-id-column"),
+            ("transaction_number", "transaction-number-column"),
+            ("transaction_type", "RETURN"),
+            ("items_json", r#"["items-json-column"]"#),
+            ("payments_json", r#"["payments-json-column"]"#),
+            ("customer_id", "customer-id-column"),
+            ("customer_name", "customer-name-column"),
+            ("shift_id", "shift-id-column"),
+            ("operator_id", "operator-id-column"),
+            ("terminal_id", "terminal-id-column"),
+            ("receipt_number", "receipt-number-column"),
+            ("notes", "notes-column"),
+            ("created_at", "2026-08-24T10:00:00Z"),
+            ("sync_status", "CONFLICT"),
+            ("server_id", "server-id-column"),
+            ("last_error", "last-error-column"),
+            ("last_retry_at", "2026-08-24T11:00:00Z"),
+            ("catalog_etag", "catalog-etag-column"),
+        ] {
+            let matched: bool = conn
+                .query_row(
+                    &format!("SELECT {column} = ?1 FROM offline_transactions"),
+                    [expected],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert!(matched, "the `{column}` column does not hold `{expected}`");
+        }
+
+        // The four money columns and the counter. Every value is distinct, so a swap among the
+        // four `REAL`s is visible — four equal totals would hide it.
+        for (column, expected) in [
+            ("subtotal", 11.11_f64),
+            ("tax_total", 22.22),
+            ("discount_total", 33.33),
+            ("grand_total", 44.44),
+            ("retry_count", 7.0),
+        ] {
+            let matched: bool = conn
+                .query_row(
+                    &format!("SELECT {column} = ?1 FROM offline_transactions"),
+                    [expected],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert!(matched, "the `{column}` column does not hold `{expected}`");
+        }
+    }
+
+    #[test]
+    fn save_offline_transaction_puts_each_value_in_the_column_that_carries_its_name() {
+        let db = setup_db_with_referents();
+        db.save_offline_transaction(&a_transaction_with_no_two_columns_alike())
+            .unwrap();
+        assert_every_transaction_column_holds_its_own_value(&db);
+    }
+
+    #[test]
+    fn a_second_write_of_the_same_offline_id_replaces_the_row() {
+        // `INSERT OR REPLACE` is what the hand-written statement said, and a sync retry re-sends a
+        // transaction the till already holds. Under `Fail` the retry would error; under no
+        // conflict clause the primary key would.
+        let db = setup_db_with_referents();
+        let first = a_transaction_with_no_two_columns_alike();
+        db.save_offline_transaction(&first).unwrap();
+        db.save_offline_transaction(&OfflineTransactionRow {
+            receipt_number: Some("second-write".to_string()),
+            ..first
+        })
+        .unwrap();
+
+        let rows: i64 = db
+            .select_scalar("SELECT COUNT(*) FROM offline_transactions", [])
+            .unwrap();
+        assert_eq!(rows, 1, "the second write inserted rather than replaced");
+        let stored = db
+            .get_offline_transaction("offline-id-column")
+            .unwrap()
+            .unwrap();
+        assert_eq!(stored.receipt_number.as_deref(), Some("second-write"));
+        assert_eq!(stored.notes.as_deref(), Some("notes-column"));
+    }
+
+    /// One nullable transaction column, blanked, and what must still hold of its neighbours.
+    struct AbsentTransactionColumn {
+        column: &'static str,
+        blank: fn(&mut OfflineTransactionRow),
+        assert_absent: fn(&OfflineTransactionRow),
+    }
+
+    #[test]
+    fn a_null_in_one_transaction_column_reaches_that_columns_field_and_no_other() {
+        // Per column, never all at once: this row has twelve nullable columns, and twelve `None`s
+        // are identical under any permutation of them.
+        let db = setup_db_with_referents();
+        let full = a_transaction_with_no_two_columns_alike();
+
+        let cases = [
+            AbsentTransactionColumn {
+                column: "transaction_number",
+                blank: |row| row.transaction_number = None,
+                assert_absent: |row| {
+                    assert_eq!(row.transaction_number, None);
+                    assert_eq!(row.receipt_number.as_deref(), Some("receipt-number-column"));
+                },
+            },
+            AbsentTransactionColumn {
+                column: "customer_id",
+                blank: |row| row.customer_id = None,
+                assert_absent: |row| {
+                    assert_eq!(row.customer_id, None);
+                    assert_eq!(row.customer_name.as_deref(), Some("customer-name-column"));
+                },
+            },
+            AbsentTransactionColumn {
+                column: "customer_name",
+                blank: |row| row.customer_name = None,
+                assert_absent: |row| {
+                    assert_eq!(row.customer_name, None);
+                    assert_eq!(row.customer_id.as_deref(), Some("customer-id-column"));
+                },
+            },
+            AbsentTransactionColumn {
+                column: "operator_id",
+                blank: |row| row.operator_id = None,
+                assert_absent: |row| {
+                    assert_eq!(row.operator_id, None);
+                    assert_eq!(row.shift_id.as_deref(), Some("shift-id-column"));
+                },
+            },
+            AbsentTransactionColumn {
+                column: "shift_id",
+                blank: |row| row.shift_id = None,
+                assert_absent: |row| {
+                    assert_eq!(row.shift_id, None);
+                    assert!(row.operator_id.is_some());
+                },
+            },
+            AbsentTransactionColumn {
+                column: "terminal_id",
+                blank: |row| row.terminal_id = None,
+                assert_absent: |row| {
+                    assert_eq!(row.terminal_id, None);
+                    assert_eq!(row.receipt_number.as_deref(), Some("receipt-number-column"));
+                },
+            },
+            AbsentTransactionColumn {
+                column: "receipt_number",
+                blank: |row| row.receipt_number = None,
+                assert_absent: |row| {
+                    assert_eq!(row.receipt_number, None);
+                    assert_eq!(row.notes.as_deref(), Some("notes-column"));
+                },
+            },
+            AbsentTransactionColumn {
+                column: "notes",
+                blank: |row| row.notes = None,
+                assert_absent: |row| {
+                    assert_eq!(row.notes, None);
+                    assert_eq!(row.created_at, "2026-08-24T10:00:00Z");
+                },
+            },
+            AbsentTransactionColumn {
+                column: "server_id",
+                blank: |row| row.server_id = None,
+                assert_absent: |row| {
+                    assert_eq!(row.server_id, None);
+                    assert_eq!(row.retry_count, 7);
+                },
+            },
+            AbsentTransactionColumn {
+                column: "last_error",
+                blank: |row| row.last_error = None,
+                assert_absent: |row| {
+                    assert_eq!(row.last_error, None);
+                    assert_eq!(row.last_retry_at.as_deref(), Some("2026-08-24T11:00:00Z"));
+                },
+            },
+            AbsentTransactionColumn {
+                column: "last_retry_at",
+                blank: |row| row.last_retry_at = None,
+                assert_absent: |row| {
+                    assert_eq!(row.last_retry_at, None);
+                    assert_eq!(row.last_error.as_deref(), Some("last-error-column"));
+                },
+            },
+            AbsentTransactionColumn {
+                column: "catalog_etag",
+                blank: |row| row.catalog_etag = None,
+                assert_absent: |row| {
+                    assert_eq!(row.catalog_etag, None);
+                    assert_eq!(row.last_retry_at.as_deref(), Some("2026-08-24T11:00:00Z"));
+                },
+            },
+        ];
+
+        for case in cases {
+            let mut written = full.clone();
+            (case.blank)(&mut written);
+            db.save_offline_transaction(&written).unwrap();
+
+            let stored: Option<String> = db
+                .select_scalar(
+                    &format!("SELECT {} FROM offline_transactions", case.column),
+                    [],
+                )
+                .unwrap();
+            assert_eq!(stored, None, "`{}` was not written as NULL", case.column);
+
+            let read = db
+                .get_offline_transaction("offline-id-column")
+                .unwrap()
+                .expect("the row this iteration wrote");
+            (case.assert_absent)(&read);
+        }
+    }
+
+    #[test]
+    fn every_reader_of_this_table_returns_the_same_row() {
+        // Four readers shared one hand-copied projection and now share one declaration. This is
+        // what would have caught a fifth copy drifting — which is exactly what happened in
+        // `return_service.rs`, and is task 12.
+        let db = setup_db_with_referents();
+        let written = OfflineTransactionRow {
+            sync_status: "PENDING".to_string(),
+            ..a_transaction_with_no_two_columns_alike()
+        };
+        db.save_offline_transaction(&written).unwrap();
+
+        let by_id = db
+            .get_offline_transaction("offline-id-column")
+            .unwrap()
+            .expect("by id");
+        let pending = db.get_pending_transactions(10).unwrap();
+        let by_status = db.get_transactions_by_status("PENDING").unwrap();
+        let by_shift = db.get_transactions_by_shift("shift-id-column").unwrap();
+
+        assert_eq!(pending.len(), 1);
+        assert_eq!(by_status.len(), 1);
+        assert_eq!(by_shift.len(), 1);
+        for (name, row) in [
+            ("get_pending_transactions", &pending[0]),
+            ("get_transactions_by_status", &by_status[0]),
+            ("get_transactions_by_shift", &by_shift[0]),
+        ] {
+            assert_eq!(row.offline_id, by_id.offline_id, "{name}");
+            assert_eq!(row.grand_total, by_id.grand_total, "{name}");
+            assert_eq!(row.operator_id, by_id.operator_id, "{name}");
+            assert_eq!(row.catalog_etag, by_id.catalog_etag, "{name}");
+            assert_eq!(row.retry_count, by_id.retry_count, "{name}");
+        }
     }
 }
