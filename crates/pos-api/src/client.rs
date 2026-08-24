@@ -285,10 +285,25 @@ impl ApiClient {
         self.session_token.read().await.clone()
     }
 
-    /// Clears the session token (logout)
+    /// Stops presenting this terminal's session — and the operator's with it.
+    ///
+    /// **Both, because an operator session cannot outlive the terminal session it was issued
+    /// against.** Every till mount runs `terminalAuth` before `attendedOperatorAuth`, so an
+    /// operator token held without a terminal token is a credential that can no longer be used
+    /// and can still do harm: it is what the platform attributes a write to. Leaving it behind at
+    /// logout means the next person to open this till writes under the last cashier's name — the
+    /// same class of false attribution as putting a terminal id in `processed_by`.
+    ///
+    /// Clearing here rather than at each call site is deliberate. Both callers — terminal logout
+    /// and de-registration — want both gone, and a rule enforced at the field is one a third
+    /// caller cannot forget. **Renewal is not this**: [`Self::set_token`] replaces a terminal
+    /// token within the same session lineage and must leave the cashier signed in, so it does
+    /// not clear the operator's.
     pub async fn clear_token(&self) {
         let mut guard = self.session_token.write().await;
         *guard = None;
+        drop(guard);
+        self.clear_operator_token().await;
     }
 
     /// Sets the terminal ID for identification headers
@@ -882,6 +897,37 @@ mod tests {
         assert!(
             headers.contains_key(HEADER_TERMINAL_TOKEN),
             "signing the operator out must not un-enrol the device"
+        );
+    }
+
+    /// Logging the terminal out takes the operator's session with it.
+    ///
+    /// The half of the two-credential change that was missing: `logout_terminal` and
+    /// de-registration both cleared the terminal token and left `X-Operator-Token` presented, so
+    /// the next person to open this till would have written under the last cashier's name.
+    ///
+    /// The control is the assertion above it — signing the *operator* out must not un-enrol the
+    /// device. Without that pair, a `clear_token` that wiped everything and a
+    /// `clear_operator_token` that wiped everything would both read as correct.
+    #[tokio::test]
+    async fn logging_the_terminal_out_stops_presenting_the_operator_too() {
+        let client = ApiClient::new("https://api.example.com");
+        client.set_token("terminal-tok".to_string()).await;
+        client
+            .set_operator_token(SessionToken::new("op-sess-abc").expect("not blank"))
+            .await;
+
+        client.clear_token().await;
+
+        let headers = client.build_headers().await;
+        assert!(
+            !headers.contains_key(HEADER_OPERATOR_TOKEN),
+            "an operator session cannot outlive the terminal session it was issued against"
+        );
+        assert!(!headers.contains_key(HEADER_TERMINAL_TOKEN));
+        assert!(
+            client.operator_token().await.is_none(),
+            "and it must be gone from the client, not merely unsent"
         );
     }
 
