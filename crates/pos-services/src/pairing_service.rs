@@ -13,6 +13,7 @@ use pos_api::{
     ApiClient, DeviceInfo, HardwareInfo, OsInfo, PairedTerminalInfo, PairingStatus,
     RegisterDeviceRequest,
 };
+use pos_models::HardwareEnrolment;
 use pos_db::Database;
 use rusqlite::params;
 use std::sync::Arc;
@@ -48,6 +49,12 @@ pub struct PairingState {
     pub status: PairingStatus,
     /// Hardware ID
     pub hardware_id: String,
+    /// Whether the platform considers this hardware already enrolled.
+    ///
+    /// Read from the platform and never inferred here — see [`HardwareEnrolment`] for why the
+    /// local store cannot answer it. `Undetermined` until the first status poll, because the
+    /// pairing-request response carries no enrolment signal at all.
+    pub enrolment: HardwareEnrolment,
 }
 
 /// Service for managing terminal pairing/registration
@@ -196,6 +203,12 @@ impl PairingService {
             expires_at: resp.expires_at,
             status: PairingStatus::Pending,
             hardware_id,
+            // A constant, and deliberately so. This route answers 200 with the same body for a
+            // first enrolment and a re-pair — there is no field to read here. The answer arrives
+            // on the first `check_pairing_status`. Do NOT fill this in from the local store: a
+            // stored secret proves this device was enrolled here once, not that a *working*
+            // terminal would be replaced, and it answers wrong in both directions.
+            enrolment: HardwareEnrolment::Undetermined,
         })
     }
 
@@ -206,6 +219,19 @@ impl PairingService {
         debug!("Checking pairing status for code: {}", pairing_code);
 
         let response = self.api.check_pairing_status(pairing_code).await?;
+
+        // Said once, where it first becomes known, and only when there is something to say.
+        // `Undetermined` is logged by nothing: a line reporting that we do not know, on every
+        // poll, is what trains a reader to skip the line that matters. Neither the pairing code
+        // nor the hardware id appears beside it — the code retrieves a credential and the id was
+        // the lookup key for one, which is why the platform removed both from its own logs.
+        match response.enrolment {
+            HardwareEnrolment::AlreadyEnrolled => info!(
+                "This hardware is already enrolled: approving this code re-enrols the terminal \
+                 and archives the one currently in service"
+            ),
+            HardwareEnrolment::NotEnrolled | HardwareEnrolment::Undetermined => {}
+        }
 
         // If completed, save the registration and set token on API client
         if response.status == PairingStatus::Completed {
@@ -251,6 +277,7 @@ impl PairingService {
             expires_at: response.expires_at,
             status: response.status,
             hardware_id,
+            enrolment: response.enrolment,
         })
     }
 
