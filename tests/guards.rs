@@ -193,6 +193,37 @@ mod guards {
         None
     }
 
+    /// The field name a declaration line declares, if it declares one.
+    ///
+    /// The inverse of [`declared_type`], and it exists because a rule keyed on a *list* of field
+    /// names can only ever find the names on the list. Reading the name out lets a check ask the
+    /// complement question — *what does this tree call PIN material that my list does not?* — and
+    /// that question found `operator_pin` and `supervisor_pin`, which no vocabulary here named.
+    fn declared_field_name(code: &str) -> Option<&str> {
+        let (before, after) = code.split_once(':')?;
+        if after.starts_with(':') {
+            return None;
+        }
+        let name = before
+            .trim()
+            .strip_prefix("pub")
+            .map_or(before.trim(), str::trim_start);
+        (!name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'))
+            .then_some(name)
+    }
+
+    /// Whether a field name is one this tree uses for PIN material.
+    ///
+    /// Component-wise rather than substring, so `pinned` and `spinner` are not PINs, and
+    /// suffix-tolerant, so `operator_pin` and `supervisor_pin` are. **Deliberately a predicate
+    /// and not a list**: a list can only find its own members, and its misses have no name, no
+    /// expiry, and produce a green indistinguishable from coverage.
+    fn names_pin_material(field: &str) -> bool {
+        field
+            .split('_')
+            .any(|part| matches!(part, "pin" | "pins" | "digit" | "digits" | "entered"))
+    }
+
     /// The primitive spelling of a type, if this declaration uses one.
     ///
     /// A leading `String::` is `String::new()` — an expression in a struct literal, not a type. The
@@ -705,7 +736,6 @@ mod guards {
         // A field carrying keyed-in PIN digits must be declared as `Pin` or `EnteredDigits`,
         // whatever it is called. `pin` alone was the old vocabulary and it was enough while the
         // only PIN in the tree was a finished one; an entry buffer is called other things.
-        const ENTRY_VOCABULARY: [&str; 4] = ["digits", "entered", "entered_digits", "pin_digits"];
         const REDACTED_CARRIERS: [&str; 2] = ["Pin", "EnteredDigits"];
 
         /// Whether a declared type could hold keyed-in PIN digits, as opposed to a count of them.
@@ -752,22 +782,24 @@ mod guards {
             .iter()
             .filter(|declaration| derives(&declaration.attributes, "Debug"))
             .flat_map(|declaration| {
-                declaration.body.iter().flat_map(move |line| {
-                    ENTRY_VOCABULARY.iter().filter_map(move |field| {
-                        let declared = declared_type(&line.code, field)?;
-                        let redacted = REDACTED_CARRIERS
-                            .iter()
-                            .any(|carrier| contains_word(declared, carrier));
-                        (!redacted && can_hold_digits(declared)).then(|| {
-                            format!(
-                                "{}:{} — `{}` derives `Debug` over `{}: {}`",
-                                line.path,
-                                line.number,
-                                declaration.name,
-                                field,
-                                declared.trim_end_matches(',')
-                            )
-                        })
+                declaration.body.iter().filter_map(move |line| {
+                    let field = declared_field_name(&line.code)?;
+                    if !names_pin_material(field) {
+                        return None;
+                    }
+                    let declared = declared_type(&line.code, field)?;
+                    let redacted = REDACTED_CARRIERS
+                        .iter()
+                        .any(|carrier| contains_word(declared, carrier));
+                    (!redacted && can_hold_digits(declared)).then(|| {
+                        format!(
+                            "{}:{} — `{}` derives `Debug` over `{}: {}`",
+                            line.path,
+                            line.number,
+                            declaration.name,
+                            field,
+                            declared.trim_end_matches(',')
+                        )
                     })
                 })
             })
@@ -800,6 +832,69 @@ mod guards {
             holders.iter().any(|name| name == "PinEntryStanding"),
             "the scan cannot see `PinEntryStanding`, which holds the entry buffer — the two \
              assertions above are then passing over a tree they are not reading. Found: {holders:?}"
+        );
+
+        // ------------------------------------------------------------------
+        // The complement check: is the matcher blind to a name this tree uses?
+        // ------------------------------------------------------------------
+        //
+        // Everything above asks "does any field the matcher recognises hold digits unsafely?" —
+        // a question whose misses are silent, because a name the matcher does not recognise is
+        // indistinguishable from a name that is not there. This asks the inverse, using the
+        // population that is already *safe* as the oracle: every field declared as `Pin` or
+        // `EnteredDigits` is, by construction, a name this codebase uses for PIN material. If the
+        // matcher does not recognise one of those, it would equally not recognise the same name
+        // holding a `String`.
+        //
+        // This is not hypothetical. `operator_pin` and `supervisor_pin` are real fields here, and
+        // the original rule — which matched the bare word `pin` — missed both, because
+        // `declared_type` requires a word boundary and `_` is a word byte. The list could not
+        // find them and could not report that it had not.
+        let unrecognised: Vec<String> = type_declarations()
+            .iter()
+            .flat_map(|declaration| {
+                declaration.body.iter().filter_map(move |line| {
+                    let field = declared_field_name(&line.code)?;
+                    let declared = declared_type(&line.code, field)?;
+                    let carries_pin_material = REDACTED_CARRIERS
+                        .iter()
+                        .any(|carrier| contains_word(declared, carrier));
+                    (carries_pin_material && !names_pin_material(field))
+                        .then(|| format!("{}:{} — `{}`", line.path, line.number, field))
+                })
+            })
+            .collect();
+
+        assert!(
+            unrecognised.is_empty(),
+            "{} field(s) hold PIN material under a name `names_pin_material` does not recognise. \
+             The same name holding a `String` would pass unnoticed — extend the predicate:\n  {}",
+            unrecognised.len(),
+            unrecognised.join("\n  ")
+        );
+
+        // Positive control for the sweep above. An empty `unrecognised` means either "the
+        // matcher covers every name in use" or "the walk found no PIN fields at all", and those
+        // read identically. This separates them.
+        let recognised: Vec<String> = type_declarations()
+            .iter()
+            .flat_map(|declaration| {
+                declaration.body.iter().filter_map(move |line| {
+                    let field = declared_field_name(&line.code)?;
+                    let declared = declared_type(&line.code, field)?;
+                    let carries = REDACTED_CARRIERS
+                        .iter()
+                        .any(|carrier| contains_word(declared, carrier));
+                    (carries && names_pin_material(field)).then(|| field.to_string())
+                })
+            })
+            .collect();
+
+        assert!(
+            recognised.len() >= 3,
+            "the complement sweep recognised only {} PIN-material field(s); it is walking an \
+             empty population and its clean result means nothing. Found: {recognised:?}",
+            recognised.len()
         );
 
         // KNOWN GAP, stated rather than left for someone to discover.
