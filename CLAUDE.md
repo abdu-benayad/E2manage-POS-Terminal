@@ -386,6 +386,19 @@ shape:**
 it. Re-run and `stat -c %y` the file before investigating, and check `git status` for another lane's
 in-flight work.
 
+**A tool being edited while it runs fails in *your* output, at a line that is innocent.** `bash`
+reads a script incrementally by byte offset, so rewriting one in place while a peer is executing it
+makes the running instance resume mid-token. Measured 2026-08-24: `lane-lock` was rewritten at
+09:57:52 during a run of it that ended 10:00:06, and printed two bash syntax errors naming line 243
+— a line that is valid on disk, then and now. Probed both arms in a throwaway script: an
+**in-place** rewrite makes the running instance skip the rest of the file and **exit 0** with its
+tail never executed; a **temp-file-then-`mv`** does not, because the running fd keeps the old inode.
+So for a wrapper the live hazard is *the wrapped command never runs and the exit is 0*; the other
+variant is closed by `lane-lock`'s `set -uo pipefail`, where a dropped `STATUS` capture exits 127
+(controlled against `STATUS=42` → 42). **Two rules: `sed -n '<line>p'` the script before believing a
+syntax error about it, and edit a script peers may be running by writing a new file and renaming
+over it, never in place.**
+
 **Do not conclude from an exit code or an absence.** A run that prints nothing and exits non-zero is
 consistent with OOM, a bad path, and a real failure. The only reliable signal is a plausible error
 *total*. Measured 2026-08-23 across both repos: three separate wrong diagnoses in one day, each from
