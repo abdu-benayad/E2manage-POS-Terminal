@@ -149,19 +149,54 @@ pub enum OnConflict {
 /// projected as the expression and answers to `gross_sales`. One field serving both roles is a bug
 /// that appears on exactly one row shape in this crate — and that shape prints the Z-report.
 pub struct RowReader<T> {
+    /// The table these columns are a projection of, or `None` for an aggregate.
+    ///
+    /// **A read-only shape is not the same thing as a table-less one**, and conflating them costs
+    /// the check that matters most. `StoredOperator` reads five of `operators`' columns and must
+    /// never be written — five columns is not an operator — but it is emphatically a projection
+    /// *of a table*, so `every_mapping_names_columns_the_schema_has` should verify those five
+    /// names against the schema. Without this field it could not: the guard reads `table()`, a
+    /// reader answered `None`, and `None` means "aggregate, nothing to check". The one shape whose
+    /// column names most needed checking would have been the one exempted — which is precisely
+    /// the mistake `the_only_shape_without_a_table_is_the_one_that_has_no_table` was written
+    /// after.
+    source: Option<&'static str>,
     /// One entry per **column**, in projection order. A two-column field contributes two.
     entries: &'static [(&'static str, &'static str)],
     read: fn(&Row<'_>) -> SqliteResult<T>,
 }
 
 impl<T> RowReader<T> {
-    /// Called only by `row_mapping!`.
+    /// A shape with no table behind it — an aggregate. Called only by the macros.
     #[doc(hidden)]
     pub const fn new(
         entries: &'static [(&'static str, &'static str)],
         read: fn(&Row<'_>) -> SqliteResult<T>,
     ) -> Self {
-        Self { entries, read }
+        Self {
+            source: None,
+            entries,
+            read,
+        }
+    }
+
+    /// A read-only projection of `table`. Called only by the macros.
+    #[doc(hidden)]
+    pub const fn over(
+        table: &'static str,
+        entries: &'static [(&'static str, &'static str)],
+        read: fn(&Row<'_>) -> SqliteResult<T>,
+    ) -> Self {
+        Self {
+            source: Some(table),
+            entries,
+            read,
+        }
+    }
+
+    /// The table this shape projects, or `None` for an aggregate.
+    pub fn source(&self) -> Option<&'static str> {
+        self.source
     }
 
     /// The columns, in projection order, as the result names they answer to.
@@ -455,6 +490,63 @@ pub const DECLARED_SHAPES: &[DeclaredShape] = &[
         },
         inserted: || {
             crate::transactions::OFFLINE_TRANSACTION_ROW
+                .insert_column_names()
+                .collect()
+        },
+    },
+    DeclaredShape {
+        // Read-only **over a real table**: five columns of `operators` that must never be written
+        // back as an operator. `table` is `Some`, so the schema check covers those five names.
+        name: "OPERATOR_CREDENTIALS_ROW",
+        table: || crate::operators::OPERATOR_CREDENTIALS_ROW.source(),
+        projected: || {
+            crate::operators::OPERATOR_CREDENTIALS_ROW
+                .column_names()
+                .collect()
+        },
+        inserted: Vec::new,
+    },
+    DeclaredShape {
+        name: "TERMINAL_CONFIG_ROW",
+        table: || Some(crate::terminal::TERMINAL_CONFIG_ROW.table()),
+        projected: || {
+            crate::terminal::TERMINAL_CONFIG_ROW
+                .reader()
+                .column_names()
+                .collect()
+        },
+        inserted: || {
+            crate::terminal::TERMINAL_CONFIG_ROW
+                .insert_column_names()
+                .collect()
+        },
+    },
+    DeclaredShape {
+        name: "TERMINAL_REGISTRATION_ROW",
+        table: || Some(crate::terminal::TERMINAL_REGISTRATION_ROW.table()),
+        projected: || {
+            crate::terminal::TERMINAL_REGISTRATION_ROW
+                .reader()
+                .column_names()
+                .collect()
+        },
+        inserted: || {
+            crate::terminal::TERMINAL_REGISTRATION_ROW
+                .insert_column_names()
+                .collect()
+        },
+    },
+    DeclaredShape {
+        name: "OPERATOR_SESSION_ROW",
+        table: || Some(crate::terminal::OPERATOR_SESSION_ROW.table()),
+        projected: || {
+            crate::terminal::OPERATOR_SESSION_ROW
+                .reader()
+                .column_names()
+                .collect()
+        },
+        inserted: || {
+            crate::terminal::OPERATOR_SESSION_ROW
                 .insert_column_names()
                 .collect()
         },
@@ -1040,6 +1132,22 @@ macro_rules! row_mapping {
 /// ```
 #[macro_export]
 macro_rules! row_reader {
+    // A projection of a real table that must never be written back.
+    (
+        $(#[$meta:meta])*
+        $vis:vis const $name:ident: RowReader<$row:ident> = from $table:literal {
+            $($entries:tt)*
+        };
+    ) => {
+        $(#[$meta])*
+        $vis const $name: $crate::projection::RowReader<$row> = $crate::__row_shape!(
+            @munch (reader_over $table) $row cursor value out
+            [] [] [] [] []
+            $($entries)*
+        );
+    };
+
+    // A shape with no table behind it — an aggregate.
     (
         $(#[$meta:meta])*
         $vis:vis const $name:ident: RowReader<$row:ident> = {
@@ -1076,6 +1184,18 @@ macro_rules! __row_shape {
             ::std::result::Result::Ok($row { $($field,)* })
         }
         $crate::projection::RowReader::new(&[$($entry,)*], read)
+    }};
+
+    // ---------------------------------------------------------------- terminal: read-only over a table
+    (@munch (reader_over $table:literal) $row:ident $cur:ident $val:ident $out:ident
+        [$($entry:expr,)*] [$($read:tt)*] [$($field:ident,)*] [$($bind:tt)*] [$($managed:expr,)*]
+    ) => {{
+        fn read(row: &::rusqlite::Row<'_>) -> ::rusqlite::Result<$row> {
+            let mut $cur = $crate::projection::RowCursor::new(row);
+            $($read)*
+            ::std::result::Result::Ok($row { $($field,)* })
+        }
+        $crate::projection::RowReader::over($table, &[$($entry,)*], read)
     }};
 
     // ---------------------------------------------------------------- terminal: readable + writable

@@ -27,6 +27,15 @@
 //! serialise, the same value as a genuinely unprivileged cashier and indistinguishable from one.
 //! That is precisely the defect this crate already removed from the read direction; an infallible
 //! `to_sql` would have reintroduced it going the other way.
+//! # The readers are private; the codecs are the way in
+//!
+//! Every reader below was `pub` while call sites still read columns by hand. None is any more —
+//! task 13 of `positional-row-access-in-pos-db` removed the last one — and they are private now
+//! rather than merely uncalled, because a `pub fn operator_name(row, 0, 1)` is a way to read half
+//! of a two-column value. [`OPERATOR_NAME`] consumes both columns and is the only route to that
+//! conversion; leaving the halves reachable would keep the bypass this module exists to close
+//! available to anyone who found it.
+//!
 
 use pos_models::{
     OperatorId, OperatorName, OperatorPermissions, OperatorRole, RecordedOperatorName,
@@ -138,7 +147,7 @@ fn optional_text_value(value: Option<&str>) -> Value {
 // ============================================================================
 
 /// Reads an operator id from a `NOT NULL` column.
-pub fn operator_id(row: &Row<'_>, index: usize) -> SqliteResult<OperatorId> {
+fn operator_id(row: &Row<'_>, index: usize) -> SqliteResult<OperatorId> {
     let raw: String = row.get(index)?;
     OperatorId::new(raw).map_err(|error| conversion_failed(index, error))
 }
@@ -154,7 +163,7 @@ pub const OPERATOR_ID: ColumnCodec<OperatorId> = ColumnCodec::new(operator_id, o
 ///
 /// `NULL` is `None`. An empty string is **not** `None`: it is a value that should never have been
 /// written, and reporting it is the point of the newtype.
-pub fn optional_operator_id(row: &Row<'_>, index: usize) -> SqliteResult<Option<OperatorId>> {
+fn optional_operator_id(row: &Row<'_>, index: usize) -> SqliteResult<Option<OperatorId>> {
     match row.get::<_, Option<String>>(index)? {
         None => Ok(None),
         Some(raw) => OperatorId::new(raw)
@@ -172,7 +181,7 @@ pub const OPTIONAL_OPERATOR_ID: ColumnCodec<Option<OperatorId>> =
     ColumnCodec::new(optional_operator_id, optional_operator_id_to_sql);
 
 /// Reads the operator name recorded on a document, from a nullable column.
-pub fn optional_recorded_operator_name(
+fn optional_recorded_operator_name(
     row: &Row<'_>,
     index: usize,
 ) -> SqliteResult<Option<RecordedOperatorName>> {
@@ -204,7 +213,7 @@ pub const OPTIONAL_RECORDED_OPERATOR_NAME: ColumnCodec<Option<RecordedOperatorNa
 /// Takes both indices because the two columns are **one** value. Read separately they can drift:
 /// a row with a blank Latin name and a present Arabic one is an operator the domain says cannot
 /// exist, and only a reader holding both at once can say so.
-pub fn operator_name(
+fn operator_name(
     row: &Row<'_>,
     latin_index: usize,
     arabic_index: usize,
@@ -226,7 +235,7 @@ pub const OPERATOR_NAME: PairColumnCodec<OperatorName> =
 ///
 /// A role this till does not recognise means the contract moved; reading it as `Cashier` would be
 /// a privilege decision made by a fallback.
-pub fn operator_role(row: &Row<'_>, index: usize) -> SqliteResult<OperatorRole> {
+fn operator_role(row: &Row<'_>, index: usize) -> SqliteResult<OperatorRole> {
     let raw: String = row.get(index)?;
     raw.parse().map_err(|error| conversion_failed(index, error))
 }
@@ -255,7 +264,7 @@ pub const OPERATOR_ROLE: ColumnCodec<OperatorRole> =
 /// Nothing in this crate can write an unrecognised value — [`VarianceStatus::as_str`] is total
 /// over three variants — so this refusal fires only for a row some other writer put there, which
 /// is exactly the case where guessing is worst.
-pub fn variance_status(row: &Row<'_>, index: usize) -> SqliteResult<VarianceStatus> {
+fn variance_status(row: &Row<'_>, index: usize) -> SqliteResult<VarianceStatus> {
     let raw: String = row.get(index)?;
     match raw.as_str() {
         "balanced" => Ok(VarianceStatus::Balanced),
@@ -286,7 +295,7 @@ pub const VARIANCE_STATUS: ColumnCodec<VarianceStatus> =
 /// `.ok().unwrap_or_default()`, which turned an unreadable column into an operator holding no
 /// privileges — the same value as a genuinely unprivileged cashier, and indistinguishable from
 /// one. It failed closed, so nobody noticed; the mechanism was indifferent to direction.
-pub fn permissions(row: &Row<'_>, index: usize) -> SqliteResult<Option<OperatorPermissions>> {
+fn permissions(row: &Row<'_>, index: usize) -> SqliteResult<Option<OperatorPermissions>> {
     match row.get::<_, Option<String>>(index)? {
         None => Ok(None),
         Some(json) => serde_json::from_str(&json)
@@ -320,7 +329,7 @@ pub const PERMISSIONS: ColumnCodec<Option<OperatorPermissions>> =
 // ============================================================================
 
 /// Reads a monetary or quantity column as a `Decimal`.
-pub fn decimal(row: &Row<'_>, index: usize) -> SqliteResult<Decimal> {
+fn decimal(row: &Row<'_>, index: usize) -> SqliteResult<Decimal> {
     Ok(decimal_from_sqlite(row.get::<_, f64>(index)?))
 }
 
@@ -337,7 +346,7 @@ fn decimal_to_sql(value: &Decimal) -> SqliteResult<Value> {
 pub const DECIMAL: ColumnCodec<Decimal> = ColumnCodec::new(decimal, decimal_to_sql);
 
 /// Reads a nullable monetary column as an optional `Decimal`.
-pub fn optional_decimal(row: &Row<'_>, index: usize) -> SqliteResult<Option<Decimal>> {
+fn optional_decimal(row: &Row<'_>, index: usize) -> SqliteResult<Option<Decimal>> {
     Ok(row.get::<_, Option<f64>>(index)?.map(decimal_from_sqlite))
 }
 
@@ -353,7 +362,7 @@ pub const OPTIONAL_DECIMAL: ColumnCodec<Option<Decimal>> =
     ColumnCodec::new(optional_decimal, optional_decimal_to_sql);
 
 /// Reads a nullable `TEXT` column.
-pub fn optional_string(row: &Row<'_>, index: usize) -> SqliteResult<Option<String>> {
+fn optional_string(row: &Row<'_>, index: usize) -> SqliteResult<Option<String>> {
     row.get(index)
 }
 
@@ -382,7 +391,7 @@ pub const OPTIONAL_TEXT: ColumnCodec<Option<String>> =
 // today's behaviour, not a decision about it.
 
 /// Reads `products.product_type`, standing in `PHYSICAL_GOOD` for a NULL.
-pub fn product_type_or_physical_good(row: &Row<'_>, index: usize) -> SqliteResult<String> {
+fn product_type_or_physical_good(row: &Row<'_>, index: usize) -> SqliteResult<String> {
     Ok(row
         .get::<_, Option<String>>(index)?
         .unwrap_or_else(|| "PHYSICAL_GOOD".to_string()))
@@ -402,7 +411,7 @@ pub const PRODUCT_TYPE_OR_PHYSICAL_GOOD: ColumnCodec<String> =
     ColumnCodec::new(product_type_or_physical_good, product_type_to_sql);
 
 /// Reads `products.track_inventory`, standing in `true` for a NULL.
-pub fn tracks_inventory_unless_said_otherwise(row: &Row<'_>, index: usize) -> SqliteResult<bool> {
+fn tracks_inventory_unless_said_otherwise(row: &Row<'_>, index: usize) -> SqliteResult<bool> {
     Ok(row.get::<_, Option<bool>>(index)?.unwrap_or(true))
 }
 
@@ -417,7 +426,7 @@ pub const TRACKS_INVENTORY_UNLESS_SAID_OTHERWISE: ColumnCodec<bool> = ColumnCode
 );
 
 /// Reads `products.product_nature`, standing in `TANGIBLE` for a NULL.
-pub fn product_nature_or_tangible(row: &Row<'_>, index: usize) -> SqliteResult<String> {
+fn product_nature_or_tangible(row: &Row<'_>, index: usize) -> SqliteResult<String> {
     Ok(row
         .get::<_, Option<String>>(index)?
         .unwrap_or_else(|| "TANGIBLE".to_string()))

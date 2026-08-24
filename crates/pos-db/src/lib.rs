@@ -40,6 +40,7 @@ pub mod schema;
 pub mod shared_drafts;
 pub mod shifts;
 pub mod sync_state;
+pub mod terminal;
 pub mod transactions;
 pub mod z_reports;
 
@@ -58,6 +59,7 @@ pub use schema::CURRENT_SCHEMA_VERSION;
 pub use shared_drafts::{SharedDraftRow, SharedDraftSyncStatus};
 pub use shifts::{ShiftRow, ShiftStatus};
 pub use sync_state::{SyncResource, SyncState};
+pub use terminal::{OperatorSessionRow, TerminalConfigRow, TerminalRegistrationRow};
 pub use transactions::{OfflineTransactionRow, SyncStatus, TransactionType};
 pub use z_reports::{DayTotals, DayTotalsRow, PaymentBreakdownRow, ZReportRow};
 

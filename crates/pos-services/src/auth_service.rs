@@ -9,12 +9,13 @@ use pos_api::{
     ApiClient, ApiFailure, HeartbeatRequest, HeartbeatResponse, LoginTerminalResponse,
     RefusalDetails, ServerErrorCode, SessionToken, TerminalStanding, VerifyPinResponse,
 };
-use pos_db::column::{operator_name, operator_role};
+use pos_db::operators::{OperatorCredentialsRow, OPERATOR_CREDENTIALS_ROW};
+use pos_db::projection::{read_one, write};
+use pos_db::terminal::{TerminalConfigRow, TERMINAL_CONFIG_ROW};
 use pos_db::Database;
 use pos_models::{
-    Authority, OperatorId, OperatorName, OperatorPermissions, OperatorRole, Pin, PinPolicy,
-    PinRefusal, PinVerification, StoreFailure, StoreFailureKind, UndeterminedCause,
-    VerifiedOperator,
+    Authority, OperatorId, OperatorName, OperatorPermissions, Pin, PinPolicy, PinRefusal,
+    PinVerification, StoreFailure, StoreFailureKind, UndeterminedCause, VerifiedOperator,
 };
 use rusqlite::params;
 use std::sync::Arc;
@@ -50,29 +51,6 @@ pub struct TerminalSession {
     pub features: Vec<String>,
 }
 
-/// The five columns the offline path reads, named rather than positional at the call.
-///
-/// A positional `row.get(n)` beside a tuple of the same arity is structurally blind to a dropped
-/// column: remove one from the `SELECT` and every subsequent index silently shifts by one, with
-/// the types still lining up. Naming each field where it is read does not fix that on its own —
-/// `the_offline_read_takes_every_column_from_its_own_position` does, with a distinct value per
-/// column — but it makes the shift visible in the diff instead of invisible in an index.
-///
-/// **There is no `pin_hash` here any more**, and that is the point of schema v13. See
-/// [`AuthService::verify_pin_offline`].
-///
-/// `name` and `role` arrive as domain types because `pos_db::column` reads them that way, which is
-/// what its helpers exist for: a role this till does not recognise means the contract moved, and
-/// reading it as `Cashier` would be a privilege decision made by a fallback. Holding them as
-/// `String` here would also re-open what
-/// `tests/guards.rs::operator_identity_never_survives_as_a_bare_string` closes.
-struct StoredOperator {
-    name: OperatorName,
-    role: OperatorRole,
-    permissions_json: Option<String>,
-    is_active: bool,
-}
-
 /// A column that held something outside the domain type it maps to.
 ///
 /// A named error rather than a `String`, so `StoreFailure`'s source stays an error: the failure
@@ -82,37 +60,42 @@ struct StoredOperator {
 #[error("{0}")]
 struct UnreadableRow(String);
 
-impl StoredOperator {
-    /// Reads the row into the domain, fail-closed.
-    ///
-    /// The result is currently discarded by the one caller: with no credential to check a PIN
-    /// against, a well-formed row still cannot produce a [`VerifiedOperator`]. It is called
-    /// anyway, because a row this till cannot read is a different answer from one it can — the
-    /// first is the till's own fault and reports as `Undetermined(StoreUnavailable)`, the second
-    /// reports as `Undetermined(ServerUnreachable)`, and an operator staring at a till deserves to
-    /// be told which. `offline-pin-verification-has-no-credential` is what starts using the value.
-    fn into_verified(self, operator_id: &OperatorId) -> Result<VerifiedOperator, StoreFailure> {
-        // Absent is a real state and means this operator holds nothing beyond ringing a sale. A
-        // column that is present and unreadable is not: that is a broken row, and reading it as
-        // "no permissions" would be a privilege decision made by a fallback.
-        let permissions = match self.permissions_json {
-            None => OperatorPermissions::none(),
-            Some(json) => serde_json::from_str(&json).map_err(|e| {
-                StoreFailure::new(
-                    "reading the operator's row",
-                    StoreFailureKind::RowUnreadable,
-                )
-                .caused_by(UnreadableRow(format!("the `permissions_json` column: {e}")))
-            })?,
-        };
+/// Reads an operator's stored credentials row into the domain, fail-closed.
+///
+/// A free function rather than an inherent method: [`OperatorCredentialsRow`] is `pos-db`'s, and
+/// the rule it enforces is `pos-services`'. That split is the same one the row shapes here rest on
+/// — the store says what is *stored*, this crate says what is *true of it*.
+///
+/// The result is currently discarded by the one caller: with no credential to check a PIN
+/// against, a well-formed row still cannot produce a [`VerifiedOperator`]. It is called
+/// anyway, because a row this till cannot read is a different answer from one it can — the
+/// first is the till's own fault and reports as `Undetermined(StoreUnavailable)`, the second
+/// reports as `Undetermined(ServerUnreachable)`, and an operator staring at a till deserves to
+/// be told which. `offline-pin-verification-has-no-credential` is what starts using the value.
+fn into_verified(
+    row: OperatorCredentialsRow,
+    operator_id: &OperatorId,
+) -> Result<VerifiedOperator, StoreFailure> {
+    // Absent is a real state and means this operator holds nothing beyond ringing a sale. A
+    // column that is present and unreadable is not: that is a broken row, and reading it as
+    // "no permissions" would be a privilege decision made by a fallback.
+    let permissions = match row.permissions_json {
+        None => OperatorPermissions::none(),
+        Some(json) => serde_json::from_str(&json).map_err(|e| {
+            StoreFailure::new(
+                "reading the operator's row",
+                StoreFailureKind::RowUnreadable,
+            )
+            .caused_by(UnreadableRow(format!("the `permissions_json` column: {e}")))
+        })?,
+    };
 
-        Ok(VerifiedOperator::from_verified_pin(
-            operator_id.clone(),
-            self.name,
-            self.role,
-            permissions,
-        ))
-    }
+    Ok(VerifiedOperator::from_verified_pin(
+        operator_id.clone(),
+        row.name,
+        row.role,
+        permissions,
+    ))
 }
 
 impl AuthService {
@@ -213,37 +196,23 @@ impl AuthService {
         let conn = self.db.connection();
         let conn = conn.lock();
 
-        conn.execute(
-            r#"
-            INSERT OR REPLACE INTO terminal_config
-            (id, terminal_id, terminal_code, hardware_id, session_token,
-             company_id, branch_id, locale, currency,
-             tax_rate, tax_inclusive, sector, updated_at)
-            VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, datetime('now'))
-            "#,
-            params![
-                response.terminal_id,
-                response.terminal_code,
-                hardware_id,
-                response.session_token,
-                response.company_id,
-                response.branch_id,
-                response.config.locale,
-                response.config.currency,
-                response
-                    .config
-                    .tax_config
-                    .as_ref()
-                    .map(|t| t.default_rate)
-                    .unwrap_or(0.0),
-                response
-                    .config
-                    .tax_config
-                    .as_ref()
-                    .map(|t| t.tax_inclusive as i32)
-                    .unwrap_or(0),
-                response.config.business_sector,
-            ],
+        let tax = response.config.tax_config.as_ref();
+        write(
+            &conn,
+            &TERMINAL_CONFIG_ROW,
+            &TerminalConfigRow {
+                terminal_id: response.terminal_id.clone(),
+                terminal_code: response.terminal_code.clone(),
+                hardware_id: hardware_id.to_string(),
+                session_token: Some(response.session_token.clone()),
+                company_id: Some(response.company_id.clone()),
+                branch_id: response.branch_id.clone(),
+                locale: response.config.locale.clone(),
+                currency: response.config.currency.clone(),
+                tax_rate: Some(tax.map(|t| t.default_rate).unwrap_or(0.0)),
+                tax_inclusive: Some(i64::from(tax.is_some_and(|t| t.tax_inclusive))),
+                sector: response.config.business_sector.clone(),
+            },
         )?;
 
         debug!("Terminal config saved to local database");
@@ -257,67 +226,50 @@ impl AuthService {
         let conn = self.db.connection();
         let conn = conn.lock();
 
-        let result = conn.query_row(
-            r#"
-            SELECT terminal_id, terminal_code, hardware_id, session_token,
-                   company_id, branch_id, locale, currency,
-                   tax_rate, tax_inclusive, sector
-            FROM terminal_config
-            WHERE id = 1
-            "#,
+        // The free `read_one` over the guard taken above — `Database::select_one` would re-take a
+        // lock that is not reentrant and hang start-up with no error and no panic.
+        let Some(row) = read_one(
+            &conn,
+            TERMINAL_CONFIG_ROW.reader(),
+            "FROM terminal_config WHERE id = 1",
             [],
-            |row| {
-                // Every column is read before the token is judged, deliberately. Returning early
-                // on a blank token would leave the reads after it unexercised, and this row is
-                // read by position — `test_load_saved_session_reads_every_column_into_its_own_field`
-                // is what catches a shift, and it can only catch one it reaches.
-                let terminal_id = row.get(0)?;
-                let terminal_code = row.get(1)?;
-                let hardware_id = row.get(2)?;
-                let session_token = row.get::<_, Option<String>>(3)?;
-                let company_id = row.get::<_, Option<String>>(4)?.unwrap_or_default();
-                let branch_id = row.get(5)?;
-                let locale = row
-                    .get::<_, Option<String>>(6)?
-                    .unwrap_or_else(|| "ar".to_string());
-                let currency = row
-                    .get::<_, Option<String>>(7)?
-                    .unwrap_or_else(|| "LYD".to_string());
-                let tax_rate = row.get::<_, Option<f64>>(8)?.unwrap_or(0.0);
-                let tax_inclusive = row.get::<_, Option<i32>>(9)?.unwrap_or(0) != 0;
-                let sector = row
-                    .get::<_, Option<String>>(10)?
-                    .unwrap_or_else(|| "RETAIL".to_string());
+        )?
+        else {
+            return Ok(None);
+        };
 
-                // NULL and `""` are the same answer — *there is no session* — and they say it
-                // here, once, instead of downstream in an `is_empty()` every reader had to
-                // remember.
-                let Ok(session_token) = SessionToken::new(session_token.unwrap_or_default()) else {
-                    return Ok(None);
-                };
+        Ok(Self::session_from(row))
+    }
 
-                Ok(Some(TerminalSession {
-                    terminal_id,
-                    terminal_code,
-                    hardware_id,
-                    session_token,
-                    company_id,
-                    branch_id,
-                    locale,
-                    currency,
-                    tax_rate,
-                    tax_inclusive,
-                    sector,
-                    features: vec![], // Features need to be synced
-                }))
-            },
-        );
+    /// Widens a stored configuration row into the session the till runs on, or `None`.
+    ///
+    /// **The only place `terminal_config`'s defaults are decided.** They used to sit inside the
+    /// `query_row` closure — `unwrap_or_default()` for the company, `"ar"`, `"LYD"`, `0.0`,
+    /// `"RETAIL"` — mixed in among the positional reads, so a column that was absent and a column
+    /// equal to its default became one value before anything could tell them apart. They are still
+    /// the same defaults; they are now visibly defaults, in one function, applied to a row type
+    /// that is as nullable as the schema.
+    ///
+    /// `None` means *there is no session*, which is what a blank or absent `session_token` says.
+    /// NULL and `""` are the same answer here and always have been — [`SessionToken::new`] refuses
+    /// the blank, once, rather than every reader downstream remembering an `is_empty()`.
+    fn session_from(row: TerminalConfigRow) -> Option<TerminalSession> {
+        let session_token = SessionToken::new(row.session_token.unwrap_or_default()).ok()?;
 
-        match result {
-            Ok(session) => Ok(session),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(e.into()),
-        }
+        Some(TerminalSession {
+            terminal_id: row.terminal_id,
+            terminal_code: row.terminal_code,
+            hardware_id: row.hardware_id,
+            session_token,
+            company_id: row.company_id.unwrap_or_default(),
+            branch_id: row.branch_id,
+            locale: row.locale.unwrap_or_else(|| "ar".to_string()),
+            currency: row.currency.unwrap_or_else(|| "LYD".to_string()),
+            tax_rate: row.tax_rate.unwrap_or(0.0),
+            tax_inclusive: row.tax_inclusive.unwrap_or(0) != 0,
+            sector: row.sector.unwrap_or_else(|| "RETAIL".to_string()),
+            features: vec![], // Features need to be synced
+        })
     }
 
     /// Sends a heartbeat to the backend
@@ -708,26 +660,19 @@ impl AuthService {
         let stored = {
             let conn = self.db.connection();
             let conn = conn.lock();
-            conn.query_row(
-                "SELECT name, name_ar, role, permissions_json, is_active FROM operators \
-                 WHERE id = ?1",
+            // `name` and `name_ar` are one value and the declaration says so — the pair codec
+            // consumes both columns, so they cannot drift into a row the domain forbids.
+            read_one(
+                &conn,
+                &OPERATOR_CREDENTIALS_ROW,
+                "FROM operators WHERE id = ?1",
                 [operator_id.as_str()],
-                |row| {
-                    Ok(StoredOperator {
-                        // Two indices, because `name` and `name_ar` are one value: read
-                        // separately they can drift into a row the domain says cannot exist.
-                        name: operator_name(row, 0, 1)?,
-                        role: operator_role(row, 2)?,
-                        permissions_json: row.get(3)?,
-                        is_active: row.get(4)?,
-                    })
-                },
             )
         };
 
         let stored = match stored {
-            Ok(stored) => stored,
-            Err(rusqlite::Error::QueryReturnedNoRows) => {
+            Ok(Some(stored)) => stored,
+            Ok(None) => {
                 // Consumes no attempt: there is no operator to charge it to, and charging an
                 // unknown identifier would let anyone exhaust a real operator's budget by
                 // guessing ids.
@@ -751,7 +696,7 @@ impl AuthService {
         // The row parses and the operator is real and active. There is simply nothing here to
         // check a PIN against. `_pin` is not compared, and is named with a leading underscore so
         // that stays obvious rather than being something a reader has to notice by its absence.
-        if let Err(failure) = stored.into_verified(operator_id) {
+        if let Err(failure) = into_verified(stored, operator_id) {
             return PinVerification::Undetermined(failure.into());
         }
 

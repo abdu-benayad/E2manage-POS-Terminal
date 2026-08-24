@@ -13,7 +13,8 @@ use pos_api::{
     ApiClient, DeviceInfo, HardwareInfo, OsInfo, PairedTerminalInfo, PairingStatus,
     RegisterDeviceRequest,
 };
-use pos_db::projection::optional_scalar;
+use pos_db::projection::{optional_scalar, read_one, write};
+use pos_db::terminal::{TerminalConfigRow, TERMINAL_CONFIG_ROW, TERMINAL_REGISTRATION_ROW};
 use pos_db::Database;
 use pos_models::HardwareEnrolment;
 use rusqlite::params;
@@ -240,15 +241,18 @@ impl PairingService {
         let conn = self.db.connection();
         let conn = conn.lock();
 
-        let flag = conn.query_row(
+        let flag = optional_scalar::<Option<i32>>(
+            &conn,
             "SELECT is_registered FROM terminal_registration WHERE id = 1",
             [],
-            |row| row.get::<_, Option<i32>>(0),
         );
 
         match flag {
-            Ok(stored) => Ok(stored == Some(1)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(false),
+            // Two `None`s and they mean different things, which is why the type keeps them apart:
+            // the outer is *no row* — a fresh install — and the inner is SQL `NULL`, which the
+            // schema's `DEFAULT 0` makes equivalent to unset. Both answer "not registered". Only
+            // an `Err` is the store failing, and that belongs to the caller.
+            Ok(stored) => Ok(stored.flatten() == Some(1)),
             Err(e) => Err(e).context(
                 "could not read the terminal registration flag; this is the store failing to \
                  answer, not a till that is unregistered",
@@ -279,34 +283,33 @@ impl PairingService {
         let conn = self.db.connection();
         let conn = conn.lock();
 
-        let result = conn.query_row(
-            r#"
-            SELECT hardware_id, terminal_id, terminal_code, secret,
-                   company_name, is_registered, registered_at
-            FROM terminal_registration
-            WHERE id = 1
-            "#,
+        // One projection of `terminal_registration`, shared with the two credential reads below.
+        // It names `license_key` as well, which none of the three hand-written lists did.
+        let result = read_one(
+            &conn,
+            TERMINAL_REGISTRATION_ROW.reader(),
+            "FROM terminal_registration WHERE id = 1",
             [],
-            |row| {
-                Ok(RegistrationRow {
-                    hardware_id: row.get(0)?,
-                    terminal_id: row.get(1)?,
-                    terminal_code: row.get(2)?,
-                    secret: row.get(3)?,
-                    company_name: row.get(4)?,
-                    is_registered: row.get::<_, Option<i32>>(5)? == Some(1),
-                    registered_at: row.get(6)?,
-                })
-            },
-        );
+        )
+        .map(|row| {
+            row.map(|row| RegistrationRow {
+                hardware_id: row.hardware_id,
+                terminal_id: row.terminal_id,
+                terminal_code: row.terminal_code,
+                secret: row.secret,
+                company_name: row.company_name,
+                is_registered: row.is_registered == Some(1),
+                registered_at: row.registered_at,
+            })
+        });
 
         match result {
-            Ok(row) => row.into_registration(),
+            Ok(Some(row)) => row.into_registration(),
             // The schema seeds row 1, so an absent row means something removed it. That is still
-            // not an enrolment, and it is not an identity either.
-            Err(rusqlite::Error::QueryReturnedNoRows) => {
-                Ok(TerminalRegistration::Unenrolled { hardware_id: None })
-            }
+            // not an enrolment, and it is not an identity either. `read_one` already separates
+            // this from a failure — it is the only error `.optional()` folds into `None` — so the
+            // three outcomes stay three, as they were when the match spelled it out.
+            Ok(None) => Ok(TerminalRegistration::Unenrolled { hardware_id: None }),
             Err(e) => Err(e).context(
                 "could not read the terminal registration row; this is the store failing to \
                  answer, not a till that is unenrolled",
@@ -323,15 +326,18 @@ impl PairingService {
         // Absent, empty and NULL all mean "this till has not generated one yet" and fall through.
         // A read that *failed* means something else entirely and must not: generating a fresh id
         // here writes it over the identity the platform knows this till by.
-        let stored = conn.query_row(
+        let stored = optional_scalar::<Option<String>>(
+            &conn,
             "SELECT hardware_id FROM terminal_registration WHERE id = 1",
             [],
-            |row| row.get::<_, Option<String>>(0),
         );
 
-        match stored {
+        match stored.map(Option::flatten) {
             Ok(Some(id)) if !id.is_empty() => return Ok(id),
-            Ok(_) | Err(rusqlite::Error::QueryReturnedNoRows) => {}
+            // Absent row, SQL `NULL` and empty string all mean "not generated yet" and fall
+            // through together — `flatten` collapses the first two because nothing here needs to
+            // tell them apart, and the guard above covers the third.
+            Ok(_) => {}
             Err(e) => {
                 return Err(e).context(
                     "could not read the stored hardware id; refusing to generate a replacement, \
@@ -544,24 +550,32 @@ impl PairingService {
         let conn = self.db.connection();
         let conn = conn.lock();
 
-        conn.execute(
-            r#"
-            INSERT OR REPLACE INTO terminal_config
-            (id, terminal_id, terminal_code, hardware_id, session_token,
-             company_id, branch_id, locale, currency, sector, updated_at)
-            VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, datetime('now'))
-            "#,
-            params![
-                response.terminal_id,
-                response.terminal_code,
-                hardware_id,
-                response.session_token,
-                response.company_id,
-                response.branch_id,
-                response.config.locale,
-                response.config.currency,
-                response.config.business_sector,
-            ],
+        // Through `TERMINAL_CONFIG_ROW`, the same mapping the login path writes. This statement
+        // used to name nine columns where that one names eleven, and `INSERT OR REPLACE` is a
+        // delete then an insert — so pairing silently reset `tax_rate` and `tax_inclusive` to the
+        // column defaults, and neither statement said the other existed.
+        //
+        // The zeroes below are those same defaults, now written on purpose: pairing has no tax
+        // configuration to supply, and this preserves what the omission produced rather than
+        // changing behaviour inside a refactor. Whether it *should* preserve an existing
+        // configuration is a real question, and it belongs to
+        // `project/till/issue/money-and-currency-in-the-till` — see the SAFETY-GAP on the mapping.
+        write(
+            &conn,
+            &TERMINAL_CONFIG_ROW,
+            &TerminalConfigRow {
+                terminal_id: response.terminal_id.clone(),
+                terminal_code: response.terminal_code.clone(),
+                hardware_id: hardware_id.to_string(),
+                session_token: Some(response.session_token.clone()),
+                company_id: Some(response.company_id.clone()),
+                branch_id: response.branch_id.clone(),
+                locale: response.config.locale.clone(),
+                currency: response.config.currency.clone(),
+                tax_rate: Some(0.0),
+                tax_inclusive: Some(0),
+                sector: response.config.business_sector.clone(),
+            },
         )?;
 
         info!("Terminal config saved to database");
@@ -573,19 +587,24 @@ impl PairingService {
         let conn = self.db.connection();
         let conn = conn.lock();
 
-        let result = conn.query_row(
-            r#"
-            SELECT hardware_id, secret
-            FROM terminal_registration
-            WHERE id = 1 AND is_registered = 1 AND secret IS NOT NULL
-            "#,
+        // The same projection as `get_registration`, with the predicate that makes the two
+        // columns this caller wants non-null. The pair is destructured from the row rather than
+        // read positionally, so a column added ahead of `secret` cannot silently become it.
+        let result = read_one(
+            &conn,
+            TERMINAL_REGISTRATION_ROW.reader(),
+            "FROM terminal_registration \
+             WHERE id = 1 AND is_registered = 1 AND secret IS NOT NULL",
             [],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
         );
 
         match result {
-            Ok((hardware_id, secret)) => Ok(Some((hardware_id, secret))),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            // `hardware_id` is `NOT NULL` and the predicate above already excluded a null
+            // `secret`, so both are present whenever a row comes back. `zip` says that once
+            // instead of two `unwrap_or_default()`s that would each turn a broken row into a
+            // blank credential the platform would refuse without explanation.
+            Ok(Some(row)) => Ok(row.hardware_id.zip(row.secret)),
+            Ok(None) => Ok(None),
             Err(e) => Err(e.into()),
         }
     }
@@ -896,15 +915,18 @@ impl PairingService {
         let conn = self.db.connection();
         let conn = conn.lock();
 
-        let result = conn.query_row(
+        let result = optional_scalar::<Option<String>>(
+            &conn,
             "SELECT license_key FROM terminal_registration WHERE id = 1 AND is_registered = 1",
             [],
-            |row| row.get::<_, Option<String>>(0),
         );
 
         match result {
-            Ok(license_key) => Ok(license_key),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            // Unregistered till, no row, and a `NULL` key all mean the same thing to this caller
+            // — there is no platform licence to offer — so the two `None`s collapse. An `Err`
+            // does not: it means the store could not answer, which is not the same as "no
+            // licence" and must not be reported as one.
+            Ok(license_key) => Ok(license_key.flatten()),
             Err(e) => Err(e.into()),
         }
     }

@@ -6,7 +6,7 @@ use pos_models::{OperatorId, OperatorName, OperatorPermissions, OperatorRole};
 
 use crate::column;
 use crate::projection::OnConflict;
-use crate::row_mapping;
+use crate::{row_mapping, row_reader};
 use rusqlite::{params, Result as SqliteResult};
 
 use super::Database;
@@ -86,6 +86,40 @@ row_mapping! {
 // stating the same objection. The three shift defaults task 09 met were deleted for this reason
 // and this is the fourth. Construct the row's fields; there are twelve and they all mean
 // something.
+
+/// The five columns of `operators` the offline PIN path reads.
+///
+/// A deliberately different shape from [`OperatorRow`], not a subset of it by accident: this is
+/// what the till needs in order to decide whether an operator may sign in — their name for the
+/// message, their role and permissions for what they may do, and whether they are active at all.
+/// It is emphatically **not** an operator record, and five columns could not be written back as
+/// one, so it is a [`RowReader`](crate::projection::RowReader) and `write` will not take it.
+///
+/// There is no `pin_hash` here and there is none in the table: schema v13 took it off this till.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OperatorCredentialsRow {
+    pub name: OperatorName,
+    pub role: OperatorRole,
+    pub permissions_json: Option<String>,
+    pub is_active: bool,
+}
+
+row_reader! {
+    /// What the offline sign-in path reads about an operator, declared once.
+    ///
+    /// **`from "operators"` rather than a bare reader**, and the distinction earns its keep here.
+    /// A read-only shape and a shape with no table are different things: this one projects a real
+    /// table, so `every_mapping_names_columns_the_schema_has` must verify these five names against
+    /// the schema. Declared table-less it would have been exempted from that check as an
+    /// "aggregate" — and a five-column projection of a table nobody checks is exactly the shape
+    /// whose names most need checking.
+    pub const OPERATOR_CREDENTIALS_ROW: RowReader<OperatorCredentialsRow> = from "operators" {
+        name from ("name", "name_ar")       via column::OPERATOR_NAME,
+        role                                via column::OPERATOR_ROLE,
+        permissions_json from "permissions_json",
+        is_active,
+    };
+}
 
 impl Database {
     /// Saves or updates an operator.
@@ -636,5 +670,89 @@ mod tests {
             assert!(seen.insert(column), "`{column}` is named twice");
         }
         assert_eq!(seen.len(), 12, "eleven read columns plus `updated_at`");
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // `OPERATOR_CREDENTIALS_ROW`. Added because a mutation swapping `role` and `permissions_json`
+    // in the declaration **survived**: the reader had no test at all, so nothing exercised it and
+    // the swap was invisible. A shape with no test is not covered by the shape's own existence.
+    // ------------------------------------------------------------------------------------------
+
+    #[test]
+    fn the_credentials_reader_names_its_five_columns_over_the_operators_table() {
+        assert_eq!(
+            OPERATOR_CREDENTIALS_ROW.select_list(),
+            "name, name_ar, role, permissions_json, is_active"
+        );
+        assert_eq!(OPERATOR_CREDENTIALS_ROW.width(), 5);
+        assert_eq!(
+            OPERATOR_CREDENTIALS_ROW.source(),
+            Some("operators"),
+            "declared table-less, this shape would be exempted from the schema check as an \
+             aggregate — and it is a projection of a real table"
+        );
+    }
+
+    #[test]
+    fn every_credentials_column_comes_from_its_own_position() {
+        let db = setup_db();
+        let written = OperatorRow {
+            role: OperatorRole::Manager,
+            permissions: Some(OperatorPermissions::none()),
+            is_active: true,
+            ..an_operator("credentials-1", "Latin Name", Some("الاسم"))
+        };
+        db.save_operator(&written).unwrap();
+
+        let read = db
+            .select_one(
+                &OPERATOR_CREDENTIALS_ROW,
+                "FROM operators WHERE id = ?1",
+                ["credentials-1"],
+            )
+            .unwrap()
+            .expect("the operator this test just wrote");
+
+        // Both halves of the pair, because reading one without the other is the thing the pair
+        // codec exists to prevent.
+        assert_eq!(read.name.latin(), "Latin Name");
+        assert_eq!(read.name.arabic(), Some("الاسم"));
+        assert_eq!(read.role, OperatorRole::Manager);
+        assert!(read.is_active);
+        assert!(
+            read.permissions_json.is_some(),
+            "`permissions_json` read as absent for an operator that has permissions — the \
+             likeliest cause is a column ahead of it in the declaration"
+        );
+    }
+
+    /// An inactive operator reads as inactive, and the neighbouring columns do not move.
+    ///
+    /// The control for the test above: without a second row that differs, `is_active` could be
+    /// hard-coded `true` and both would pass.
+    #[test]
+    fn an_inactive_operator_reads_as_inactive_through_the_credentials_reader() {
+        let db = setup_db();
+        db.save_operator(&OperatorRow {
+            role: OperatorRole::Cashier,
+            permissions: None,
+            is_active: false,
+            ..an_operator("credentials-2", "Other Name", None)
+        })
+        .unwrap();
+
+        let read = db
+            .select_one(
+                &OPERATOR_CREDENTIALS_ROW,
+                "FROM operators WHERE id = ?1",
+                ["credentials-2"],
+            )
+            .unwrap()
+            .unwrap();
+        assert!(!read.is_active);
+        assert_eq!(read.role, OperatorRole::Cashier);
+        assert_eq!(read.name.latin(), "Other Name");
+        assert_eq!(read.name.arabic(), None);
+        assert_eq!(read.permissions_json, None);
     }
 }

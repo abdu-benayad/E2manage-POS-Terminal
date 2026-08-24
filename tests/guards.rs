@@ -2353,6 +2353,26 @@ mod guards {
         discards: bool,
     }
 
+    /// Every call shape by which `pos-services` gets a row out of the store.
+    ///
+    /// `query_row` alone was the whole list until `positional-row-access-in-pos-db` moved the
+    /// reads onto the projection helpers, at which point the corpus fell to one call and the
+    /// non-emptiness control below fired — correctly. **The floor is what caught it.** Lowering
+    /// that floor to match would have left a guard that still passed, still read as coverage, and
+    /// no longer looked at anything: the population had not become clean, it had moved.
+    ///
+    /// So the names travel with it. A read is a read whichever helper spells it, and the failure
+    /// this guard exists to catch — an error flattened into an answer by `.unwrap_or_default()`,
+    /// `.ok()`, `.unwrap_or(false)` — is available at every one of them.
+    const READ_CALLS: [&str; 6] = [
+        "query_row",
+        "read_one",
+        "read_all",
+        "select_one",
+        "optional_scalar",
+        "select_optional_scalar",
+    ];
+
     fn query_row_sites_under(relative_dir: &str) -> Vec<ReadSite> {
         let dir = repo_root().join(relative_dir);
         let mut sites = Vec::new();
@@ -2367,22 +2387,33 @@ mod guards {
                 .unwrap_or(&path)
                 .display()
                 .to_string();
-            let mut from = 0;
-            while let Some(at) = code[from..].find("query_row") {
-                let start = from + at;
-                let after = &code[start + "query_row".len()..];
-                let opened = after.find('(').filter(|at| after[..*at].trim().is_empty());
-                if let Some(open) = opened {
-                    let absolute = start + "query_row".len() + open;
-                    if let Some(tail) = tail_after_balanced_call(&code, absolute) {
-                        sites.push(ReadSite {
-                            path: shown.clone(),
-                            line: code[..start].matches('\n').count() + 1,
-                            discards: discards_its_error(tail),
-                        });
+            for call in READ_CALLS {
+                let mut from = 0;
+                while let Some(at) = code[from..].find(call) {
+                    let start = from + at;
+                    // A whole identifier, not a substring: `read_one` must not also match
+                    // `spread_one`, and `select_one` must not match `deselect_one`.
+                    let preceded_by_ident = start > 0
+                        && code[..start]
+                            .chars()
+                            .next_back()
+                            .is_some_and(|c| c.is_alphanumeric() || c == '_');
+                    let after = &code[start + call.len()..];
+                    let opened = after.find('(').filter(|at| after[..*at].trim().is_empty());
+                    if !preceded_by_ident {
+                        if let Some(open) = opened {
+                            let absolute = start + call.len() + open;
+                            if let Some(tail) = tail_after_balanced_call(&code, absolute) {
+                                sites.push(ReadSite {
+                                    path: shown.clone(),
+                                    line: code[..start].matches('\n').count() + 1,
+                                    discards: discards_its_error(tail),
+                                });
+                            }
+                        }
                     }
+                    from = start + call.len();
                 }
-                from = start + "query_row".len();
             }
         }
         sites

@@ -28,9 +28,10 @@ use std::sync::Arc;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use pos_api::{ApiClient, ApiFailure, OperatorSession, OperatorSessionRefusal, SessionToken};
+use pos_db::projection::{read_one, write};
+use pos_db::terminal::{OperatorSessionRow, OPERATOR_SESSION_ROW};
 use pos_db::Database;
 use pos_models::OperatorId;
-use rusqlite::params;
 use tracing::{error, info, warn};
 
 /// An operator session the till is holding, and whose it is.
@@ -86,17 +87,14 @@ impl OperatorSignIn {
         let conn = self.db.connection();
         let conn = conn.lock();
 
-        conn.execute(
-            r#"
-            INSERT OR REPLACE INTO operator_sessions
-                (id, operator_id, token, expires_at, established_at)
-            VALUES (1, ?1, ?2, ?3, datetime('now'))
-            "#,
-            params![
-                operator_id.as_str(),
-                session.token().expose(),
-                session.expires_at().to_rfc3339(),
-            ],
+        write(
+            &conn,
+            &OPERATOR_SESSION_ROW,
+            &OperatorSessionRow {
+                operator_id: Some(operator_id.clone()),
+                token: Some(session.token().expose().to_string()),
+                expires_at: Some(session.expires_at().to_rfc3339()),
+            },
         )?;
 
         Ok(())
@@ -112,31 +110,34 @@ impl OperatorSignIn {
         let conn = self.db.connection();
         let conn = conn.lock();
 
-        let result = conn.query_row(
-            "SELECT operator_id, token, expires_at FROM operator_sessions WHERE id = 1",
+        // One projection, shared with `record` above, so the write list and the read list are the
+        // same three names in the same order and cannot drift apart.
+        let result = read_one(
+            &conn,
+            OPERATOR_SESSION_ROW.reader(),
+            "FROM operator_sessions WHERE id = 1",
             [],
-            |row| {
-                // Every column read before any is judged, as in `load_saved_session`: an early
-                // return would leave the reads after it unexercised, and this row is read by
-                // position. `the_operator_session_read_takes_every_column_from_its_own_position`
-                // is what catches a shift, and it can only catch one it reaches.
-                let operator_id = row.get::<_, Option<String>>(0)?.unwrap_or_default();
-                let token = row.get::<_, Option<String>>(1)?.unwrap_or_default();
-                let expires_at = row.get::<_, Option<String>>(2)?.unwrap_or_default();
-                Ok((operator_id, token, expires_at))
-            },
         );
 
-        let (operator_id, token, expires_at) = match result {
-            Ok(row) => row,
-            Err(rusqlite::Error::QueryReturnedNoRows) => return Ok(None),
+        let row = match result {
+            Ok(Some(row)) => row,
+            Ok(None) => return Ok(None),
             Err(error) => return Err(error.into()),
         };
 
-        let Ok(operator_id) = OperatorId::new(operator_id) else {
+        // Blank and absent are the same answer here — *no usable session* — and they are made the
+        // same answer once, in this function, rather than inside a `query_row` closure whose only
+        // failure type is `rusqlite::Error` and which therefore could not have said why.
+        // `OperatorId` refuses a blank, so an absent id is the only "no owner" this can be — the
+        // `unwrap_or_default()` that used to stand here was over a `String` and folded a blank
+        // into the same answer. Nothing can write a blank; see `OperatorSessionRow`.
+        let Some(operator_id) = row.operator_id else {
             warn!("the stored operator session names no operator; nobody is signed in");
             return Ok(None);
         };
+        let token = row.token.unwrap_or_default();
+        let expires_at = row.expires_at.unwrap_or_default();
+
         let Ok(token) = SessionToken::new(token) else {
             warn!("the stored operator session has no token; nobody is signed in");
             return Ok(None);

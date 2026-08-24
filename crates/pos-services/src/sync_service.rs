@@ -38,6 +38,8 @@ use anyhow::Result;
 use chrono::Utc;
 use pos_api::sync::{CatalogDeltaResponse, CatalogResponse, OperatorsResponse};
 use pos_api::{ApiClient, ApiFailure, GetResult, ReauthOutcome, SessionToken, TerminalStanding};
+use pos_db::projection::read_one;
+use pos_db::terminal::TERMINAL_REGISTRATION_ROW;
 use pos_db::{Database, SyncResource};
 use pos_models::{Feature, FeatureScreen};
 use rusqlite::params;
@@ -113,6 +115,18 @@ pub struct SyncService {
     db: Arc<Database>,
     interval: Duration,
     shared_draft_service: Option<Arc<SharedDraftService>>,
+}
+
+/// What this till logs back in with when its session token expires.
+///
+/// A `(String, String, String)` with the order in a doc comment, until now. All three are
+/// `TEXT` and two of them are adjacent in the table, so exchanging `terminal_code` and
+/// `hardware_id` type-checks, reads correctly, and fails at the platform as a credential
+/// mismatch with nothing pointing back here.
+struct TerminalCredentials {
+    terminal_code: String,
+    hardware_id: String,
+    secret: String,
 }
 
 impl SyncService {
@@ -391,32 +405,41 @@ impl SyncService {
     }
 
     /// Gets stored terminal credentials for re-authentication
-    /// Returns (terminal_code, hardware_id, secret)
-    fn get_credentials(&self) -> Result<Option<(String, String, String)>> {
+    fn get_credentials(&self) -> Result<Option<TerminalCredentials>> {
         let conn = self.db.connection();
         let conn = conn.lock();
 
-        let result = conn.query_row(
-            r#"
-            SELECT terminal_code, hardware_id, secret
-            FROM terminal_registration
-            WHERE id = 1 AND is_registered = 1 AND secret IS NOT NULL
-            "#,
+        // The one projection of `terminal_registration`, shared with `pairing_service`'s two
+        // readers. This was a three-element tuple read positionally and returned as one, with the
+        // column order carried in a doc comment — `terminal_code` and `hardware_id` are adjacent,
+        // both `TEXT`, and swapping them type-checks.
+        let result = read_one(
+            &conn,
+            TERMINAL_REGISTRATION_ROW.reader(),
+            "FROM terminal_registration \
+             WHERE id = 1 AND is_registered = 1 AND secret IS NOT NULL",
             [],
-            |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                ))
-            },
         );
 
         match result {
-            Ok((terminal_code, hardware_id, secret)) => {
-                Ok(Some((terminal_code, hardware_id, secret)))
+            Ok(Some(row)) => {
+                // The predicate excluded a null `secret` and `hardware_id` is `NOT NULL`; only
+                // `terminal_code` can genuinely be absent, and a login without one is not a login
+                // this till can make. Answering `None` sends the caller down
+                // `NoStoredCredentials`, which is the truthful branch — as against a blank code
+                // the platform would refuse with no explanation the till could relay.
+                let (Some(terminal_code), Some(hardware_id), Some(secret)) =
+                    (row.terminal_code, row.hardware_id, row.secret)
+                else {
+                    return Ok(None);
+                };
+                Ok(Some(TerminalCredentials {
+                    terminal_code,
+                    hardware_id,
+                    secret,
+                }))
             }
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Ok(None) => Ok(None),
             Err(e) => Err(e.into()),
         }
     }
@@ -455,10 +478,15 @@ impl SyncService {
         info!("Attempting to re-authenticate due to expired token...");
 
         // Get stored credentials
-        let Some((terminal_code, hardware_id, secret)) = self.get_credentials()? else {
+        let Some(credentials) = self.get_credentials()? else {
             warn!("No stored credentials found for re-authentication");
             return Ok(ReauthOutcome::NoStoredCredentials);
         };
+        let TerminalCredentials {
+            terminal_code,
+            hardware_id,
+            secret,
+        } = credentials;
 
         // Try to login
         match self
