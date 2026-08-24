@@ -151,15 +151,28 @@ till reads from the E2Manage API. The platform replays it against its real app a
 a real database, so a change there that moves a shape this till depends on fails
 *that* repository's suite, in the pull request making the change.
 
-It pins **seven interactions**. The till calls **41 distinct route templates**, measured
+**How many interactions it pins is not written here, deliberately.**
+`the_artifact_pins_exactly_the_interactions_this_crate_declares` asserts it against the
+artifact on disk, so that test is the answer and this file would only be a copy of it going
+stale. It was "seven" here for a day after the artifact reached thirteen, and then fourteen.
+Read `EXPECTED` in `crates/pos-contract/tests/contract.rs`, or count the artifact.
+
+The till calls **41 distinct route templates**, measured
 2026-08-24 across the three crates the route guard allows: **36 under `/api/pos/`** (35 in
 `pos-api`, plus `/api/pos/version/check` in the excluded `pos-updater`), **4 under
-`/api/carts/`**, and `/api/health` (`client.rs:592`). Two traps in that number — a fresh count
-of `pos-api` alone returns 35 and looks like a correction; and counting only `/api/pos/`
+`/api/carts/`**, and `/api/health` (`client.rs:592`). Three traps in that number — a fresh count
+of `pos-api` alone returns 35 and looks like a correction; counting only `/api/pos/`
 understates the till's surface by five, because `/api/carts/*` is a different mount the till
-also calls. The seven are: the
-nested error envelope, two terminal-auth refusals, the pairing-request 200, the
-pairing-status miss, and the login / heartbeat / token-refresh trio.
+also calls; and **`contract.rs` uses the numeral 36 for a *historical wrong total*** while this
+line uses it for a *correct subset*, so the two documents appear to disagree and do not. Both
+say 41. That collision cost one session an investigation on 2026-08-24.
+
+Unlike the interaction count, **41 is quoted rather than computed** — no test asserts it. The
+guard `only_the_transport_crates_name_a_route` (`tests/guards.rs`) already bounds the
+population and already matches `"{}/api/` as well as `"/api/`, which is the base-URL-first
+assembly a naive grep misses; what is missing is inverting that filter and deduping templates.
+Until that exists, treat 41 as a claim with a date on it.
+
 Coverage is small on purpose — a surface where the two sides already disagree
 cannot be pinned without failing the platform's suite for a change it made
 correctly. Coverage grows one interaction per repaired surface.
