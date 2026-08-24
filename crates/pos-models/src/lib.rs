@@ -13,6 +13,7 @@
 //! - `PinVerification` and its payloads - the outcome of an operator entering a PIN
 
 pub mod cart;
+pub mod enrolment;
 pub mod feature;
 pub mod operator;
 pub mod parse;
@@ -25,6 +26,7 @@ pub mod z_report;
 
 // Re-export main types for convenience
 pub use cart::{Cart, CartItem};
+pub use enrolment::HardwareEnrolment;
 pub use feature::{Feature, FeatureDto, FeatureScreen, FeatureScreenDto, FeaturesResponse};
 pub use operator::{
     DiscountAuthority, DiscountPercent, NameScript, OperatorError, OperatorId, OperatorName,

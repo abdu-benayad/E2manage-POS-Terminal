@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::client::Enveloped;
 use crate::failure::ApiFailure;
 use crate::session::{OperatorSession, SessionToken};
-use pos_models::{OperatorId, OperatorPermissions, OperatorRole, Pin};
+use pos_models::{HardwareEnrolment, OperatorId, OperatorPermissions, OperatorRole, Pin};
 
 // ============================================================================
 // REQUEST TYPES
@@ -398,6 +398,20 @@ pub struct PairingStatusResponse {
     pub pairing_code: String,
     /// Expiration time
     pub expires_at: DateTime<Utc>,
+    /// Whether the platform considers this hardware already enrolled.
+    ///
+    /// The platform's `isRePair`, and the **only** enrolment signal the till can read: the
+    /// pairing-request 200 is byte-identical for a first enrolment and a re-pair, so this route
+    /// is where the distinction arrives.
+    ///
+    /// Absent from any server predating the platform's re-pair change, which is why it defaults
+    /// to `Undetermined` rather than to `NotEnrolled` — an older server asserts no negative.
+    ///
+    /// The explicit `rename` is load-bearing despite `rename_all = "camelCase"` on this struct:
+    /// camelCase is a no-op on the single-word field name `enrolment`, so without it serde would
+    /// look for `enrolment` on the wire and silently never find it.
+    #[serde(default, rename = "isRePair")]
+    pub enrolment: HardwareEnrolment,
     /// Terminal info (only present when status is COMPLETED)
     #[serde(default)]
     pub terminal: Option<PairedTerminalInfo>,
@@ -689,6 +703,48 @@ mod tests {
         assert_eq!(response.config.locale, Some("ar".to_string()));
         assert_eq!(response.config.currency, Some("LYD".to_string()));
         assert_eq!(response.features.len(), 2);
+    }
+
+    /// The platform's `isRePair`, read through the till's real DTO rather than a restatement of it.
+    ///
+    /// Paired with its own positive control on purpose. A test that omits a field and gets the
+    /// default passes *identically* against a field name misspelt everywhere, so the omission case
+    /// alone cannot come out differently. The `true` case is what proves the `rename` reaches the
+    /// wire spelling; the omission case is what proves absence is not read as a denial.
+    #[test]
+    fn an_absent_is_re_pair_is_undetermined_not_a_denial() {
+        let with_flag = r#"{
+            "status": "PENDING",
+            "pairingCode": "ABC123",
+            "expiresAt": "2026-08-24T12:00:00.000Z",
+            "isRePair": true
+        }"#;
+        let answered: PairingStatusResponse =
+            serde_json::from_str(with_flag).expect("the platform's pending re-pair body");
+        assert_eq!(answered.enrolment, HardwareEnrolment::AlreadyEnrolled);
+
+        let without_flag = r#"{
+            "status": "PENDING",
+            "pairingCode": "ABC123",
+            "expiresAt": "2026-08-24T12:00:00.000Z"
+        }"#;
+        let silent: PairingStatusResponse =
+            serde_json::from_str(without_flag).expect("a server predating the re-pair change");
+        assert_eq!(silent.enrolment, HardwareEnrolment::Undetermined);
+        assert_ne!(silent.enrolment, HardwareEnrolment::NotEnrolled);
+    }
+
+    #[test]
+    fn the_platform_saying_not_a_re_pair_reaches_the_till_as_not_enrolled() {
+        let json = r#"{
+            "status": "PENDING",
+            "pairingCode": "ABC123",
+            "expiresAt": "2026-08-24T12:00:00.000Z",
+            "isRePair": false
+        }"#;
+        let response: PairingStatusResponse =
+            serde_json::from_str(json).expect("the platform's pending first-enrolment body");
+        assert_eq!(response.enrolment, HardwareEnrolment::NotEnrolled);
     }
 
     #[test]
