@@ -465,6 +465,16 @@ is also what a bulk write that never writes anything produces, so the rollback t
 succeeds-and-commits control beside it. **Every expected-empty result needs a positive control, and
 the tolerated case is the best one available.**
 
+**And when a check has to choose an error direction, choose the false positive.** Two checkers for
+the same vacuous-matcher question, written on opposite sides of the contract, disagreed on a7's
+artifact: the till's normalised `[*].*` away and reported **0 vacuous** (a false negative); the
+platform's did not normalise and reported **1** (a false positive, the library-emitted path). Neither
+author could have learned this from their own output. **A false positive gets investigated; a false
+negative gets quoted.** The strict version was kept deliberately, and the tolerance was *not* added on
+the platform side for the reason above: that artifact contains no `each_like!`, so the non-emptiness
+assertion guarding the tolerated class would have had nothing to assert, and an exemption whose guard
+cannot fire is worse than the false positive it removes.
+
 **A number that survives the repair of its own instrument is a coincidence, not a confirmation.**
 A bounded multi-line regex (`query_row\([\s\S]{0,400}?\)…`) counted 16 flattening sites, and
 **silently could not match `z_reports.rs:110` at any boundary rule** because that call's body runs
