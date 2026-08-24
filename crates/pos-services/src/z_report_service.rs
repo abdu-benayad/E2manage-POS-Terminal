@@ -10,7 +10,7 @@ use std::sync::Arc;
 use tracing::{info, warn};
 
 use pos_api::{ApiClient, ZReportRequest};
-use pos_db::Database;
+use pos_db::{Database, ZReportRow};
 use pos_models::{ShiftSummary, VarianceStatus, ZReport};
 
 /// Error types for Z-Report operations
@@ -285,7 +285,7 @@ impl ZReportService {
 
         // Save to database
         self.db
-            .save_z_report(&report)
+            .save_z_report(&store_columns_of(&report))
             .map_err(|e| ZReportError::DatabaseError(e.to_string()))?;
 
         // Mark day as closed in database
@@ -333,12 +333,24 @@ impl ZReportService {
         self.current_report.read().clone()
     }
 
-    /// Gets historical Z-Reports
+    /// Gets historical Z-Reports, as the store kept them.
+    ///
+    /// **Returns `ZReportRow`, not `ZReport`, and that is the point.** Twelve of a `ZReport`'s
+    /// fields — `tax_rate`, the four per-method payment counts, `total_cash_in`/`total_cash_out`,
+    /// `return_count`/`return_total`, `void_count`/`void_total`, and the whole `shifts` breakdown
+    /// — have no column in `z_reports` and cannot be recovered from a stored row. The read this
+    /// replaces closed with `..Default::default()` and handed back a `ZReport` carrying twelve
+    /// zeros, an empty shift list and a tax rate of `"0%"`, with nothing in its type to say those
+    /// were absences rather than measurements.
+    ///
+    /// Writing a widening function that fills them in would be that same defect with a name on
+    /// it. A stored Z-report is a different thing from a generated one, so it gets a different
+    /// type.
     pub fn get_reports_in_range(
         &self,
         start_date: &str,
         end_date: &str,
-    ) -> ZReportResult<Vec<ZReport>> {
+    ) -> ZReportResult<Vec<ZReportRow>> {
         self.db
             .get_z_reports_in_range(start_date, end_date)
             .map_err(|e| ZReportError::DatabaseError(e.to_string()))
@@ -391,17 +403,89 @@ impl ZReportService {
     }
 }
 
+/// The 23 columns of `z_reports` that a finished [`ZReport`] is stored as.
+///
+/// The **only** place the domain report is projected onto the store's columns. Every field here
+/// comes from the report; nothing is defaulted, computed or invented — a value the store does not
+/// keep is simply not in [`ZReportRow`], which is why that type exists.
+///
+/// The `as i64` casts are widening from `u32` and cannot lose a value.
+fn store_columns_of(report: &ZReport) -> ZReportRow {
+    ZReportRow {
+        report_number: report.report_number.clone(),
+        report_date: report.report_date.clone(),
+        terminal_id: report.terminal_id.clone(),
+        currency: report.currency.clone(),
+        total_shifts: i64::from(report.total_shifts),
+        total_transactions: i64::from(report.total_transactions),
+        gross_sales: report.gross_sales,
+        discounts: report.discounts,
+        returns: report.returns,
+        net_sales: report.net_sales,
+        tax_collected: report.tax_collected,
+        cash_total: report.cash_total,
+        card_total: report.card_total,
+        wallet_total: report.wallet_total,
+        credit_total: report.credit_total,
+        opening_float: report.opening_float,
+        expected_cash: report.expected_cash,
+        actual_cash: report.actual_cash,
+        variance: report.variance,
+        variance_status: report.variance_status,
+        generated_at: report.generated_at.clone(),
+        synced: report.synced,
+        server_id: report.server_id.clone(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_z_report_default() {
-        let report = ZReport::default();
-        assert_eq!(report.total_shifts, 0);
-        assert_eq!(report.currency, "LYD");
-        assert_eq!(report.variance_status, VarianceStatus::Balanced);
-        assert!(!report.synced);
+    /// A Z-report with every field named, for tests that vary one of them.
+    ///
+    /// This is what `ZReport::default()` was, minus the part that made it dangerous: it is a
+    /// *test fixture* and lives in the test module, so nothing in production can construct a
+    /// Z-report whose money fields were never measured. The domain `Default` was deleted in task
+    /// 10 of `positional-row-access-in-pos-db` for exactly that reason.
+    fn a_report() -> ZReport {
+        ZReport {
+            report_number: "Z-POS-001-20260824-001".to_string(),
+            report_date: "2026-08-24".to_string(),
+            terminal_id: "POS-001".to_string(),
+            currency: "LYD".to_string(),
+            total_shifts: 0,
+            total_transactions: 0,
+            gross_sales: Decimal::ZERO,
+            discounts: Decimal::ZERO,
+            returns: Decimal::ZERO,
+            net_sales: Decimal::ZERO,
+            tax_collected: Decimal::ZERO,
+            tax_rate: "15%".to_string(),
+            cash_total: Decimal::ZERO,
+            card_total: Decimal::ZERO,
+            wallet_total: Decimal::ZERO,
+            credit_total: Decimal::ZERO,
+            cash_count: 0,
+            card_count: 0,
+            wallet_count: 0,
+            credit_count: 0,
+            opening_float: Decimal::ZERO,
+            total_cash_in: Decimal::ZERO,
+            total_cash_out: Decimal::ZERO,
+            expected_cash: Decimal::ZERO,
+            actual_cash: Decimal::ZERO,
+            variance: Decimal::ZERO,
+            variance_status: VarianceStatus::Balanced,
+            return_count: 0,
+            return_total: Decimal::ZERO,
+            void_count: 0,
+            void_total: Decimal::ZERO,
+            shifts: Vec::new(),
+            generated_at: "2026-08-24T23:00:00Z".to_string(),
+            synced: false,
+            server_id: None,
+        }
     }
 
     #[test]
@@ -419,7 +503,7 @@ mod tests {
 
     #[test]
     fn test_z_report_can_close() {
-        let mut report = ZReport::default();
+        let mut report = a_report();
         assert!(!report.can_close());
 
         report.total_shifts = 1;
@@ -437,7 +521,7 @@ mod tests {
         for (variance_status, expected) in cases {
             let report = ZReport {
                 variance_status,
-                ..Default::default()
+                ..a_report()
             };
             assert_eq!(report.variance_status_str(), expected);
         }
@@ -466,7 +550,7 @@ mod tests {
     #[test]
     fn test_close_day_result() {
         let result = CloseDayResult {
-            report: ZReport::default(),
+            report: a_report(),
             synced: true,
             warnings: vec!["Test warning".to_string()],
         };

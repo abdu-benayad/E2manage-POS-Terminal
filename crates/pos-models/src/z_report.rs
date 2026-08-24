@@ -95,48 +95,6 @@ pub struct ZReport {
     pub server_id: Option<String>,
 }
 
-impl Default for ZReport {
-    fn default() -> Self {
-        Self {
-            report_number: String::new(),
-            report_date: String::new(),
-            terminal_id: String::new(),
-            currency: "LYD".to_string(),
-            total_shifts: 0,
-            total_transactions: 0,
-            gross_sales: Decimal::ZERO,
-            discounts: Decimal::ZERO,
-            returns: Decimal::ZERO,
-            net_sales: Decimal::ZERO,
-            tax_collected: Decimal::ZERO,
-            tax_rate: "0%".to_string(),
-            cash_total: Decimal::ZERO,
-            card_total: Decimal::ZERO,
-            wallet_total: Decimal::ZERO,
-            credit_total: Decimal::ZERO,
-            cash_count: 0,
-            card_count: 0,
-            wallet_count: 0,
-            credit_count: 0,
-            opening_float: Decimal::ZERO,
-            total_cash_in: Decimal::ZERO,
-            total_cash_out: Decimal::ZERO,
-            expected_cash: Decimal::ZERO,
-            actual_cash: Decimal::ZERO,
-            variance: Decimal::ZERO,
-            variance_status: VarianceStatus::Balanced,
-            return_count: 0,
-            return_total: Decimal::ZERO,
-            void_count: 0,
-            void_total: Decimal::ZERO,
-            shifts: Vec::new(),
-            generated_at: String::new(),
-            synced: false,
-            server_id: None,
-        }
-    }
-}
-
 impl ZReport {
     /// Formats a currency amount for display (static version, always 3 decimal places)
     pub fn format_amount_static(amount: Decimal) -> String {

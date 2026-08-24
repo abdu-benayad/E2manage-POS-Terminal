@@ -135,8 +135,16 @@ row_mapping! {
     /// is behaviour-preserving. But two writers of one table disagreeing about how to bind a money
     /// column *is* the drift, and only the affinity rule stood between it and `TEXT` in a `REAL`.
     ///
-    /// `total_amount` stays an `f64`, and that is scope, not endorsement: it is
-    /// `money-and-currency-in-the-till`, not a row task.
+    /// `total_amount` stays an `f64` — see the SAFETY-GAP above this macro.
+    // SAFETY-GAP: `SharedDraftRow.total_amount` is an `f64` and the column is `REAL`. Binary
+    // floating point cannot represent a decimal money amount exactly, so a parked cart's total
+    // can come back a fraction of a fils different from what was rung up, and two tills summing
+    // the same shared drafts can disagree. Nothing here reports it. This file was otherwise
+    // finished by task 07 of `project/till/issue/positional-row-access-in-pos-db`; the field is
+    // deliberately left as-is because converting it is
+    // `project/till/issue/money-and-currency-in-the-till`, which owns the `Decimal` boundary. It
+    // is marked rather than silently carried, because a file with no positional reads left in it
+    // reads as finished. Recorded 2026-08-24.
     pub const SHARED_DRAFT_ROW: RowMapping<SharedDraftRow> = for "shared_drafts" {
         id,
         token,

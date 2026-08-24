@@ -179,7 +179,10 @@ fn the_only_shape_without_a_table_is_the_one_that_has_no_table() {
         .filter(|shape| (shape.table)().is_none())
         .map(|shape| shape.name)
         .collect();
-    let expected: Vec<&str> = Vec::new();
+    // Two, both aggregates over `offline_transactions` with no table to write back to, both
+    // `RowReader` rather than `RowMapping` so the compiler refuses to write them. Adding a third
+    // is a deliberate edit here.
+    let expected = vec!["DAY_TOTALS_ROW", "PAYMENT_BREAKDOWN_ROW"];
     assert_eq!(
         without, expected,
         "a shape declares no table; if that is right, name it here"

@@ -460,6 +460,39 @@ pub const DECLARED_SHAPES: &[DeclaredShape] = &[
         },
     },
     DeclaredShape {
+        name: "Z_REPORT_ROW",
+        table: || Some(crate::z_reports::Z_REPORT_ROW.table()),
+        projected: || {
+            crate::z_reports::Z_REPORT_ROW
+                .reader()
+                .column_names()
+                .collect()
+        },
+        inserted: || {
+            crate::z_reports::Z_REPORT_ROW
+                .insert_column_names()
+                .collect()
+        },
+    },
+    DeclaredShape {
+        // Read-only: eight aggregates over `offline_transactions`, not rows of any table.
+        name: "DAY_TOTALS_ROW",
+        table: || None,
+        projected: || crate::z_reports::DAY_TOTALS_ROW.column_names().collect(),
+        inserted: Vec::new,
+    },
+    DeclaredShape {
+        // Read-only, for the same reason as `DAY_TOTALS_ROW`, over a different `WHERE` clause.
+        name: "PAYMENT_BREAKDOWN_ROW",
+        table: || None,
+        projected: || {
+            crate::z_reports::PAYMENT_BREAKDOWN_ROW
+                .column_names()
+                .collect()
+        },
+        inserted: Vec::new,
+    },
+    DeclaredShape {
         name: "SHIFT_ROW",
         table: || Some(crate::shifts::SHIFT_ROW.table()),
         projected: || crate::shifts::SHIFT_ROW.reader().column_names().collect(),

@@ -35,6 +35,10 @@ pub enum ParseError {
     )]
     DraftQueueSyncStatus(String),
 
+    /// `z_reports.variance_status` held something other than a known variance status.
+    #[error("`{0}` is not a variance status (expected balanced, short or over)")]
+    VarianceStatus(String),
+
     /// `shared_drafts.sync_status` held something other than a known shared-draft status.
     #[error("`{0}` is not a shared draft sync status (expected SYNCED, PENDING_CONVERT or PENDING_DELETE)")]
     SharedDraftSyncStatus(String),

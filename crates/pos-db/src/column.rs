@@ -30,6 +30,7 @@
 
 use pos_models::{
     OperatorId, OperatorName, OperatorPermissions, OperatorRole, RecordedOperatorName,
+    VarianceStatus,
 };
 use rusqlite::types::{Type, Value};
 use rusqlite::{Error, Result as SqliteResult, Row};
@@ -237,6 +238,43 @@ fn operator_role_to_sql(role: &OperatorRole) -> SqliteResult<Value> {
 /// An operator's role, spelled as the server's enum spells it.
 pub const OPERATOR_ROLE: ColumnCodec<OperatorRole> =
     ColumnCodec::new(operator_role, operator_role_to_sql);
+
+// ============================================================================
+// Cash variance
+// ============================================================================
+
+/// Reads a Z-report's variance status, refusing a value the domain does not admit.
+///
+/// The read this replaces was `match raw { "short" => Short, "over" => Over, _ => Balanced }`.
+/// That fallback answers **balanced** — the drawer reconciled — for a column the store could not
+/// interpret, on the one record a cashier is held to at end of day. It is the same mechanism as
+/// the `permissions` defect two hundred lines below, with the direction of the lie reversed:
+/// there an unreadable column produced no privileges and failed closed, here it produces a clean
+/// till and fails open.
+///
+/// Nothing in this crate can write an unrecognised value — [`VarianceStatus::as_str`] is total
+/// over three variants — so this refusal fires only for a row some other writer put there, which
+/// is exactly the case where guessing is worst.
+pub fn variance_status(row: &Row<'_>, index: usize) -> SqliteResult<VarianceStatus> {
+    let raw: String = row.get(index)?;
+    match raw.as_str() {
+        "balanced" => Ok(VarianceStatus::Balanced),
+        "short" => Ok(VarianceStatus::Short),
+        "over" => Ok(VarianceStatus::Over),
+        other => Err(conversion_failed(
+            index,
+            crate::parse::ParseError::VarianceStatus(other.to_string()),
+        )),
+    }
+}
+
+fn variance_status_to_sql(status: &VarianceStatus) -> SqliteResult<Value> {
+    Ok(text(status.as_str()))
+}
+
+/// A Z-report's cash variance status, spelled as `as_str` spells it.
+pub const VARIANCE_STATUS: ColumnCodec<VarianceStatus> =
+    ColumnCodec::new(variance_status, variance_status_to_sql);
 
 // ============================================================================
 // Operator permissions

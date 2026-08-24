@@ -59,7 +59,7 @@ pub use shared_drafts::{SharedDraftRow, SharedDraftSyncStatus};
 pub use shifts::{ShiftRow, ShiftStatus};
 pub use sync_state::{SyncResource, SyncState};
 pub use transactions::{OfflineTransactionRow, SyncStatus, TransactionType};
-pub use z_reports::DayTotals;
+pub use z_reports::{DayTotals, DayTotalsRow, PaymentBreakdownRow, ZReportRow};
 
 use rusqlite::Result as SqliteResult;
 use rust_decimal::prelude::*;
