@@ -151,7 +151,9 @@ till reads from the E2Manage API. The platform replays it against its real app a
 a real database, so a change there that moves a shape this till depends on fails
 *that* repository's suite, in the pull request making the change.
 
-It pins **seven interactions** out of the 36 `/api/pos/*` paths the till calls: the
+It pins **seven interactions** out of the 36 `/api/pos/*` paths the till calls (35 in
+`pos-api`, plus `/api/pos/version/check` in the excluded `pos-updater` — a fresh count of
+`pos-api` alone returns 35 and looks like a correction; it is not): the
 nested error envelope, two terminal-auth refusals, the pairing-request 200, the
 pairing-status miss, and the login / heartbeat / token-refresh trio.
 Coverage is small on purpose — a surface where the two sides already disagree

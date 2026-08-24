@@ -21,7 +21,23 @@ detection, which is the pact's primary job here. The trade is not worth it, and 
 not is the kind of thing that has to be written down or it gets re-litigated as an oversight.
 
 **Coverage is small on purpose.** Seven interactions out of the **36 `/api/pos/*` paths** the
-till calls. A surface where the two sides already disagree **cannot** be pinned without failing
+till calls — **35 in `crates/pos-api/`, plus `/api/pos/version/check` at
+`crates/pos-updater/src/version.rs:55`.**
+
+That decomposition is written down because the number is a trap. A fresh enumeration of
+`pos-api` returns **35**, and the obvious next move is to "correct" the 36 — measured
+2026-08-24, by an agent dispatched to verify the figure, which reported 35 with a careful
+account of what its method would miss and did not name the crate that was missing.
+`pos-updater` is excluded from the workspace (`Cargo.toml:35`), so it is outside every sweep
+scoped to what `--workspace` covers, and its one route is a live call: `check()` builds the URL
+by `format!` from `base_url` and issues it through its own `reqwest` client. The guard
+`only_the_transport_crates_name_a_route` (`tests/guards.rs`) is what bounds the search — it
+allows route literals in exactly `pos-api`, `pos-contract`, `pos-updater`, and matches both
+`"/api/` and `"{}/api/`, so a green guard proves no fourth crate holds one.
+
+Two independent enumerations of `pos-api` — one reading call sites, one normalising literals
+and stripping query strings — returned the **same 35 paths**. The convergence is what makes the
+count trustworthy; the missing crate is what makes it 36. A surface where the two sides already disagree **cannot** be pinned without failing
 the platform's suite for a change it made correctly — the pact would encode the till's bug as
 the platform's obligation. Coverage grows one interaction per repaired surface, never ahead of
 one.
