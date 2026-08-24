@@ -517,6 +517,7 @@ impl PolicyService {
 
         match &policy.value {
             PolicyValue::Boolean(true) => self.apply_enforcement(
+                code,
                 &policy.enforcement_mode,
                 &format!("Policy {} requires this feature to be enabled", code),
             ),
@@ -551,6 +552,7 @@ impl PolicyService {
             (bounds.max(), "exceeds maximum")
         };
         self.apply_enforcement(
+            code,
             &policy.enforcement_mode,
             &format!("Value {value} is {relation} {limit} for policy {code}"),
         )
@@ -594,6 +596,7 @@ impl PolicyService {
         }
 
         self.apply_enforcement(
+            code,
             &policy.enforcement_mode,
             &format!("Value '{value}' is not in allowed list for policy {code}"),
         )
@@ -619,13 +622,48 @@ impl PolicyService {
         }
 
         self.apply_enforcement(
+            code,
             &policy.enforcement_mode,
             &format!("Value '{value}' does not match expected '{expected}' for policy {code}"),
         )
     }
 
     /// Applies the enforcement mode to create the appropriate result
-    fn apply_enforcement(&self, mode: &EnforcementMode, message: &str) -> PolicyResult {
+    /// Turns "this policy is not satisfied" into what the platform asked the till to do about it.
+    ///
+    /// # An enforcement mode this till does not recognise must not permit
+    ///
+    /// `EnforcementMode` carries `#[serde(other)]`, so **any** mode the platform introduces in
+    /// future deserialises to `Unknown` on every till already in the field. This arm used to
+    /// return `Allow`, and composing the two gives a forward-compatibility failure in the one
+    /// direction a security control must never fail in: **the platform tightening a policy would
+    /// read at the till as no policy at all** — silently, with no error and no log line.
+    ///
+    /// It cannot be `Block` either. The till does not know what the mode means, and refusing an
+    /// action on a rule it cannot read is a different wrong answer, not a safer one. It is
+    /// [`PolicyResult::NotEvaluable`]: the till has no basis for a verdict and says so.
+    ///
+    /// # Why the sibling catch-alls are left alone
+    ///
+    /// Four other enums in `pos-api/src/platform.rs` carry the same attribute and only this one is
+    /// changed:
+    ///
+    /// - `SecurityCategory` — a label. Nothing gates on it; its only reader has no callers.
+    /// - `PolicyType` — already handled, and earlier: an unrecognised declared type becomes
+    ///   [`PolicyValue::UnknownType`] at the boundary, so it never reaches a verdict.
+    /// - `LicenseStatus` — not read at all. Received, `{:?}`-formatted into a log line, discarded.
+    ///   Filed separately; it is an uncalled leaf, not something this issue can fix by typing.
+    /// - `PlatformCommandType` — **deliberately unchanged.** Ignoring a command this till does not
+    ///   recognise is correct for every command defined today, all five of which are optional.
+    ///
+    /// That last one is a property of the **current vocabulary**, not of the type. A future
+    /// *lock-this-terminal-now* would be a constraint wearing an instruction's clothes, and
+    /// ignoring it would be exactly as dangerous as permitting an unrecognised enforcement mode.
+    /// The rule that separates them is about what a variant *does*, not what its enum is called:
+    ///
+    /// > An unrecognised **instruction to act** should be ignored. An unrecognised **constraint on
+    /// > acting** must not be.
+    fn apply_enforcement(&self, code: &str, mode: &EnforcementMode, message: &str) -> PolicyResult {
         match mode {
             EnforcementMode::Disabled => PolicyResult::Allow,
             EnforcementMode::Warn => {
@@ -640,7 +678,16 @@ impl PolicyService {
                 info!("Policy audit: {}", message);
                 PolicyResult::Audit(message.to_string())
             }
-            EnforcementMode::Unknown => PolicyResult::Allow,
+            EnforcementMode::Unknown => {
+                error!(
+                    "policy {code} asks for an enforcement mode this till does not recognise; it \
+                     cannot be applied and will not be treated as absent"
+                );
+                PolicyResult::NotEvaluable {
+                    code: code.to_string(),
+                    reason: NotEvaluableReason::EnforcementModeUnrecognised,
+                }
+            }
         }
     }
 
@@ -1066,31 +1113,89 @@ mod tests {
         assert_eq!(service.policy_count().await, 2);
     }
 
+    /// An enforcement mode this till has never heard of does not permit.
+    ///
+    /// **The payload is deserialised rather than constructed**, because the defect is the
+    /// composition of two things and building `EnforcementMode::Unknown` by hand would exercise
+    /// only one of them. `#[serde(other)]` is what turns an unfamiliar string into `Unknown`
+    /// instead of a parse error, and that is the half that makes this reach every till already in
+    /// the field the moment the platform adds a mode.
+    ///
+    /// The mechanism has its own passing control in the producing crate —
+    /// `pos-api/src/platform.rs:597` proves `#[serde(other)]` swallows an unrecognised string —
+    /// so this test is about the consequence, not the mechanism.
+    #[tokio::test]
+    async fn an_enforcement_mode_this_till_does_not_know_is_not_permission() {
+        let response: SecurityPoliciesResponse = serde_json::from_str(
+            r#"{
+                "version": "v1",
+                "policies": [{
+                    "code": "ENCRYPTION_AT_REST",
+                    "category": "ENCRYPTION",
+                    "policyType": "BOOLEAN",
+                    "policyValue": true,
+                    "enforcementMode": "LOCKOUT"
+                }]
+            }"#,
+        )
+        .expect("an unfamiliar enforcement mode must not fail the whole refresh");
+
+        let service = create_test_service();
+        service.update_policies(response).await;
+
+        let result = service.check_boolean("ENCRYPTION_AT_REST").await;
+
+        assert_eq!(
+            result,
+            PolicyResult::NotEvaluable {
+                code: "ENCRYPTION_AT_REST".to_string(),
+                reason: NotEvaluableReason::EnforcementModeUnrecognised,
+            },
+            "a mode the till cannot apply must not read as no policy at all"
+        );
+        assert!(!result.is_allowed(), "and it must not permit");
+
+        // Two controls. The first: the same policy under a mode the till *does* know still
+        // reaches a real verdict, so this is not a checker that refuses everything. The second:
+        // `Unknown` is genuinely what deserialisation produced — if `"LOCKOUT"` had failed to
+        // parse, the `expect` above would have fired and this test would be about nothing.
+        let known: SecurityPoliciesResponse = serde_json::from_str(
+            r#"{"version":"v2","policies":[{"code":"ENCRYPTION_AT_REST","category":"ENCRYPTION",
+                 "policyType":"BOOLEAN","policyValue":true,"enforcementMode":"BLOCK"}]}"#,
+        )
+        .expect("a known mode parses");
+        service.update_policies(known).await;
+        assert!(service
+            .check_boolean("ENCRYPTION_AT_REST")
+            .await
+            .is_blocked());
+    }
+
     #[test]
     fn test_apply_enforcement_disabled() {
         let service = create_test_service();
-        let result = service.apply_enforcement(&EnforcementMode::Disabled, "test");
+        let result = service.apply_enforcement("A_POLICY", &EnforcementMode::Disabled, "test");
         assert_eq!(result, PolicyResult::Allow);
     }
 
     #[test]
     fn test_apply_enforcement_warn() {
         let service = create_test_service();
-        let result = service.apply_enforcement(&EnforcementMode::Warn, "test message");
+        let result = service.apply_enforcement("A_POLICY", &EnforcementMode::Warn, "test message");
         assert_eq!(result, PolicyResult::Warn("test message".to_string()));
     }
 
     #[test]
     fn test_apply_enforcement_block() {
         let service = create_test_service();
-        let result = service.apply_enforcement(&EnforcementMode::Block, "test message");
+        let result = service.apply_enforcement("A_POLICY", &EnforcementMode::Block, "test message");
         assert_eq!(result, PolicyResult::Block("test message".to_string()));
     }
 
     #[test]
     fn test_apply_enforcement_audit() {
         let service = create_test_service();
-        let result = service.apply_enforcement(&EnforcementMode::Audit, "test message");
+        let result = service.apply_enforcement("A_POLICY", &EnforcementMode::Audit, "test message");
         assert_eq!(result, PolicyResult::Audit("test message".to_string()));
     }
 }
