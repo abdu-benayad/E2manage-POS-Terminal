@@ -580,7 +580,7 @@ impl ApiClient {
         // boundary is pinned by `a_no_data_route_is_read_with_a_plain_dto_not_with_enveloped` in
         // `client.rs`.
         let _: LogoutResponse = self.post("/api/pos/terminals/logout", &()).await?;
-        self.clear_token().await;
+        self.clear_credentials().await;
         Ok(())
     }
 

@@ -285,7 +285,7 @@ impl ApiClient {
         self.session_token.read().await.clone()
     }
 
-    /// Stops presenting this terminal's session — and the operator's with it.
+    /// Stops presenting every credential this till holds.
     ///
     /// **Both, because an operator session cannot outlive the terminal session it was issued
     /// against.** Every till mount runs `terminalAuth` before `attendedOperatorAuth`, so an
@@ -299,7 +299,7 @@ impl ApiClient {
     /// caller cannot forget. **Renewal is not this**: [`Self::set_token`] replaces a terminal
     /// token within the same session lineage and must leave the cashier signed in, so it does
     /// not clear the operator's.
-    pub async fn clear_token(&self) {
+    pub async fn clear_credentials(&self) {
         let mut guard = self.session_token.write().await;
         *guard = None;
         drop(guard);
@@ -907,7 +907,7 @@ mod tests {
     /// the next person to open this till would have written under the last cashier's name.
     ///
     /// The control is the assertion above it — signing the *operator* out must not un-enrol the
-    /// device. Without that pair, a `clear_token` that wiped everything and a
+    /// device. Without that pair, a `clear_credentials` that wiped everything and a
     /// `clear_operator_token` that wiped everything would both read as correct.
     #[tokio::test]
     async fn logging_the_terminal_out_stops_presenting_the_operator_too() {
@@ -917,7 +917,7 @@ mod tests {
             .set_operator_token(SessionToken::new("op-sess-abc").expect("not blank"))
             .await;
 
-        client.clear_token().await;
+        client.clear_credentials().await;
 
         let headers = client.build_headers().await;
         assert!(
@@ -952,7 +952,7 @@ mod tests {
         assert!(client.is_authenticated().await);
 
         // Clear token
-        client.clear_token().await;
+        client.clear_credentials().await;
         assert!(client.get_token().await.is_none());
         assert!(!client.is_authenticated().await);
     }
