@@ -420,6 +420,23 @@ impl PairingService {
     /// Wipes products, categories, operators, sync state, offline transactions,
     /// and all other tenant-scoped data so that re-pairing to a different
     /// company starts with a clean slate.
+    ///
+    /// # Every column that describes an enrolment is named here, deliberately
+    ///
+    /// This statement used to name five columns and leave `company_name` and `license_key`
+    /// standing. Both survived a wipe whose entire purpose is severing this terminal from a
+    /// company, and `clear_tenant_data` above empties nineteen tables, so the appearance was of a
+    /// thorough clear. `company_name` had survived since schema V3 and `license_key` since V8 —
+    /// five schema versions apart, same mechanism, caught by nothing.
+    ///
+    /// `license_key` was the one that mattered: [`Self::get_platform_license`] reads it with no
+    /// `is_registered` scope, so after re-pairing to a second company the till returned the
+    /// **first** company's key while enrolled with the second.
+    ///
+    /// **`hardware_id` is excluded on purpose — do not "complete" this list with it.** It is
+    /// `NOT NULL`, it identifies the *device* rather than the *enrolment*, and it must survive a
+    /// de-registration so the platform sees a known device re-enrolling rather than a new one.
+    /// [`Self::save_hardware_id`] carries the other half of that argument.
     pub fn clear_registration(&self) -> Result<()> {
         // Clear all tenant-specific cached data first
         self.db.clear_tenant_data()?;
@@ -427,18 +444,30 @@ impl PairingService {
         let conn = self.db.connection();
         let conn = conn.lock();
 
-        conn.execute(
+        let updated = conn.execute(
             r#"
             UPDATE terminal_registration
             SET terminal_id = NULL,
                 terminal_code = NULL,
                 secret = NULL,
+                company_name = NULL,
+                license_key = NULL,
                 is_registered = 0,
                 registered_at = NULL
             WHERE id = 1
             "#,
             [],
         )?;
+
+        // An UPDATE that matches nothing succeeds, so without this the till would report a
+        // completed wipe having cleared nothing — a swallowed failure inside the fix for a
+        // swallowed failure. The schema seeds row 1; zero rows means the store is not the one
+        // this code was written against.
+        anyhow::ensure!(
+            updated == 1,
+            "the singleton terminal_registration row (id = 1) is missing, so the registration was \
+             not cleared; the schema seeds this row and something has removed it"
+        );
 
         warn!("Terminal registration and all tenant data cleared");
         Ok(())
@@ -859,6 +888,27 @@ mod tests {
         assert_eq!(secret, "secret123");
     }
 
+    /// Reads the enrolment columns straight from the row, bypassing every accessor.
+    ///
+    /// **Deliberately not `get_registration` or `get_platform_license`.** The first refuses to
+    /// answer once `is_registered` is 0, so it cannot see whether a column was cleared or merely
+    /// hidden. The second gains an `is_registered` filter in the next task of this issue — after
+    /// which it would answer `None` whether or not `license_key` was cleared, and a test built on
+    /// it would keep passing with the fix reverted.
+    ///
+    /// A test that observes the *column* observes the fix; one that observes an accessor observes
+    /// the accessor.
+    fn enrolment_columns(service: &PairingService) -> (Option<String>, Option<String>, String) {
+        let conn = service.db.connection();
+        let conn = conn.lock();
+        conn.query_row(
+            "SELECT company_name, license_key, hardware_id FROM terminal_registration WHERE id = 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .expect("the seeded terminal_registration row is missing")
+    }
+
     #[test]
     fn test_clear_registration() {
         let service = create_test_service();
@@ -869,15 +919,45 @@ mod tests {
             terminal_id: "TERM-001".to_string(),
             terminal_code: "TERM-001".to_string(),
             secret: "secret123".to_string(),
-            company_name: None,
+            company_name: Some("Acme Trading".to_string()),
         };
         service.save_registration(&terminal).unwrap();
+        service.save_platform_license("LICENCE-AAAA-1111").unwrap();
         assert!(service.is_registered().unwrap());
+
+        // Positive controls. Without these, the assertions after the clear pass just as happily
+        // against columns that were never populated — which is exactly how this defect survived
+        // `company_name` from schema V3 and `license_key` from V8 with a test in the file.
+        let (company, licence, hardware) = enrolment_columns(&service);
+        assert_eq!(company.as_deref(), Some("Acme Trading"));
+        assert_eq!(licence.as_deref(), Some("LICENCE-AAAA-1111"));
+        assert_eq!(hardware, "TEST-HW-123");
 
         // Clear registration
         service.clear_registration().unwrap();
         assert!(!service.is_registered().unwrap());
         assert!(service.get_credentials().unwrap().is_none());
+
+        let (company, licence, hardware) = enrolment_columns(&service);
+        assert_eq!(
+            company, None,
+            "the previous company's name survived de-registration"
+        );
+        assert_eq!(
+            licence, None,
+            "the previous company's platform licence key survived de-registration; re-pairing to \
+             another company would leave the till holding it while enrolled elsewhere"
+        );
+
+        // The exemption, asserted rather than assumed. `hardware_id` must SURVIVE: it identifies
+        // the device, not the enrolment, and clearing it would make the platform see a new device
+        // rather than a known one re-enrolling. Asserting it here makes the omission from
+        // `clear_registration`'s SET list a tested decision instead of a gap someone later
+        // "completes".
+        assert_eq!(
+            hardware, "TEST-HW-123",
+            "the hardware id is not part of an enrolment and must survive de-registration"
+        );
     }
 
     #[test]
