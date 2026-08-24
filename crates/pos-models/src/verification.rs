@@ -398,6 +398,52 @@ impl PinRefusal {
             | Self::CredentialRequiresRotation { .. } => false,
         }
     }
+
+    /// Whether presenting a *different* PIN could be accepted.
+    ///
+    /// The question a screen asks before offering the pad back. Sending a cashier to retype
+    /// against a refusal nothing they can type will change is not merely futile — where the
+    /// refusal is [`Self::WrongPin`] every pass spends another attempt, so a screen that offers
+    /// the pad indiscriminately walks an operator into a lockout for a fault that was never
+    /// theirs.
+    ///
+    /// # This is not the negation of [`Self::consumes_an_attempt`], and the difference is one arm
+    ///
+    /// [`Self::CredentialRequiresRotation`] spends no attempt **and** a compliant PIN genuinely
+    /// would be accepted, so it is `true` here and `false` there. Deriving either method from the
+    /// other would get exactly that case wrong, in the direction that tells someone whose PIN
+    /// predates a tightened length rule that there is nothing to be done.
+    ///
+    /// # What this does *not* answer
+    ///
+    /// Whether the till can offer the means. A rotation is a different door — the platform serves
+    /// `sync/operators/rotate-pin`, `pos-api` has no method for it, and until one exists the honest
+    /// screen names the requirement and says where it can be met. Keeping that separate is
+    /// deliberate: this type answers what the *platform* would accept, and what this *till* can
+    /// currently present is a fact about the client, not about the refusal.
+    ///
+    /// # The conflation this closes
+    ///
+    /// `pos_api::OperatorSessionRefusal::a_pin_can_fix_it` answers a similar-sounding question
+    /// about a lapsed *session*, and the two enums share three variant names —
+    /// `Locked`, `OperatorUnknown`/`OperatorInactive`. `egui-auth-screen`'s design asserted this
+    /// method already existed here because of that resemblance. It did not. They are different
+    /// types in different crates answering different questions, and the PIN-entry path never
+    /// touches the session one.
+    ///
+    /// Exhaustive with no catch-all, for the reason [`Self::consumes_an_attempt`] gives: a new
+    /// refusal must fail to compile here rather than default into a wrong answer, and the wrong
+    /// default in *this* method offers a locked operator the pad.
+    pub const fn a_different_pin_could_help(self) -> bool {
+        match self {
+            Self::WrongPin { .. } | Self::CredentialRequiresRotation { .. } => true,
+            Self::Locked
+            | Self::OperatorUnknown
+            | Self::OperatorInactive
+            | Self::CredentialUnreadable
+            | Self::CredentialExpired => false,
+        }
+    }
 }
 
 /// Why the till could not decide.
@@ -539,6 +585,63 @@ mod tests {
                 "{refusal:?} must not spend an attempt"
             );
         }
+    }
+
+    #[test]
+    fn verification_only_a_wrong_pin_or_a_stale_length_rule_is_worth_retyping() {
+        // Every variant, listed, for the same reason as the sibling above: neither method has a
+        // catch-all arm, so a new refusal fails to compile in both places until somebody answers
+        // both questions on purpose.
+        for worth_retyping in [
+            PinRefusal::WrongPin {
+                attempts_remaining: AttemptsRemaining::new(2).expect("two is not zero"),
+            },
+            PinRefusal::CredentialRequiresRotation {
+                expected: PinLength::Six,
+            },
+        ] {
+            assert!(
+                worth_retyping.a_different_pin_could_help(),
+                "{worth_retyping:?} would accept a different PIN, so the screen must offer the pad"
+            );
+        }
+
+        for futile in [
+            PinRefusal::Locked,
+            PinRefusal::OperatorUnknown,
+            PinRefusal::OperatorInactive,
+            PinRefusal::CredentialUnreadable,
+            PinRefusal::CredentialExpired,
+        ] {
+            assert!(
+                !futile.a_different_pin_could_help(),
+                "nothing typed at the pad changes {futile:?}; offering it walks the operator \
+                 toward a lockout for a fault that is not theirs"
+            );
+        }
+    }
+
+    #[test]
+    fn verification_retyping_and_spending_an_attempt_are_different_questions() {
+        // The assertion that earns the second method its existence. If these two ever agree on
+        // every variant, one of them is derivable from the other and this whole method is
+        // ceremony — so the disagreement is pinned rather than left as a comment.
+        let stale_rule = PinRefusal::CredentialRequiresRotation {
+            expected: PinLength::Six,
+        };
+        assert!(
+            !stale_rule.consumes_an_attempt(),
+            "a stale length rule is the till's problem, not the operator's budget"
+        );
+        assert!(
+            stale_rule.a_different_pin_could_help(),
+            "a PIN satisfying the new rule would be accepted, so this is not a dead end"
+        );
+
+        // And the converse arm, so the pinning is two-sided rather than one example.
+        let locked = PinRefusal::Locked;
+        assert!(!locked.consumes_an_attempt());
+        assert!(!locked.a_different_pin_could_help());
     }
 
     #[test]
