@@ -681,6 +681,193 @@ async fn a_token_refresh_returns_a_session_the_till_can_read() {
 /// interaction here without recording it leaves the coverage table wrong, and that the artifact on
 /// disk is the one this crate just wrote rather than a stale copy.
 ///
+
+// ============================================================================
+// The six till write routes
+// ============================================================================
+
+/// The six routes the platform opened for this till, pinned by their **guard** rather than by
+/// their payload.
+///
+/// # What is pinned, and why it is not the write itself
+///
+/// The obvious interaction — *a till posts a sale and the platform records it* — cannot be
+/// written honestly today. It would require a provider state that enrols a terminal, signs an
+/// operator in, opens a shift and seeds a catalogue product and a company currency, and it would
+/// record a **guess** about the success payload: no run of `till/issue/…routes-built-for-it`
+/// task 07 has happened, because no current platform is reachable from the till's machine. An
+/// expectation the platform has not met fails that repository's suite for a change it made
+/// correctly, which is the one thing this contract must never do.
+///
+/// What *can* be pinned with no fixture at all is the thing this issue is actually about: **these
+/// six paths exist, and they sit behind `terminalAuth`.** Reaching one with no `X-Terminal-Token`
+/// answers 401 `POS_TERMINAL_TOKEN_MISSING`, from the first guard in the chain
+/// (`terminal-auth.middleware.ts:66`), before any handler, body or database is involved.
+///
+/// # Why that is the highest-value pin available here
+///
+/// The failure this issue exists to prevent is **silent**. When the till's paths drifted before,
+/// the symptom was a 404. Here the back-office mounts still exist and still refuse, so a till
+/// calling the wrong door produces no new error — the write just keeps failing exactly as it did
+/// while nobody noticed.
+///
+/// This interaction is the instrument that ends that. An unmounted route does not answer
+/// `POS_TERMINAL_TOKEN_MISSING`; it reaches `notFoundMiddleware`
+/// (`error-handler.middleware.ts:365-375`) and answers `NOT_FOUND`. So if the platform moves,
+/// renames or unmounts any of the six, **its own suite fails in the pull request that does it** —
+/// which is precisely what nothing did when it added them.
+///
+/// # The state handler already exists
+///
+/// `'no terminal state is required'` is registered at `provider-states.ts:121`. An artifact naming
+/// a `given` with no handler fails the platform's verification immediately
+/// (`till.provider.pact.e2e.test.ts:114-123`), so reusing a registered state is what makes these
+/// six deliverable without a platform-side change.
+///
+/// # No request bodies
+///
+/// Declared deliberately, not overlooked. `terminalAuth` refuses before the body is read, and an
+/// interaction declaring `json_body(json_pattern!({}))` records `"body": {}` with a content-type
+/// and deadlocks verification for 30 seconds — see the module header.
+async fn a_till_write_route_without_a_terminal_token(
+    description: &'static str,
+    given: &'static str,
+    verb: TillVerb,
+    path: &'static str,
+) {
+    let pact = PactBuilder::new("e2manage-pos-terminal", "wadi-dms-api")
+        .with_output_dir("./pacts")
+        .interaction(description, "", |mut i| {
+            i.given(given);
+            match verb {
+                TillVerb::Get => i.request.get().path(path),
+                TillVerb::Post => i.request.post().path(path),
+            };
+            i.response
+                .status(401)
+                .header("content-type", "application/json")
+                .json_body(json_pattern!({
+                    "message": like!("Terminal token is missing"),
+                    "error": {
+                        // Literal: the till branches on this, and it is what separates "the
+                        // route exists and its guard refused" from "the route is not mounted".
+                        "code": "POS_TERMINAL_TOKEN_MISSING",
+                        "message": like!("Terminal token is missing"),
+                    }
+                }));
+            i
+        })
+        .start_mock_server(None, None);
+
+    let url = format!("{}{}", pact.url(), path.trim_start_matches('/'));
+    let client = reqwest::Client::new();
+    let response = match verb {
+        TillVerb::Get => client.get(&url),
+        TillVerb::Post => client.post(&url),
+    }
+    .send()
+    .await
+    .expect("the mock server did not answer");
+
+    assert_eq!(response.status().as_u16(), 401);
+    let refusal: ApiErrorResponse = response
+        .json()
+        .await
+        .expect("the till's ApiErrorResponse could not parse the refusal");
+    let detail = refusal.error.expect("the refusal carried no `error` object");
+    assert_eq!(detail.code, ServerErrorCode::PosTerminalTokenMissing);
+    assert!(
+        detail.code.is_recognised(),
+        "a code the till models must not read as `no information`"
+    );
+}
+
+/// Which method a till write uses. Two of the six are not POST.
+#[derive(Clone, Copy)]
+enum TillVerb {
+    Get,
+    Post,
+}
+
+/// `POST /api/pos/till/transactions` — the sale.
+#[tokio::test]
+async fn the_till_sale_route_exists_behind_terminal_auth() {
+    a_till_write_route_without_a_terminal_token(
+        "a till sale with no terminal token",
+        "no terminal state is required",
+        TillVerb::Post,
+        "/api/pos/till/transactions",
+    )
+    .await;
+}
+
+/// `POST /api/pos/till/transactions/{id}/void`.
+#[tokio::test]
+async fn the_till_void_route_exists_behind_terminal_auth() {
+    a_till_write_route_without_a_terminal_token(
+        "a till void with no terminal token",
+        "no terminal state is required",
+        TillVerb::Post,
+        "/api/pos/till/transactions/pact-no-such-transaction/void",
+    )
+    .await;
+}
+
+/// `GET /api/pos/till/transactions/by-receipt/{n}` — the one read of the six.
+#[tokio::test]
+async fn the_till_receipt_lookup_route_exists_behind_terminal_auth() {
+    a_till_write_route_without_a_terminal_token(
+        "a till receipt lookup with no terminal token",
+        "no terminal state is required",
+        TillVerb::Get,
+        "/api/pos/till/transactions/by-receipt/PACTNOSUCHRECEIPT",
+    )
+    .await;
+}
+
+/// `POST /api/pos/till/shifts/start`.
+#[tokio::test]
+async fn the_till_shift_opening_route_exists_behind_terminal_auth() {
+    a_till_write_route_without_a_terminal_token(
+        "a till shift opening with no terminal token",
+        "no terminal state is required",
+        TillVerb::Post,
+        "/api/pos/till/shifts/start",
+    )
+    .await;
+}
+
+/// `POST /api/pos/till/shifts/{id}/end`.
+#[tokio::test]
+async fn the_till_shift_closing_route_exists_behind_terminal_auth() {
+    a_till_write_route_without_a_terminal_token(
+        "a till shift closing with no terminal token",
+        "no terminal state is required",
+        TillVerb::Post,
+        "/api/pos/till/shifts/pact-no-such-shift/end",
+    )
+    .await;
+}
+
+/// `POST /api/pos/till/returns`.
+///
+/// The route a cashier is refused on for a *different* reason once a terminal token is present —
+/// `POS_REFUND` sits at SUPERVISOR. That refusal is the one the till now renders as its own thing
+/// (`CapabilityStanding::SupervisorHolds`), and it is **not** pinned here: reaching it needs an
+/// enrolled terminal and a signed-in cashier, which is a provider state the platform does not
+/// register. Coverage grows one interaction per repaired surface, and that surface has not been
+/// exercised against a live server yet.
+#[tokio::test]
+async fn the_till_return_route_exists_behind_terminal_auth() {
+    a_till_write_route_without_a_terminal_token(
+        "a till return with no terminal token",
+        "no terminal state is required",
+        TillVerb::Post,
+        "/api/pos/till/returns",
+    )
+    .await;
+}
+
 /// **`EXPECTED` is meant to be edited.** Raising it is the moment you update
 /// `e2manage/doc/pos-till-server-contract`'s coverage table and copy the artifact into the
 /// platform. That is the whole point: the edit is the reminder.
@@ -699,7 +886,7 @@ async fn a_token_refresh_returns_a_session_the_till_can_read() {
 fn the_artifact_pins_exactly_the_interactions_this_crate_declares() {
     /// Raise this in the same commit that adds an interaction, updates the coverage table in
     /// `e2manage/doc/pos-till-server-contract`, and copies the artifact to the platform.
-    const EXPECTED: usize = 7;
+    const EXPECTED: usize = 13;
 
     let path = std::path::Path::new("./pacts/e2manage-pos-terminal-wadi-dms-api.json");
     let Ok(text) = std::fs::read_to_string(path) else {
@@ -724,8 +911,11 @@ fn the_artifact_pins_exactly_the_interactions_this_crate_declares() {
         "the artifact pins {interactions} interactions and this crate expects {EXPECTED}.\n\
          If you ADDED one: raise EXPECTED here, add its row to `e2manage/doc/pos-till-server-contract`'s \
          coverage table, and copy the artifact to \
-         `wadi-dms-api/src/modules/pos/__tests__/contracts/pacts/` — nothing does that copy for you, \
-         and until it happens the platform is verifying the till's PREVIOUS expectations.\n\
+         `wadi-dms-api/src/modules/pos/__tests__/contracts/pacts/` — `scripts/till-pact.mjs sync` \
+         at the platform monorepo root performs that copy and `… check` notices when it was \
+         skipped, but neither runs on its own and `ci.sh` renders the check's exit 3 as \
+         \"could not check\" rather than gating. Until someone runs it the platform is verifying \
+         the till's PREVIOUS expectations.\n\
          If you did NOT: an interaction was lost, and the platform's suite has stopped checking \
          something the till depends on."
     );

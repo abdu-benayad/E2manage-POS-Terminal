@@ -397,6 +397,276 @@
       }
     },
     {
+      "description": "a till receipt lookup with no terminal token",
+      "providerStates": [
+        {
+          "name": "no terminal state is required"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/api/pos/till/transactions/by-receipt/PACTNOSUCHRECEIPT"
+      },
+      "response": {
+        "body": {
+          "error": {
+            "code": "POS_TERMINAL_TOKEN_MISSING",
+            "message": "Terminal token is missing"
+          },
+          "message": "Terminal token is missing"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "matchingRules": {
+          "body": {
+            "$.error.message": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.message": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "status": 401
+      }
+    },
+    {
+      "description": "a till return with no terminal token",
+      "providerStates": [
+        {
+          "name": "no terminal state is required"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/api/pos/till/returns"
+      },
+      "response": {
+        "body": {
+          "error": {
+            "code": "POS_TERMINAL_TOKEN_MISSING",
+            "message": "Terminal token is missing"
+          },
+          "message": "Terminal token is missing"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "matchingRules": {
+          "body": {
+            "$.error.message": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.message": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "status": 401
+      }
+    },
+    {
+      "description": "a till sale with no terminal token",
+      "providerStates": [
+        {
+          "name": "no terminal state is required"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/api/pos/till/transactions"
+      },
+      "response": {
+        "body": {
+          "error": {
+            "code": "POS_TERMINAL_TOKEN_MISSING",
+            "message": "Terminal token is missing"
+          },
+          "message": "Terminal token is missing"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "matchingRules": {
+          "body": {
+            "$.error.message": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.message": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "status": 401
+      }
+    },
+    {
+      "description": "a till shift closing with no terminal token",
+      "providerStates": [
+        {
+          "name": "no terminal state is required"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/api/pos/till/shifts/pact-no-such-shift/end"
+      },
+      "response": {
+        "body": {
+          "error": {
+            "code": "POS_TERMINAL_TOKEN_MISSING",
+            "message": "Terminal token is missing"
+          },
+          "message": "Terminal token is missing"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "matchingRules": {
+          "body": {
+            "$.error.message": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.message": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "status": 401
+      }
+    },
+    {
+      "description": "a till shift opening with no terminal token",
+      "providerStates": [
+        {
+          "name": "no terminal state is required"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/api/pos/till/shifts/start"
+      },
+      "response": {
+        "body": {
+          "error": {
+            "code": "POS_TERMINAL_TOKEN_MISSING",
+            "message": "Terminal token is missing"
+          },
+          "message": "Terminal token is missing"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "matchingRules": {
+          "body": {
+            "$.error.message": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.message": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "status": 401
+      }
+    },
+    {
+      "description": "a till void with no terminal token",
+      "providerStates": [
+        {
+          "name": "no terminal state is required"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/api/pos/till/transactions/pact-no-such-transaction/void"
+      },
+      "response": {
+        "body": {
+          "error": {
+            "code": "POS_TERMINAL_TOKEN_MISSING",
+            "message": "Terminal token is missing"
+          },
+          "message": "Terminal token is missing"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "matchingRules": {
+          "body": {
+            "$.error.message": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.message": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "status": 401
+      }
+    },
+    {
       "description": "a token refresh from a terminal holding a valid session",
       "providerStates": [
         {
