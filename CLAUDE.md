@@ -444,6 +444,27 @@ come out differently?” while separating nothing you would ask about, because o
 what retires suspicion. **Ask whether the variation you can see is the variation you are asking
 about.** A field with two values across 448 rows is a constant wearing a discriminator's clothes.
 
+**So attribution gets asserted from fit, and from the inside a fit is indistinguishable from a
+memory.** Measured 2026-08-24 — three lanes, one commit, one day, and none of it was misremembering:
+
+- one welded an unsourced *"by the lane that owns it"* onto a sourced *"applied"*; the qualifier
+  happened to be **right**, with no basis for it;
+- a second disputed it — *"I own the migration and did not run it"* — which was **false**, attached by
+  adjacency (they own the neighbouring issue, so "mine" arrived without passing through any memory of
+  doing it). Their own transcript put first contact **four and a half hours after the commit**, via
+  someone else's message;
+- the first then **withdrew a true claim** on the strength of the false one;
+- and the second propped theirs up with *"the apply is after that lane's session start, so it could
+  have come out differently"* — **15 of 15 live sessions started before it.** A null check claimed as
+  a discriminator, in a paragraph whose other half was wrong, which made the whole read as verified.
+
+**A real source plus an invented qualifier in one clause reads as fully sourced throughout**, because
+the source lends its credibility to the half nobody can check and there is no seam in the prose to
+notice — a third lane audited its entire day against the invented half. What broke every one of these
+was **a peer's question sending someone back to a record.** Not re-reading, and not care at the moment
+of writing: at that moment the fit already feels like knowledge. Say who told you, or say you inferred
+it.
+
 **`| head` is for looking, never for counting.** A truncated stream does not announce itself, and a
 cut landing on a round number produces a **prefix that looks like a finding** — there is no ragged
 edge, so re-reading the output cannot catch it and only re-running without the pipe can. Measured
