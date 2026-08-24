@@ -55,7 +55,7 @@ mod guards {
     use std::fs;
     use std::path::{Path, PathBuf};
 
-    use e2manage_pos_terminal::models::Pin;
+    use e2manage_pos_terminal::models::{Digit, EnteredDigits, Pin};
 
     /// The shipped tree. See the module docs on why there is nothing else and no exemption list.
     const SCANNED_ROOTS: [&str; 2] = ["crates", "src"];
@@ -399,6 +399,22 @@ mod guards {
             "the walker did not find `VerifyPinRequest` — it is not reaching a struct that sits behind a doc comment and two attributes"
         );
 
+        // The entry buffer's witness. `a_live_pin_never_reaches_a_derived_debug`'s buffer half
+        // scans the bodies of `Debug`-deriving declarations for a field carrying keyed-in digits;
+        // if the walker stops reaching `PinEntryStanding` — a `Debug`-deriving enum in the root
+        // package that holds an `EnteredDigits` — that half goes quietly vacuous while still
+        // reporting clean.
+        //
+        // A currently-true assertion, not a deferred one: this type exists as of `6120e2b`. It is
+        // in the root package rather than a workspace crate, which also exercises the second
+        // entry in `SCANNED_ROOTS`.
+        assert!(
+            declarations
+                .iter()
+                .any(|d| d.name == "PinEntryStanding" && d.path == "src/ui/sign_in/phase.rs"),
+            "the walker did not find `PinEntryStanding` — the PIN buffer scan is reading a tree that does not contain the buffer"
+        );
+
         // `only_the_transport_crates_name_a_route` needs its own positive control, and it is the
         // one guard here whose clean state is *also* its broken state: it passes when it finds no
         // route literal outside the transport crates, and a scan that reads no route literals
@@ -670,6 +686,105 @@ mod guards {
             offences.len(),
             offences.join("\n  ")
         );
+
+        // ------------------------------------------------------------------
+        // The entry buffer, which the phase machine created and no name-based
+        // rule above would have seen.
+        // ------------------------------------------------------------------
+
+        // Same shape as the `Pin` assertion: the structural scan below is only worth anything
+        // while this holds. A length-tracking redaction would leak how much has been typed, one
+        // frame at a time, to anything logging the phase.
+        let mut entered = EnteredDigits::empty();
+        for value in [1, 2, 3, 4] {
+            entered.push(Digit::new(value).expect("a single decimal digit"));
+        }
+        assert_eq!(format!("{entered:?}"), "EnteredDigits(****)");
+        assert_eq!(format!("{entered:#?}"), "EnteredDigits(****)");
+
+        // A field carrying keyed-in PIN digits must be declared as `Pin` or `EnteredDigits`,
+        // whatever it is called. `pin` alone was the old vocabulary and it was enough while the
+        // only PIN in the tree was a finished one; an entry buffer is called other things.
+        const ENTRY_VOCABULARY: [&str; 4] = ["digits", "entered", "entered_digits", "pin_digits"];
+        const REDACTED_CARRIERS: [&str; 2] = ["Pin", "EnteredDigits"];
+
+        // Only a type that can *hold* keyed-in digits counts. `digits: u8` is a length — the
+        // number of digits a policy requires — and `PinPolicyError` and `DetailsBreach` both
+        // carry one. Flagging those would not be strictness, it would be a rule that cannot tell
+        // a count from a buffer, and the exemption it would need is the kind that never expires.
+        // A scalar cannot carry a PIN; a text or byte sequence can.
+        fn can_hold_digits(declared: &str) -> bool {
+            ["String", "str", "Vec<u8>", "[u8", "Vec<Digit>", "Box<str>"]
+                .iter()
+                .any(|carrier| declared.contains(carrier))
+        }
+
+        let buffer_offences: Vec<String> = type_declarations()
+            .iter()
+            .filter(|declaration| derives(&declaration.attributes, "Debug"))
+            .flat_map(|declaration| {
+                declaration.body.iter().flat_map(move |line| {
+                    ENTRY_VOCABULARY.iter().filter_map(move |field| {
+                        let declared = declared_type(&line.code, field)?;
+                        let redacted = REDACTED_CARRIERS
+                            .iter()
+                            .any(|carrier| contains_word(declared, carrier));
+                        (!redacted && can_hold_digits(declared)).then(|| {
+                            format!(
+                                "{}:{} — `{}` derives `Debug` over `{}: {}`",
+                                line.path,
+                                line.number,
+                                declaration.name,
+                                field,
+                                declared.trim_end_matches(',')
+                            )
+                        })
+                    })
+                })
+            })
+            .collect();
+
+        assert!(
+            buffer_offences.is_empty(),
+            "keyed-in PIN digits are exposed to a derived `Debug` in {} place(s); hold them as \
+             `pos_models::EnteredDigits`, or drop the derive until you can:\n  {}",
+            buffer_offences.len(),
+            buffer_offences.join("\n  ")
+        );
+
+        // The type-directed half, and the one the task named. Every type that holds the buffer
+        // holds it *as* `EnteredDigits`, whose `Debug` is the redaction asserted above — so this
+        // set is the safe population, and its job is to be non-empty. An exemption and a blind
+        // scan produce identical output; only a positive separates them.
+        let holders: Vec<String> = type_declarations()
+            .into_iter()
+            .filter(|declaration| {
+                declaration
+                    .body
+                    .iter()
+                    .any(|line| contains_word(&line.code, "EnteredDigits"))
+            })
+            .map(|declaration| declaration.name)
+            .collect();
+
+        assert!(
+            holders.iter().any(|name| name == "PinEntryStanding"),
+            "the scan cannot see `PinEntryStanding`, which holds the entry buffer — the two \
+             assertions above are then passing over a tree they are not reading. Found: {holders:?}"
+        );
+
+        // KNOWN GAP, stated rather than left for someone to discover.
+        //
+        // Both scans are line-based, so two shapes are invisible to them: a field declaration
+        // rustfmt has split across lines, and a *tuple* variant, which carries a type with no
+        // field name to match on. `PinEntryStanding::Entering(EnteredDigits)` is the second kind
+        // — it is confirmed present by the `holders` assertion above, but a change to
+        // `Entering(String)` would pass the vocabulary scan, because there is no `name:` to read.
+        //
+        // The whole-file reader that closes the first shape is lane 21's tasks 15a-c, and
+        // `scanned_lines()` is `text.lines()` until it lands. This guard is deliberately the
+        // narrowest thing that works rather than a second scanner beside theirs; rebuild both
+        // halves on the shared reader when it exists, and cover tuple variants then.
     }
 
     /// The till carries no tenant id.
