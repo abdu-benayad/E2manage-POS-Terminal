@@ -610,8 +610,13 @@ impl Database {
 /// # What the compiler refuses, and what it does not
 ///
 /// - a field of the struct absent from the declaration → **E0063**, missing field in initializer;
-/// - an entry that is not a field → **E0560**, no field named;
+/// - an entry that is not a field → **E0560**, no field named, *and* **E0609**, no field on type —
+///   one from the struct literal in `read`, one from `&value.<field>` in `bind`;
 /// - a field listed twice → **E0062**, field specified more than once.
+///
+/// Those three are measured, not predicted: each was produced by mutating the `OPERATOR_ROW`
+/// declaration in `operators.rs` and reading `rustc`'s output. A macro's compile-time guarantees
+/// are the easiest thing in a doc comment to assert and never check.
 ///
 /// **And there it stops. The field set is policed; the column strings are not.** This compiles
 /// clean with zero warnings:
