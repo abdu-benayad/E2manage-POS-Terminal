@@ -41,13 +41,35 @@ and stripping query strings — returned the **same 35 paths**. The convergence 
 count trustworthy; the missing crate is what makes it 36.
 
 **And 36 was still the wrong headline, for a third reason nobody had named: it is the count under
-one mount, not the till's surface.** Re-measured 2026-08-24 over all three crates the guard allows,
-code lines only: **41 templates — 36 `/api/pos/`, 4 `/api/carts/`, 1 `/api/health`.** Every
+one mount, not the till's surface.** Re-measured 2026-08-24 over **what `ApiClient` requests**, plus
+`pos-updater`: **41 templates — 36 `/api/pos/`, 4 `/api/carts/`, 1 `/api/health`.** Every
 enumeration above had been scoped to `/api/pos/` by the search string, so each one confirmed the
 others while all of them answered a narrower question than the sentence they were quoted in.
 `project/till`'s brief independently reached 41 and split it 37/4, folding `/api/health` into the
 `/api/pos` bucket — two measurements agreeing on a total and disagreeing on its parts, which is the
 tell that both were derived and neither was transcribed.
+
+**The boundary has to say *calls*, not *names* — and this file got that wrong once.** "Over all
+three crates the guard allows" is a different predicate with a different answer: route literals
+across `pos-api`, `pos-contract` and `pos-updater`, comments stripped, come to **44**, because
+`pos-contract` declares 6 templates it never requests. The number 41 was right and the predicate
+printed beside it was not, which is this lesson happening to the sentence that states this lesson.
+
+**What the shortfall is *not* attributable to.** A first correction (`af71f25`) blamed three causes.
+Re-measuring 2026-08-24 leaves one:
+
+- *A doc-comment placeholder.* `/api/pos/some-endpoint` is real — `pos-api/src/lib.rs`, the crate
+  doc example — but comment-only, so it inflates a naive search and never a comment-stripped one.
+- *Paths built base-URL-first.* There are exactly **two**: `format!("{}/api/pos/sync/status")`
+  (`client.rs:576`) and `format!("{}/api/health")` (`:607`). A leading-quote literal search misses
+  **both**, not one; only `/api/health` is *also* outside the `/api/pos` prefix. A peer's
+  independent derivation enumerated `ApiClient` *methods* rather than literals and so placed
+  `sync/status` inside the 35 — the same path, two predicates, two answers, and neither is wrong.
+- *The prefix boundary.* This is the whole delta: widening from `/api/pos` to what `ApiClient`
+  requests adds exactly 5 — the four `/api/carts/…` plus `/api/health`.
+
+**The predicate that produced the committed 36 was never written down, so which of these actually
+bit is not recoverable.** That is the argument for the rule, arriving as a demonstration of it.
 
 The rule this leaves: **a count is only as scoped as its search string, and the search string is
 usually invisible in the sentence that quotes the count.** State the predicate with the number. A surface where the two sides already disagree **cannot** be pinned without failing
