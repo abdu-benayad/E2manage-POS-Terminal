@@ -216,13 +216,32 @@ pub enum AuthEnquiry {
         /// The rules to check them against, carried rather than fetched.
         ///
         /// `AuthService::verify_pin` needs a [`PinPolicy`], and the driver must not go and find
-        /// one: `pos_models::PinPolicy` is documented **"carried, never looked up — the policy
-        /// arrives with the terminal session at login, strictly before any operator is
-        /// selected"**, precisely so that "PIN entry verified against rules fetched afterwards"
-        /// has no way to be written. An enquiry that omitted it would push that lookup into the
-        /// driver and reintroduce the state the domain type exists to forbid.
+        /// one: an enquiry that omitted it would push that lookup into the driver and make "PIN
+        /// entry verified against rules fetched afterwards" writable, which is the state the
+        /// domain type is shaped to forbid.
         ///
         /// `PinPolicy` is `Copy`, so the phase keeps its own and this is not a handoff.
+        ///
+        /// # This field is correct and nothing can currently fill it
+        ///
+        /// An earlier version of this comment justified the design by quoting `pos_models::
+        /// PinPolicy`'s module documentation — *"carried, never looked up — the policy arrives
+        /// with the terminal session at login, strictly before any operator is selected"* — as
+        /// though it described the running system. **It does not.** Measured 2026-08-24: every
+        /// call to `TerminalConfig::pin_policy` in this repository is inside `pos-api`'s own test
+        /// module (eight of them, zero in production), `TerminalSession` has no field to hold a
+        /// policy, and `AuthService::login_terminal` never assembles one. The policy is parsed at
+        /// the boundary and dropped there.
+        ///
+        /// So the sentence describes an intent, and I read it as a description and then repeated
+        /// it here, citing the original — a third record asserting a thing neither of the first
+        /// two had checked against `login_terminal`, which is the only place that falsifies it.
+        /// **A sentence in a domain type's documentation describing what happens elsewhere in the
+        /// system is a claim about code that type cannot see**, and reads as specification when it
+        /// is aspiration.
+        ///
+        /// Tracked by `till/issue/pin-policy-does-not-survive-a-restart`. Until it lands,
+        /// `AuthPhase::PinEntry` has no construction site outside test helpers.
         policy: PinPolicy,
     },
 }
