@@ -1421,4 +1421,148 @@ mod guards {
             .map(str::to_string)
             .collect()
     }
+
+    // ========================================================================
+    // Every excluded crate is verified by something
+    // ========================================================================
+
+    /// The path of this repository's verification entry point, relative to the root.
+    const VERIFICATION_SCRIPT: &str = "scripts/verify.sh";
+
+    /// The `exclude` array from the root manifest, and only that array.
+    ///
+    /// Naive on purpose, like [`dependency_keys`] and [`toml_section_headers`]: it reads this
+    /// repository's own manifest, not arbitrary TOML. The array is collected across lines so a
+    /// multi-line spelling reads the same as the single-line one it has today — the guard must not
+    /// start passing vacuously the day somebody reformats the manifest.
+    fn excluded_crates() -> Vec<String> {
+        let manifest = fs::read_to_string(repo_root().join("Cargo.toml"))
+            .expect("the root Cargo.toml must be readable");
+
+        let mut collected = String::new();
+        let mut collecting = false;
+        for line in manifest.lines() {
+            let code = strip_hash_comment(line);
+            if code.trim_start().starts_with("exclude") && code.contains('[') {
+                collecting = true;
+            }
+            if collecting {
+                collected.push_str(code);
+                if code.contains(']') {
+                    break;
+                }
+            }
+        }
+
+        collected
+            .split('"')
+            .skip(1)
+            .step_by(2)
+            .map(str::to_string)
+            .collect()
+    }
+
+    /// One line with any `#` comment removed.
+    ///
+    /// The shell and TOML counterpart of [`strip_comment`], and it carries the same residue: a `#`
+    /// inside a quoted string truncates the line early. That can only ever *hide* a mention and so
+    /// cause a false failure — it can never invent one, which is the safe direction for a guard
+    /// whose success condition is a presence.
+    fn strip_hash_comment(line: &str) -> &str {
+        match line.find('#') {
+            Some(at) => &line[..at],
+            None => line,
+        }
+    }
+
+    /// # Why this carries its own positive control instead of a witness in the meta-guard
+    ///
+    /// `doc/guard-tests` exempts a guard that reads TOML rather than Rust from the witness rule,
+    /// and requires a positive control in its place — the way the build guard proves `[build]` and
+    /// `[env]` parse out of the file before concluding no `[source.*]` does. This is that shape:
+    /// it reads the manifest and a shell script, never the Rust walker the meta-guard proves.
+    ///
+    /// A witness *was* written and then deleted, because measuring it showed it was decoration:
+    /// emptying the `exclude` array failed the guard and the witness together, and every other
+    /// mutation that failed the witness failed the guard too. A pair that fails on the same
+    /// mutations is one assertion wearing two hats. The corpus checks below are strictly stronger
+    /// and live where the reader of this guard will actually look.
+    /// Every crate the workspace excludes is run by the verification script.
+    ///
+    /// # The failure this exists to prevent, which has already been paid for once
+    ///
+    /// `[workspace] exclude` means **no workspace command can see the crate** — not
+    /// `cargo test --workspace`, not `cargo clippy --workspace`, not `cargo check --workspace`.
+    /// `crates/pos-contract` was red from `040d0c1` through **five consecutive task
+    /// verifications**, every one of them reporting green, because the command that was run could
+    /// not observe the thing being claimed. `CLAUDE.md` carried a written warning about it the
+    /// whole time, and prose is measured not to work.
+    ///
+    /// # Both sides read the tree, so neither can drift
+    ///
+    /// The list of excluded crates is parsed from the manifest's own `exclude` array rather than
+    /// restated here, and the script is read from disk. There is no allowlist to justify per entry
+    /// and nothing to keep in sync: add a fourth excluded crate and this fails until somebody
+    /// wires it into the script. That is the whole design — it converts "invisible to
+    /// `--workspace`" from a standing hazard into a one-time wiring cost.
+    ///
+    /// A `#`-commented mention does not count. The script's own header explains the pos-contract
+    /// history in prose and names the crate while doing so; if a comment satisfied this guard,
+    /// deleting the lane while keeping the paragraph about it would pass.
+    #[test]
+    fn every_excluded_crate_is_named_in_the_verification_script() {
+        let excluded = excluded_crates();
+
+        // Guard the guard. A parser that reads nothing reports "every excluded crate is verified"
+        // in exactly the words a correctly-wired tree uses, and every way this parser can break
+        // returns *fewer* entries.
+        assert!(
+            excluded.len() >= 2,
+            "parsed {} entries from the root manifest's `exclude` array; expected at least the two \
+             known ones. The parser is broken and this guard is now vacuous — it would pass an \
+             unwired excluded crate",
+            excluded.len()
+        );
+        for known in ["crates/pos-updater", "crates/pos-contract"] {
+            assert!(
+                excluded.iter().any(|crate_path| crate_path == known),
+                "`{known}` is not in the parsed `exclude` array. Either it stopped being excluded \
+                 — in which case delete it from this witness — or the parser is reading the wrong \
+                 thing"
+            );
+        }
+
+        let script_path = repo_root().join(VERIFICATION_SCRIPT);
+        let script = fs::read_to_string(&script_path).unwrap_or_else(|error| {
+            panic!(
+                "{VERIFICATION_SCRIPT} must exist and be readable: {error}. It is this repository's \
+                 only verification entry point; without it nothing runs the excluded crates at all"
+            )
+        });
+
+        let code: String = script
+            .lines()
+            .map(strip_hash_comment)
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        // The second half of guarding the guard: prove the comment stripper left something
+        // executable behind. If it ate the whole file, every assertion below would report a
+        // missing lane in the same words a genuinely missing lane produces.
+        assert!(
+            code.contains("cargo"),
+            "no un-commented line of {VERIFICATION_SCRIPT} mentions `cargo`. The comment stripper \
+             has eaten the script, so the assertions below are vacuous"
+        );
+
+        for crate_path in &excluded {
+            assert!(
+                code.contains(crate_path.as_str()),
+                "`{crate_path}` is excluded from the workspace but is not named in \
+                 {VERIFICATION_SCRIPT}, so NO command in this repository runs it. That is how \
+                 `crates/pos-contract` stayed red through five consecutive green verifications. \
+                 Add a lane for it rather than deleting this assertion"
+            );
+        }
+    }
 }
