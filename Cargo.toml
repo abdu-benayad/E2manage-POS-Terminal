@@ -51,6 +51,21 @@ categories = ["gui", "embedded"]
 authors = ["E2Manage Team"]
 
 # ============================================================================
+# THE BINARY
+# ============================================================================
+#
+# The workspace's only `[[bin]]`. It lives on the root package rather than in a
+# new excluded crate, decided in `egui-auth-screen` task 11: an excluded crate is
+# invisible to every `--workspace` command, does not inherit the profiles below,
+# and would need its own `.gitignore` and verification wiring — which is
+# rebuilding by hand what membership gives for free. `pos-contract` sat red
+# through five consecutive task verifications for exactly that reason.
+
+[[bin]]
+name = "e2manage-pos"
+path = "src/main.rs"
+
+# ============================================================================
 # WORKSPACE DEPENDENCIES (shared versions)
 # ============================================================================
 
@@ -151,9 +166,51 @@ serialport = { version = "4", optional = true }
 # FEATURES
 # ============================================================================
 
+# ============================================================================
+# VIEW LAYER
+# ============================================================================
+#
+# `abdu-egui-ui` is `publish = false` in a separate private repository, so this is
+# a path dependency and the binary builds only where that checkout sits beside
+# this one. See `doc/building.md`. The condition that retires it is the library
+# publishing; nothing else does.
+#
+# `default-features = false` on both `egui` and `eframe` is load-bearing and not
+# a size preference. Cargo unions features across the single resolved `egui`, so
+# defaults here would switch `default_fonts` back on for the whole graph — the
+# library's own compilation included — silently undoing its font decision and
+# adding 1,414,020 bytes of faces that nothing draws. `abdu-egui-ui/docs/fonts.md`
+# has the measurement.
+#
+# `accesskit` is taken back deliberately. The library's own `preview` eframe line
+# omits it, and that omission is preview-specific: without the adapter the build
+# constructs the egui accessibility tree and pushes it nowhere, which is silent to
+# a screen reader. This screen's testing contract is AccessKit assertions, so
+# dropping it would throw the tree away at the last hop and every test would still
+# pass.
+#
+# `0.34` must match the library's line exactly. A 0.x mismatch is not unified by
+# cargo and yields two incompatible `egui` copies, surfacing as type errors passing
+# `&mut Ui` across the boundary.
+abdu-egui-ui = { path = "../abdu-egui-ui" }
+egui = { version = "0.34", default-features = false }
+eframe = { version = "0.34", default-features = false, features = [
+    "accesskit",
+    "glow",
+    "wayland",
+    "x11",
+] }
+
 [features]
 default = []
 hardware = ["serialport"]
+# Image-snapshot tests need a wgpu renderer (GPU or software), unavailable headless
+# by default. Declared HERE and not only on the component library: a feature is
+# selected on the crate under test, so `cargo test -p e2manage-pos-terminal
+# --features image-snapshots` fails with "none of the selected packages contains
+# these features" without this line, and never reaches a test. Logic and AccessKit
+# tests run without it.
+image-snapshots = ["egui_kittest/wgpu", "egui_kittest/snapshot"]
 encrypted-db = []
 face-recognition = []
 
@@ -194,7 +251,12 @@ strip = true
 # DEV DEPENDENCIES
 # ============================================================================
 
+
 [dev-dependencies]
 tempfile = "3"
 urlencoding = "2.1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+# Drives the screen through AccessKit assertions and image snapshots. Matches the
+# library's `0.34` line; `kittest.toml` beside this manifest carries the comparison
+# tolerance and the reasoning for it.
+egui_kittest = "0.34"
