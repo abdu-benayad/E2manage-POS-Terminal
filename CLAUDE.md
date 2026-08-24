@@ -326,7 +326,13 @@ and the directory failure is the silent one. A platform lane lost a 260-line pro
 2026-08-24: the production change and three modified tests landed, both *new* test files did not,
 and the only tell was a stat printing 6 files where 8 were intended — the evidence for the fix,
 missing from the commit that claimed it. **`git add` every new file before committing it, and read
-the stat's file count against the number you meant.**
+the stat's file *names*, not its count.**
+
+**The count is a scalar, and two opposite errors cancel in it.** A stat reading 4 against an
+intended 4 is consistent with *nothing wrong* and with *one of yours dropped while one of another
+lane's rode along* — and the second is the failure this whole section exists to prevent. Counting
+guards omission only; reading the names guards both directions. `git show --stat` prints them, so it
+costs nothing.
 
 **Row 2 is not a safety net for row 1 — they are disjoint.** A pathspec mixing an explicit new-file
 path with a directory takes the refusal from the *explicit* one, which names only that file. The
