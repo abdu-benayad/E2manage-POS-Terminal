@@ -7,7 +7,7 @@
 //! 4. Poll for pairing completion
 //! 5. Save registration credentials
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use pos_api::{
     ApiClient, DeviceInfo, HardwareInfo, OsInfo, PairedTerminalInfo, PairingStatus,
@@ -73,20 +73,36 @@ impl PairingService {
     // REGISTRATION CHECK
     // ========================================================================
 
-    /// Checks if the terminal is registered
+    /// Whether this till holds a completed enrolment.
+    ///
+    /// # A read that fails is not a till that is unenrolled
+    ///
+    /// This was `.unwrap_or(0)`, which reported **every** error as "not registered" — including the
+    /// ones that mean the store could not answer. A till is then wrong about itself while the row
+    /// sits intact, and [`Self::get_hardware_id`] compounds it by overwriting the identity the
+    /// platform knows this till by. Three outcomes, and only two of them are answers:
+    ///
+    /// - the row is absent, which is a fresh install and genuinely means not registered;
+    /// - the flag is SQL `NULL`, which the schema's `DEFAULT 0` makes equivalent to unset;
+    /// - anything else, which is the store failing and belongs to the caller.
     pub fn is_registered(&self) -> Result<bool> {
         let conn = self.db.connection();
         let conn = conn.lock();
 
-        let is_registered: i32 = conn
-            .query_row(
-                "SELECT is_registered FROM terminal_registration WHERE id = 1",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap_or(0);
+        let flag = conn.query_row(
+            "SELECT is_registered FROM terminal_registration WHERE id = 1",
+            [],
+            |row| row.get::<_, Option<i32>>(0),
+        );
 
-        Ok(is_registered == 1)
+        match flag {
+            Ok(stored) => Ok(stored == Some(1)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(false),
+            Err(e) => Err(e).context(
+                "could not read the terminal registration flag; this is the store failing to \
+                 answer, not a till that is unregistered",
+            ),
+        }
     }
 
     /// Gets the current terminal registration info
@@ -129,16 +145,24 @@ impl PairingService {
         let conn = self.db.connection();
         let conn = conn.lock();
 
-        let stored_id: String = conn
-            .query_row(
-                "SELECT hardware_id FROM terminal_registration WHERE id = 1",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap_or_default();
+        // Absent, empty and NULL all mean "this till has not generated one yet" and fall through.
+        // A read that *failed* means something else entirely and must not: generating a fresh id
+        // here writes it over the identity the platform knows this till by.
+        let stored = conn.query_row(
+            "SELECT hardware_id FROM terminal_registration WHERE id = 1",
+            [],
+            |row| row.get::<_, Option<String>>(0),
+        );
 
-        if !stored_id.is_empty() {
-            return Ok(stored_id);
+        match stored {
+            Ok(Some(id)) if !id.is_empty() => return Ok(id),
+            Ok(_) | Err(rusqlite::Error::QueryReturnedNoRows) => {}
+            Err(e) => {
+                return Err(e).context(
+                    "could not read the stored hardware id; refusing to generate a replacement, \
+                     because doing so would overwrite the identity this till is enrolled under",
+                )
+            }
         }
 
         // Generate a new hardware ID

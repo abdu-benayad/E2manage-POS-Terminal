@@ -358,12 +358,12 @@ fn stored_secret(db: &Database) -> Option<String> {
     .expect("the singleton registration row is readable")
 }
 
-/// A read that fails makes the till report itself unregistered while the row is intact.
+/// A read that fails surfaces as an error rather than as "this till is not registered".
 ///
 /// The control is the assertion *before* the corruption: without it, a test that only checks the
-/// `false` cannot tell a swallowed error from a till that was never registered.
+/// error cannot tell a surfaced failure from a fixture that was never registered in the first place.
 #[test]
-fn an_unreadable_registration_flag_reads_as_not_registered() {
+fn an_unreadable_registration_flag_is_an_error_not_a_negative_answer() {
     let (service, db) = service("http://127.0.0.1:1");
     holding_a_secret(&db);
 
@@ -374,69 +374,90 @@ fn an_unreadable_registration_flag_reads_as_not_registered() {
 
     a_blob_in_a_text_column(&db, "is_registered");
 
+    let answer = service.is_registered();
+
     assert!(
-        !service
-            .is_registered()
-            .expect("the call does not surface the failure"),
-        "a failed read of the flag is reported as `not registered`"
+        answer.is_err(),
+        "a store that cannot answer must not be reported as a till that is unregistered"
     );
     assert!(
         stored_secret(&db).is_some(),
-        "and the row is still intact — the till is wrong about itself, not empty"
+        "and the row is untouched — the failure is in the reading, not in the data"
     );
 }
 
-/// An unreadable hardware id no longer costs the secret — and still silently replaces the id.
+/// An unreadable hardware id refuses rather than inventing a replacement.
 ///
-/// This test pins **both halves of a partial fix**, because a test asserting only the repaired half
-/// would read as though the defect were closed.
-///
-/// `save_hardware_id` used `INSERT OR REPLACE`, which is not an upsert of the named columns but a
-/// delete-and-insert: every column it did not name was reset, including the terminal secret and the
-/// platform licence key. It is a targeted `UPDATE` now, so a till that reaches this path keeps its
-/// credentials and its enrolment.
-///
-/// **What that does not fix is the reason it got here.** `get_hardware_id` still cannot tell
-/// `QueryReturnedNoRows` from a read that failed, so it still concludes "no hardware id yet" and
-/// still writes a freshly generated one over the real one. The till then presents an identity the
-/// platform has never seen, while believing itself registered. That is the defect this issue's next
-/// step closes, and the assertions below are what will change when it does.
+/// Both halves of the original defect are pinned here. `save_hardware_id` used `INSERT OR REPLACE`,
+/// a delete-and-insert that reset every column it did not name — the terminal secret and the
+/// platform licence key among them. And `get_hardware_id` reached it at all because it could not
+/// tell `QueryReturnedNoRows` from a read that failed, so it concluded "no hardware id yet" and
+/// generated one. Either fix alone leaves a till that silently presents an identity the platform
+/// has never seen; the assertions below require both.
 #[test]
-fn an_unreadable_hardware_id_no_longer_costs_the_secret_but_still_replaces_the_id() {
+fn an_unreadable_hardware_id_refuses_rather_than_replacing_the_till_identity() {
     let (service, db) = service("http://127.0.0.1:1");
     holding_a_secret(&db);
 
     assert_eq!(
-        stored_secret(&db).as_deref(),
-        Some("a-real-looking-secret"),
-        "control: the secret is present before the unreadable read"
+        service
+            .get_hardware_id()
+            .expect("the id is readable")
+            .as_str(),
+        HARDWARE_ID,
+        "control: the stored id is returned as-is before the corruption"
     );
 
     a_blob_in_a_text_column(&db, "hardware_id");
 
-    let regenerated = service
-        .get_hardware_id()
-        .expect("the call does not surface the failure");
-
-    // Repaired.
+    assert!(
+        service.get_hardware_id().is_err(),
+        "the failed read reaches the caller instead of becoming a fresh identity"
+    );
     assert_eq!(
         stored_secret(&db).as_deref(),
         Some("a-real-looking-secret"),
-        "a targeted UPDATE leaves the terminal secret alone"
+        "the terminal secret survives"
     );
     assert!(
-        service.is_registered().expect("the flag is readable"),
-        "and leaves the enrolment alone — recording a hardware id is not a claim about enrolment"
+        service
+            .is_registered()
+            .expect("the flag column is untouched, so it still reads"),
+        "and the enrolment is not silently revoked"
     );
+}
 
-    // Still broken, on purpose, until the read distinguishes absent from unreadable.
-    assert_ne!(
-        regenerated, HARDWARE_ID,
-        "the till still invents a new hardware id rather than surfacing the failed read"
-    );
+/// The absent case still works, because that is what the swallowed default was there to serve.
+///
+/// A fix that stops distinguishing failures by refusing everything would pass the two tests above
+/// and brick first boot. The schema seeds `hardware_id` as the empty string, so this is the real
+/// fresh-install path rather than a constructed one.
+#[test]
+fn a_till_with_no_hardware_id_yet_still_generates_one() {
+    let (service, db) = service("http://127.0.0.1:1");
+    {
+        let conn = db.connection();
+        let conn = conn.lock();
+        conn.execute(
+            "UPDATE terminal_registration SET hardware_id = '' WHERE id = 1",
+            [],
+        )
+        .expect("the singleton registration row updates");
+    }
+
+    let generated = service
+        .get_hardware_id()
+        .expect("an empty stored id is the fresh-install case, not a failure");
+
+    assert!(!generated.is_empty(), "a hardware id was generated");
     assert_eq!(
         stored_hardware_id(&db).as_deref(),
-        Some(regenerated.as_str()),
-        "and still writes it over the identity the platform knows this till by"
+        Some(generated.as_str()),
+        "and persisted, so the next call returns the same one"
+    );
+    assert_eq!(
+        service.get_hardware_id().expect("the stored id reads back"),
+        generated,
+        "the id is stable across calls — it is an identity, not a nonce"
     );
 }
