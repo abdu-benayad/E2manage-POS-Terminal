@@ -357,23 +357,42 @@ mod guards {
     /// Both are deliberate in this tree: the cursor reads by a variable, and
     /// `crates/pos-db/tests/mappings.rs` reads `PRAGMA table_info` by column name.
     fn integer_literal(code: &str, from: usize) -> Option<usize> {
-        let end = code[from..]
-            .find(|c: char| !c.is_ascii_digit())
-            .map_or(code.len(), |at| from + at);
-        (end > from).then_some(end)
+        if !code[from..].starts_with(|c: char| c.is_ascii_digit()) {
+            return None;
+        }
+        // Everything a Rust integer literal may continue with: more digits, `_` separators, a
+        // `0x`/`0b` radix, a `usize`/`u32` suffix. Deliberately looser than the grammar — it will
+        // also accept `0abc`, which is not valid Rust. Where a check must choose an error
+        // direction, choose the false positive: an over-match gets investigated on its first run
+        // and an under-match gets quoted. Under-matching here would mean `row.get(0usize)` reads
+        // as a variable and passes forever.
+        Some(
+            code[from..]
+                .find(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+                .map_or(code.len(), |at| from + at),
+        )
     }
 
     /// `row . get [::<…>] ( <int> )`, from the byte just past the `row` token.
     ///
-    /// `get_ref` is tried before `get` because [`starts_with_word`] refuses `get` in front of
-    /// `get_ref`'s underscore — the order is load-bearing, not stylistic.
+    /// **All four of rusqlite's indexed readers**, not the two that happened to be in the tree.
+    /// `Row` offers `get`, `get_ref`, `get_unwrap` and `get_ref_unwrap` (`vendor/rusqlite/src/
+    /// row.rs:264-344`); the first version of this predicate knew the two with call sites here,
+    /// which is a survey certifying the survey — and the pair it omitted are the *panicking*
+    /// ones, so the guard would have banned `get(0)` while pointing the next author at
+    /// `get_unwrap(0)`. There are zero sites for either today; the arm is asserted against
+    /// constructed input rather than a tree witness, and that is said out loud rather than left
+    /// to look like coverage.
+    ///
+    /// Longest name first: [`starts_with_word`] refuses `get` in front of `get_ref`'s
+    /// underscore, so the order is load-bearing, not stylistic.
     fn method_read_from(code: &str, after_row: usize) -> Option<usize> {
         let dot = skip_space(code, after_row);
         if !code[dot..].starts_with('.') {
             return None;
         }
         let at = skip_space(code, dot + 1);
-        let name = ["get_ref", "get"]
+        let name = ["get_ref_unwrap", "get_ref", "get_unwrap", "get"]
             .into_iter()
             .find(|name| starts_with_word(&code[at..], name))?;
         let at = skip_turbofish(code, at + name.len());
