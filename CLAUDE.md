@@ -219,6 +219,20 @@ reads the other's issue board to learn a contract fact.** An issue that changes 
 till-facing surface updates that document in the same issue, and amends the pact
 interaction if the surface is pinned.
 
+**And that rule assumes the two records disagree when one is wrong. They can agree and both be
+wrong.** Measured 2026-08-24: the till's design doc claimed the pairing-*request* 200 carries an
+additive `kind: "RE_PAIR"`; `pos-till-server-contract` v36 claimed the same route returns
+`isRePair`. Two spellings of one false belief — that the *request* response discriminates a re-pair
+— each sitting in its own side's record of authority. Neither side could catch the other by reading
+across, because each was reading a different spelling of its own error, and the agreement read as
+corroboration. What settled it was neither document: opening `pairing.handler.ts`, reading the
+declared result type, and counting the `return` statements. The response is byte-identical for a
+first enrolment and a re-pair; the real flag is on the pairing-*status* response.
+
+> **Two records agreeing is not corroboration when both were written from the same belief rather
+> than from the source.** Convergence is evidence only when the derivations are independent, and two
+> documents written by people talking to each other are not.
+
 `till/doc/till-consumer-surface-audit` (taskum) carries the per-endpoint verdicts —
 `accurate` / `drifted` / `no route` / `unverified` — measured 2026-08-23. Read it
 before assuming an endpoint works: several do not, and the open ones are on the
