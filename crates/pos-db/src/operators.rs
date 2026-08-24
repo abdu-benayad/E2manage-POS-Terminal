@@ -694,7 +694,7 @@ mod tests {
     }
 
     #[test]
-    fn every_credentials_column_comes_from_its_own_position() {
+    fn every_credentials_column_reaches_its_own_field() {
         let db = setup_db();
         let written = OperatorRow {
             role: OperatorRole::Manager,

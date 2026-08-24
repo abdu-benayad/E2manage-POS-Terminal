@@ -776,13 +776,19 @@ mod tests {
     /// Every column of `terminal_config` carries a **distinct** value, and every field of the
     /// loaded `TerminalSession` is asserted.
     ///
-    /// Both halves are load-bearing. `load_saved_session` reads its row by position, so a column
-    /// added, removed or reordered in the SELECT list silently shifts every index after it —
-    /// and because the columns either side are all TEXT, the swapped read compiles and satisfies
-    /// rusqlite's type check. Asserting a subset leaves the unasserted positions free to swap;
-    /// repeating a value across same-typed columns lets a swap between *those two* pass. So a
-    /// later edit that tidies these fixtures into shared or omitted values disarms the test
-    /// without failing it.
+    /// Both halves are load-bearing, and **the reason is no longer the one this comment used to
+    /// give.** It said positional drift: `load_saved_session` read its row by index, so a column
+    /// added, removed or reordered in the SELECT list shifted every index after it, and because
+    /// the columns either side are all TEXT the swapped read compiled and satisfied rusqlite's
+    /// type check. That argument was correct until `positional-row-access-in-pos-db` moved this
+    /// read onto `TERMINAL_CONFIG_ROW`, which names all eleven columns — index drift is now
+    /// structurally impossible and this test cannot be the thing that catches it.
+    ///
+    /// What it still catches is a *mapping* that reads the right column into the wrong field: the
+    /// declaration pins the SELECT list, not which value lands where. So the fixture discipline is
+    /// unchanged. Asserting a subset leaves the unasserted fields free to swap; repeating a value
+    /// across same-typed columns lets a swap between *those two* pass. A later edit that tidies
+    /// these fixtures into shared or omitted values disarms the test without failing it.
     ///
     /// The three columns with fallbacks — locale, currency, sector — are given values that
     /// differ from their defaults ("ar", "LYD", "RETAIL"), so a fallback firing over a stored
@@ -970,11 +976,18 @@ mod tests {
     /// Every column the offline read selects carries a **distinct** value, and every field that
     /// reaches the outcome is asserted.
     ///
-    /// `verify_pin_offline` reads its row by position, so a column added, removed or reordered in
-    /// the `SELECT` list silently shifts every index after it — and with `name`, `name_ar`,
-    /// `role` and `permissions_json` all TEXT, a shifted read still compiles and still returns a
-    /// `String`. Reading the SQL beside the indices is structurally blind to that; only distinct
-    /// values catch it.
+    /// **The reason has changed and the old one is retired here rather than left to be cited.**
+    /// It used to be positional drift: `verify_pin_offline` read its row by index, so a column
+    /// added, removed or reordered in the `SELECT` list shifted every index after it, and with
+    /// `name`, `name_ar`, `role` and `permissions_json` all TEXT a shifted read still compiled and
+    /// still returned a `String`. That is now impossible — the read goes through
+    /// `OPERATOR_CREDENTIALS_ROW`, which names its columns.
+    ///
+    /// The property that remains is the one a declaration does *not* give you: the mapping can
+    /// still take the right column into the wrong field. Measured — swapping `role` and
+    /// `permissions_json` in `OPERATOR_CREDENTIALS_ROW` left the whole suite green, because
+    /// nothing exercised the reader. This test and its two neighbours are what turn that mutation
+    /// red, and they only can while every column here carries a distinct value.
     ///
     /// The row is read even though nothing can verify a PIN against it, and the assertions reach
     /// it through the *failure* modes rather than through an `Accepted`: a row this till cannot
@@ -982,7 +995,7 @@ mod tests {
     /// is what the read is still for, and it is what these tests hold in place until
     /// `offline-pin-verification-has-no-credential` gives the parsed operator a consumer again.
     #[test]
-    fn the_offline_read_takes_every_column_from_its_own_position() {
+    fn the_offline_read_takes_every_column_into_its_own_field() {
         let service = create_test_service();
         {
             let conn = service.db.connection();

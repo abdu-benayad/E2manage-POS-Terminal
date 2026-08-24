@@ -275,18 +275,21 @@ mod tests {
         );
     }
 
-    /// **The positional read, per `df4e089`.** Every column carries a distinct value and every
-    /// field is asserted against its own.
+    /// Every column carries a distinct value and every field is asserted against its own.
     ///
-    /// `held()` reads its row by `row.get(0..2)`. A column added, removed or reordered in the
-    /// `SELECT` shifts every index after it, and the types still line up — `operator_id`, `token`
-    /// and `expires_at` are all `TEXT`, so a swap compiles, runs, and signs the wrong person in
-    /// with the wrong credential. Only distinct values catch it.
+    /// **The original reason is retired, and the test is not.** Per `df4e089` this guarded a
+    /// positional read: `held()` took its row by `row.get(0..2)`, a column added, removed or
+    /// reordered in the `SELECT` shifted every index after it, and `operator_id`, `token` and
+    /// `expires_at` are all `TEXT` — so a swap compiled, ran, and signed the wrong person in with
+    /// the wrong credential. `held()` now reads through `OPERATOR_SESSION_ROW`, which names its
+    /// columns, so that failure is unreachable.
     ///
-    /// Mutation-verified: swapping `operator_id` and `token` in the `SELECT` fails this test on
-    /// both fields.
+    /// What a declaration does not pin is *which* named column reaches which field. That swap is
+    /// still expressible, it still type-checks for the same reason, and distinct values are still
+    /// the only thing that catches it. Mutation-verified in both regimes: swapping `operator_id`
+    /// and `token` fails this test on both fields.
     #[test]
-    fn the_operator_session_read_takes_every_column_from_its_own_position() {
+    fn the_operator_session_read_takes_every_column_into_its_own_field() {
         let sign_in = sign_in();
         {
             let conn = sign_in.db.connection();

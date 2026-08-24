@@ -272,13 +272,18 @@ impl PairingService {
     /// which is not a statement about enrolment (`b10592a`, same argument as
     /// [`Self::is_registered`]).
     ///
-    /// # The row is read by position
+    /// # The row is read through a declared shape
     ///
-    /// A column added, removed or reordered in the `SELECT` list shifts every index after it, and
-    /// five of the seven are TEXT, so a swap among them type-checks and simply attributes one
-    /// terminal's details to another. `get_registration_reads_every_column_into_its_own_field`
-    /// pins the mapping with a distinct value per column. `positional-row-access-in-pos-db` is
-    /// migrating this shape workspace-wide and reaches this file at its task 13.
+    /// It was read by position until `positional-row-access-in-pos-db` task 13; a column added,
+    /// removed or reordered in the `SELECT` list shifted every index after it, and five of the
+    /// seven are TEXT, so a swap among them type-checked and simply attributed one terminal's
+    /// details to another. [`TERMINAL_REGISTRATION_ROW`] now names every column — including
+    /// `license_key`, which none of the three hand-written lists here did — so a change to the
+    /// list is a compile error at this call site rather than a shift.
+    ///
+    /// The mapping from named column to field is the part a declaration does not pin.
+    /// `get_registration_reads_every_column_into_its_own_field` holds that, with a distinct value
+    /// per column.
     pub fn get_registration(&self) -> Result<TerminalRegistration> {
         let conn = self.db.connection();
         let conn = conn.lock();
@@ -996,13 +1001,16 @@ mod tests {
     /// Every column of `terminal_registration` carries a **distinct** value, and every field of
     /// the loaded `TerminalRegistration` is asserted.
     ///
-    /// `get_registration` reads its row by position, so a column added, removed or reordered in
-    /// the SELECT list shifts every index after it. Five of the seven columns are TEXT, so a swap
-    /// among them compiles and passes rusqlite's type check — it just attributes one terminal's
-    /// details to another. Asserting a subset leaves the unasserted positions free to swap, and
-    /// repeating a value across same-typed columns lets a swap between *those two* pass: a later
-    /// edit that tidies these fixtures into shared or omitted values disarms the test without
-    /// failing it.
+    /// **Not the positional-drift test it was.** `get_registration` read its row by index until
+    /// task 13 of `positional-row-access-in-pos-db`; it now reads `TERMINAL_REGISTRATION_ROW`,
+    /// which names its columns, so a SELECT-list edit cannot shift an index past this.
+    ///
+    /// It still catches a mapping that takes the right column into the wrong field. Five of the
+    /// seven columns are TEXT, so such a swap compiles and passes rusqlite's type check — it just
+    /// attributes one terminal's details to another. Asserting a subset leaves the unasserted
+    /// fields free to swap, and repeating a value across same-typed columns lets a swap between
+    /// *those two* pass: a later edit that tidies these fixtures into shared or omitted values
+    /// disarms the test without failing it.
     #[test]
     fn get_registration_reads_every_column_into_its_own_field() {
         let service = create_test_service();
