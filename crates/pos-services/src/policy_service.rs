@@ -41,6 +41,7 @@
 use crate::policy_value::PolicyValue;
 use pos_api::{ApiClient, EnforcementMode, GetResult, SecurityCategory, SecurityPoliciesResponse};
 use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::Decimal;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -48,8 +49,10 @@ use tracing::{debug, error, info, warn};
 
 /// Why the till was unable to decide.
 ///
-/// Every variant is a fact about the *platform's data or the till's knowledge of it*, never about
-/// the action being checked. That is the distinction [`PolicyResult`] previously could not draw.
+/// Four of these are facts about the *platform's data or the till's knowledge of it*. The fifth,
+/// [`NotEvaluableReason::CheckDoesNotFitTheDeclaredType`], is a fault in **this till** — and it is
+/// separate precisely because the repairs differ: fix the platform's data, teach this till a new
+/// policy type, or fix the caller.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NotEvaluableReason {
     /// No refresh has ever succeeded, so the till does not know what its policies are.
@@ -66,6 +69,13 @@ pub enum NotEvaluableReason {
     /// mode introduced in future deserialises to `Unknown` on every deployed till. Answering
     /// `Allow` there means the platform *tightening* a policy reads as no policy at all.
     EnforcementModeUnrecognised,
+    /// The policy is readable and this check cannot interpret it — a boolean question asked of a
+    /// range policy.
+    ///
+    /// The only variant that reports a defect in the till rather than in the platform's data.
+    /// Nothing rejected this before: the caller chose the interpreter by choosing which `check_*`
+    /// to call, so it was a well-typed call that silently misread a perfectly good value.
+    CheckDoesNotFitTheDeclaredType,
 }
 
 impl NotEvaluableReason {
@@ -81,6 +91,9 @@ impl NotEvaluableReason {
             }
             Self::EnforcementModeUnrecognised => {
                 "the platform asked for an enforcement mode this till does not recognise"
+            }
+            Self::CheckDoesNotFitTheDeclaredType => {
+                "this till asked a question the policy's declared type cannot answer"
             }
         }
     }
@@ -266,6 +279,19 @@ pub enum PolicyStanding {
     },
 }
 
+/// What a check established before it looked at the policy's value.
+///
+/// Every check begins with the same three questions in the same order, and the order is the
+/// fix: *has this till ever loaded its policies* comes **before** *is there one with this
+/// code*, because the two used to produce the same answer and only one of them means the
+/// action is permitted.
+enum Lookup<'a> {
+    /// The standing settles it; no value needs reading.
+    Settled(PolicyResult),
+    /// A policy is held for this code and is enforced. Read its value.
+    Evaluate(&'a CachedPolicy),
+}
+
 /// Policy Service
 ///
 /// Manages security policies fetched from the platform.
@@ -413,194 +439,189 @@ impl PolicyService {
     // POLICY EVALUATION
     // =========================================================================
 
-    /// Evaluates a boolean policy
+    /// Resolves a code against the standing, before any value is interpreted.
     ///
-    /// # Arguments
+    /// The three outcomes were one before this issue:
     ///
-    /// * `code` - Policy code (e.g., "ENCRYPTION_AT_REST")
-    ///
-    /// # Returns
-    ///
-    /// `PolicyResult` based on policy value and enforcement mode
-    pub async fn check_boolean(&self, code: &str) -> PolicyResult {
-        let policies = self.policies.read().await;
+    /// - **never loaded** — the till does not know its policies, so it has no basis for an answer.
+    ///   Previously indistinguishable from "no such policy", and therefore `Allow`. That is the
+    ///   whole finding: `src/platform.rs:88-92` swallows a failed refresh and carries on, so an
+    ///   offline-first till that boots without a network held no policies and permitted every
+    ///   operation — its routine state, not an error path.
+    /// - **loaded, no such code** — the platform told this till its policies and this is not among
+    ///   them. Genuinely unconfigured, and `Allow` is correct.
+    /// - **loaded, and this policy is `Disabled`** — the platform is explicitly not enforcing it.
+    fn lookup<'a>(held: &'a HeldPolicies, code: &str) -> Lookup<'a> {
+        let Some(policies) = held.loaded() else {
+            warn!("cannot evaluate {code}: this till has never loaded its security policies");
+            return Lookup::Settled(PolicyResult::NotEvaluable {
+                code: code.to_string(),
+                reason: NotEvaluableReason::PoliciesNeverLoaded,
+            });
+        };
 
         match policies.get(code) {
             None => {
-                // Policy not found - allow by default
-                debug!("Policy {} not found, allowing", code);
-                PolicyResult::Allow
+                debug!("the platform configured no policy {code}");
+                Lookup::Settled(PolicyResult::Allow)
             }
-            Some(policy) => {
-                if policy.enforcement_mode == EnforcementMode::Disabled {
-                    return PolicyResult::Allow;
-                }
-
-                // Behaviour preserved: a value that is not a bool defaults to "required",
-                // exactly as `as_bool().unwrap_or(true)` did. Task 05 replaces this with an
-                // answer that says the policy could not be evaluated.
-                let required = match &policy.value {
-                    PolicyValue::Boolean(required) => *required,
-                    _ => true,
-                };
-
-                if required {
-                    // Policy requires this feature to be enabled
-                    self.apply_enforcement(
-                        &policy.enforcement_mode,
-                        &format!("Policy {} requires this feature to be enabled", code),
-                    )
-                } else {
-                    PolicyResult::Allow
-                }
+            Some(policy) if policy.enforcement_mode == EnforcementMode::Disabled => {
+                Lookup::Settled(PolicyResult::Allow)
             }
+            Some(policy) => Lookup::Evaluate(policy),
         }
     }
 
-    /// Checks if a value is within the range policy
+    /// The policy is held, and this check cannot get an answer out of it.
     ///
-    /// # Arguments
-    ///
-    /// * `code` - Policy code (e.g., "MIN_PIN_LENGTH")
-    /// * `value` - Value to check
-    ///
-    /// # Returns
-    ///
-    /// `PolicyResult` based on whether value is within range
-    pub async fn check_range(&self, code: &str, value: f64) -> PolicyResult {
-        let policies = self.policies.read().await;
-
-        match policies.get(code) {
-            None => PolicyResult::Allow,
-            Some(policy) => {
-                if policy.enforcement_mode == EnforcementMode::Disabled {
-                    return PolicyResult::Allow;
-                }
-
-                let range = match &policy.value {
-                    PolicyValue::Range(bounds) => Some(bounds.clone()),
-                    _ => None,
-                };
-
-                match range {
-                    Some(r) => {
-                        if value < r.min().to_f64().unwrap_or(f64::MIN) {
-                            self.apply_enforcement(
-                                &policy.enforcement_mode,
-                                &format!(
-                                    "Value {} is below minimum {} for policy {}",
-                                    value,
-                                    r.min(),
-                                    code
-                                ),
-                            )
-                        } else if value > r.max().to_f64().unwrap_or(f64::MAX) {
-                            self.apply_enforcement(
-                                &policy.enforcement_mode,
-                                &format!(
-                                    "Value {} exceeds maximum {} for policy {}",
-                                    value,
-                                    r.max(),
-                                    code
-                                ),
-                            )
-                        } else {
-                            PolicyResult::Allow
-                        }
-                    }
-                    None => {
-                        warn!("Invalid range value for policy {}", code);
-                        PolicyResult::Allow
-                    }
-                }
+    /// Three different facts, kept apart because they call for different repairs: fix the
+    /// platform's data, update this till, or fix this till's caller.
+    fn cannot_read(code: &str, value: &PolicyValue) -> PolicyResult {
+        let reason = match value {
+            PolicyValue::Malformed { declared, .. } => {
+                warn!("policy {code} declares {declared:?} and its value does not match");
+                NotEvaluableReason::ValueDoesNotMatchDeclaredType
             }
+            PolicyValue::UnknownType { .. } => {
+                warn!("policy {code} declares a type this till does not recognise");
+                NotEvaluableReason::DeclaredTypeUnrecognised
+            }
+            // The value is fine and the question is wrong: a boolean check against a range
+            // policy. Nothing rejected this before — the caller chose the interpreter by
+            // choosing which `check_*` to call, so it was a well-typed call that silently
+            // misread the value.
+            readable => {
+                error!("policy {code} holds {readable:?}, which this check cannot interpret");
+                NotEvaluableReason::CheckDoesNotFitTheDeclaredType
+            }
+        };
+
+        PolicyResult::NotEvaluable {
+            code: code.to_string(),
+            reason,
         }
     }
 
-    /// Checks if a value is in the allowed list
+    /// Evaluates a boolean policy.
     ///
-    /// # Arguments
+    /// A value that is not a boolean no longer defaults to *required*. `as_bool().unwrap_or(true)`
+    /// looked conservative and was not: it fed `apply_enforcement`, which permits under `Warn` and
+    /// `Audit`, so an unreadable boolean refused an action only when that policy happened to be
+    /// configured `Block`.
+    pub async fn check_boolean(&self, code: &str) -> PolicyResult {
+        let held = self.policies.read().await;
+        let policy = match Self::lookup(&held, code) {
+            Lookup::Settled(result) => return result,
+            Lookup::Evaluate(policy) => policy,
+        };
+
+        match &policy.value {
+            PolicyValue::Boolean(true) => self.apply_enforcement(
+                &policy.enforcement_mode,
+                &format!("Policy {} requires this feature to be enabled", code),
+            ),
+            PolicyValue::Boolean(false) => PolicyResult::Allow,
+            other => Self::cannot_read(code, other),
+        }
+    }
+
+    /// Checks a value against the range policy's bounds.
     ///
-    /// * `code` - Policy code (e.g., "ALLOWED_PAYMENT_METHODS")
-    /// * `value` - Value to check
+    /// Takes [`Decimal`]. The predecessor took `f64` because the bound was decoded with
+    /// `as_f64()` at this point — money reached for as a float, against this codebase's first
+    /// rule, because there was nowhere upstream to declare what the value meant.
+    pub async fn check_range(&self, code: &str, value: Decimal) -> PolicyResult {
+        let held = self.policies.read().await;
+        let policy = match Self::lookup(&held, code) {
+            Lookup::Settled(result) => return result,
+            Lookup::Evaluate(policy) => policy,
+        };
+
+        let PolicyValue::Range(bounds) = &policy.value else {
+            return Self::cannot_read(code, &policy.value);
+        };
+
+        if bounds.contains(value) {
+            return PolicyResult::Allow;
+        }
+
+        let (limit, relation) = if value < bounds.min() {
+            (bounds.min(), "below minimum")
+        } else {
+            (bounds.max(), "exceeds maximum")
+        };
+        self.apply_enforcement(
+            &policy.enforcement_mode,
+            &format!("Value {value} is {relation} {limit} for policy {code}"),
+        )
+    }
+
+    /// Checks a value against the policy's allow-list.
     ///
-    /// # Returns
+    /// # The four roads to "allow everything", and why they are now four answers
     ///
-    /// `PolicyResult` based on whether value is in the list
+    /// This was the worst of the checks and the clearest illustration of the issue. Every one of
+    /// these produced `Allow`:
+    ///
+    /// | input | why it permitted |
+    /// | --- | --- |
+    /// | `{"allowed": []}` | a deliberate empty rule, read as *allow all* |
+    /// | a value that is not an allow-list at all | `unwrap_or_default()` made it `vec![]` |
+    /// | an allow-list of no readable elements | `filter_map` emptied it, then `vec![]` again |
+    /// | no policy with this code | the missing-policy default |
+    ///
+    /// Three of the four are malformed, and the answer chosen for all four was the permissive one
+    /// — a security control failing open on its own malformation. The middle two are now
+    /// [`PolicyResult::NotEvaluable`], the last is `Allow` only once the till knows it has
+    /// policies, and the empty rule is still a rule.
+    ///
+    /// **An empty allow-list still permits**, deliberately: `{"allowed": []}` is the platform
+    /// saying so, and that is a decision it is entitled to make. What changed is that nothing else
+    /// arrives here wearing it.
     pub async fn check_list(&self, code: &str, value: &str) -> PolicyResult {
-        let policies = self.policies.read().await;
+        let held = self.policies.read().await;
+        let policy = match Self::lookup(&held, code) {
+            Lookup::Settled(result) => return result,
+            Lookup::Evaluate(policy) => policy,
+        };
 
-        match policies.get(code) {
-            None => PolicyResult::Allow,
-            Some(policy) => {
-                if policy.enforcement_mode == EnforcementMode::Disabled {
-                    return PolicyResult::Allow;
-                }
+        let PolicyValue::List(allowed) = &policy.value else {
+            return Self::cannot_read(code, &policy.value);
+        };
 
-                // Behaviour preserved: anything that is not a readable list yields an empty
-                // one, which the branch below reads as "allow all". Task 05 is where those stop
-                // being the same value.
-                let allowed_values = match &policy.value {
-                    PolicyValue::List(values) => values.clone(),
-                    _ => Vec::new(),
-                };
-
-                if allowed_values.is_empty() {
-                    // Empty list means allow all
-                    PolicyResult::Allow
-                } else if allowed_values.contains(&value.to_string()) {
-                    PolicyResult::Allow
-                } else {
-                    self.apply_enforcement(
-                        &policy.enforcement_mode,
-                        &format!(
-                            "Value '{}' is not in allowed list for policy {}",
-                            value, code
-                        ),
-                    )
-                }
-            }
+        if allowed.is_empty() || allowed.iter().any(|permitted| permitted == value) {
+            return PolicyResult::Allow;
         }
+
+        self.apply_enforcement(
+            &policy.enforcement_mode,
+            &format!("Value '{value}' is not in allowed list for policy {code}"),
+        )
     }
 
-    /// Checks if a value matches the enum policy
+    /// Checks a value against the single value the policy permits.
     ///
-    /// # Arguments
-    ///
-    /// * `code` - Policy code
-    /// * `value` - Value to check
-    ///
-    /// # Returns
-    ///
-    /// `PolicyResult` based on whether value matches
+    /// `as_str().unwrap_or("")` had the same shape as the allow-list's empty case: an unreadable
+    /// value became the empty string, and the empty string matched everything.
     pub async fn check_enum(&self, code: &str, value: &str) -> PolicyResult {
-        let policies = self.policies.read().await;
+        let held = self.policies.read().await;
+        let policy = match Self::lookup(&held, code) {
+            Lookup::Settled(result) => return result,
+            Lookup::Evaluate(policy) => policy,
+        };
 
-        match policies.get(code) {
-            None => PolicyResult::Allow,
-            Some(policy) => {
-                if policy.enforcement_mode == EnforcementMode::Disabled {
-                    return PolicyResult::Allow;
-                }
+        let PolicyValue::Enum(expected) = &policy.value else {
+            return Self::cannot_read(code, &policy.value);
+        };
 
-                let expected = match &policy.value {
-                    PolicyValue::Enum(expected) => expected.as_str(),
-                    _ => "",
-                };
-
-                if expected.is_empty() || value == expected {
-                    PolicyResult::Allow
-                } else {
-                    self.apply_enforcement(
-                        &policy.enforcement_mode,
-                        &format!(
-                            "Value '{}' does not match expected '{}' for policy {}",
-                            value, expected, code
-                        ),
-                    )
-                }
-            }
+        if expected.is_empty() || expected == value {
+            return PolicyResult::Allow;
         }
+
+        self.apply_enforcement(
+            &policy.enforcement_mode,
+            &format!("Value '{value}' does not match expected '{expected}' for policy {code}"),
+        )
     }
 
     /// Applies the enforcement mode to create the appropriate result
@@ -786,11 +807,185 @@ mod tests {
         );
     }
 
+    /// Builds a response holding one policy, for the evaluation tests below.
+    fn one_policy(
+        code: &str,
+        policy_type: PolicyType,
+        value: serde_json::Value,
+    ) -> SecurityPoliciesResponse {
+        SecurityPoliciesResponse {
+            version: "v1".to_string(),
+            policies: vec![SecurityPolicy {
+                code: code.to_string(),
+                category: SecurityCategory::Authentication,
+                policy_type,
+                policy_value: value,
+                enforcement_mode: EnforcementMode::Block,
+            }],
+        }
+    }
+
+    /// A till that has never loaded its policies cannot answer, and no longer pretends to.
+    ///
+    /// **This replaces `test_check_boolean_not_found`, which asserted `Allow` here.** That test
+    /// was green for as long as the defect existed, because it pinned the defect as the contract:
+    /// a fresh service has never refreshed, so every check permitted. Combined with
+    /// `src/platform.rs:88-92` swallowing a failed refresh and carrying on, that is an
+    /// offline-first till permitting every operation on any boot without a network — its routine
+    /// state, not an error path.
     #[tokio::test]
-    async fn test_check_boolean_not_found() {
+    async fn a_till_that_never_loaded_its_policies_cannot_evaluate_one() {
         let service = create_test_service();
-        let result = service.check_boolean("NON_EXISTENT_POLICY").await;
-        assert_eq!(result, PolicyResult::Allow);
+
+        assert_eq!(
+            service.check_boolean("ENCRYPTION_AT_REST").await,
+            PolicyResult::NotEvaluable {
+                code: "ENCRYPTION_AT_REST".to_string(),
+                reason: NotEvaluableReason::PoliciesNeverLoaded,
+            }
+        );
+    }
+
+    /// A till that *has* loaded them, and simply has no such policy, still permits.
+    ///
+    /// The control for the test above, and the reason the two had to become separable: without
+    /// this, refusing everything would satisfy the never-loaded assertion and read as a pass. It
+    /// is also the case that must not change — a platform that configured no such policy has said
+    /// something, and the till is entitled to act on it.
+    #[tokio::test]
+    async fn a_loaded_till_permits_a_policy_the_platform_did_not_configure() {
+        let service = create_test_service();
+        service
+            .update_policies(SecurityPoliciesResponse {
+                version: "v1".to_string(),
+                policies: vec![],
+            })
+            .await;
+
+        assert_eq!(
+            service.check_boolean("NON_EXISTENT_POLICY").await,
+            PolicyResult::Allow
+        );
+    }
+
+    /// A boolean question asked of a range policy is refused, not silently misread.
+    ///
+    /// This was a well-typed call nothing rejected: the caller chose the interpreter by choosing
+    /// which `check_*` to call, and `as_bool()` on a range object returned `None`, which
+    /// `unwrap_or(true)` turned into *required*.
+    #[tokio::test]
+    async fn a_check_that_does_not_fit_the_declared_type_is_refused() {
+        let service = create_test_service();
+        service
+            .update_policies(one_policy(
+                "MIN_PIN_LENGTH",
+                PolicyType::Range,
+                serde_json::json!({"min": 4, "max": 8, "default": 4}),
+            ))
+            .await;
+
+        assert_eq!(
+            service.check_boolean("MIN_PIN_LENGTH").await,
+            PolicyResult::NotEvaluable {
+                code: "MIN_PIN_LENGTH".to_string(),
+                reason: NotEvaluableReason::CheckDoesNotFitTheDeclaredType,
+            }
+        );
+
+        // The control: the same policy asked the question it can answer produces a real verdict.
+        // Without it, a `check_*` broken open to refuse everything passes the assertion above.
+        assert_eq!(
+            service
+                .check_range("MIN_PIN_LENGTH", Decimal::from(6))
+                .await,
+            PolicyResult::Allow
+        );
+    }
+
+    /// A policy whose value contradicts its declared type is refused rather than permitted.
+    #[tokio::test]
+    async fn a_malformed_value_is_refused_rather_than_permitted() {
+        let service = create_test_service();
+        service
+            .update_policies(one_policy(
+                "ALLOWED_PAYMENT_METHODS",
+                PolicyType::List,
+                serde_json::json!("not-an-allow-list"),
+            ))
+            .await;
+
+        assert_eq!(
+            service.check_list("ALLOWED_PAYMENT_METHODS", "CASH").await,
+            PolicyResult::NotEvaluable {
+                code: "ALLOWED_PAYMENT_METHODS".to_string(),
+                reason: NotEvaluableReason::ValueDoesNotMatchDeclaredType,
+            }
+        );
+    }
+
+    /// The four roads `check_list` had to "allow everything" now end in three different places.
+    ///
+    /// The whole issue in one test. Each row was `PolicyResult::Allow` before this task, and three
+    /// of the four were malformed input reaching the permissive answer.
+    #[tokio::test]
+    async fn the_allow_list_roads_no_longer_meet() {
+        let service = create_test_service();
+
+        // 1. Never loaded — cannot answer.
+        assert!(matches!(
+            service.check_list("ALLOWED_PAYMENT_METHODS", "CASH").await,
+            PolicyResult::NotEvaluable {
+                reason: NotEvaluableReason::PoliciesNeverLoaded,
+                ..
+            }
+        ));
+
+        // 2. A deliberate empty rule — still permits, and that is the platform's decision to make.
+        service
+            .update_policies(one_policy(
+                "ALLOWED_PAYMENT_METHODS",
+                PolicyType::List,
+                serde_json::json!({"allowed": []}),
+            ))
+            .await;
+        assert_eq!(
+            service.check_list("ALLOWED_PAYMENT_METHODS", "CASH").await,
+            PolicyResult::Allow
+        );
+
+        // 3. An allow-list of no readable elements — was `vec![]`, which meant *allow all*.
+        service
+            .update_policies(one_policy(
+                "ALLOWED_PAYMENT_METHODS",
+                PolicyType::List,
+                serde_json::json!({"allowed": [1, 2, 3]}),
+            ))
+            .await;
+        assert!(matches!(
+            service.check_list("ALLOWED_PAYMENT_METHODS", "CASH").await,
+            PolicyResult::NotEvaluable {
+                reason: NotEvaluableReason::ValueDoesNotMatchDeclaredType,
+                ..
+            }
+        ));
+
+        // 4. A real rule that does not admit the value — a genuine refusal, and the control that
+        //    proves the checker still reaches a verdict rather than refusing everything.
+        service
+            .update_policies(one_policy(
+                "ALLOWED_PAYMENT_METHODS",
+                PolicyType::List,
+                serde_json::json!({"allowed": ["CARD"]}),
+            ))
+            .await;
+        assert!(service
+            .check_list("ALLOWED_PAYMENT_METHODS", "CASH")
+            .await
+            .is_blocked());
+        assert_eq!(
+            service.check_list("ALLOWED_PAYMENT_METHODS", "CARD").await,
+            PolicyResult::Allow
+        );
     }
 
     #[test]
