@@ -1453,6 +1453,191 @@ mod guards {
         }
     }
 
+    /// No crate under `crates/` may acquire a view dependency.
+    ///
+    /// The rule is stated in the architecture doc and was enforced by nothing. `src/ui/`'s own
+    /// module doc says the bridges "hold no dependency on any UI toolkit, and must not acquire
+    /// one" — a sentence, in a file, that no build step reads.
+    ///
+    /// # Why a manifest rule and not an import rule
+    ///
+    /// A `use egui::…` in a workspace crate is a symptom; the dependency is the defect, and it
+    /// arrives first. More concretely, it arrives *workspace-wide*: `[source.crates-io]
+    /// replace-with` resolves the whole workspace before feature selection, so an unvendored
+    /// view dependency on **any** member breaks `cargo build --offline` for every crate here,
+    /// including ones that never mention it. That is why this reads manifests rather than
+    /// imports, and why one crate's mistake is everyone's.
+    ///
+    /// # The exemption is the root package, and it asserts itself
+    ///
+    /// Task 11 put the binary on the root package, so the root manifest is the one place a view
+    /// dependency belongs. An exemption that merely skips a path is indistinguishable from a
+    /// scanner that cannot see it, so this one asserts the exempt manifest **does** hold the
+    /// banned keys. If the binary moves, or the arrangement is reverted, this fails loudly
+    /// rather than permitting everything under a path that no longer means anything.
+    ///
+    /// # No witness in the meta-guard, for the reason its neighbour records
+    ///
+    /// `doc/guard-tests` exempts a guard that reads TOML rather than Rust from the witness rule
+    /// and asks for a positive control instead. This carries two, both inside the test where its
+    /// reader will look: the walk must find at least six manifests, and the section reader must
+    /// find `serde` in `pos-models` before any conclusion is drawn. A meta-guard witness here
+    /// would restate the first of those and fail on exactly the mutations the guard already
+    /// catches — which is what
+    /// `every_excluded_crate_is_named_in_the_verification_script` measured before deleting its
+    /// own. A pair that fails on the same mutations is one assertion wearing two hats.
+    #[test]
+    fn no_workspace_crate_may_acquire_a_view_dependency() {
+        const BANNED: [&str; 8] = [
+            "abdu-egui-ui",
+            "egui",
+            "eframe",
+            "egui_extras",
+            "egui_kittest",
+            "winit",
+            "wgpu",
+            "glow",
+        ];
+
+        let manifests = crate_manifests();
+
+        // Guard the guard, part one: the walk found the tree. Every way this can break returns
+        // fewer manifests, which reads as a cleaner workspace.
+        assert!(
+            manifests.len() >= 6,
+            "found only {} manifest(s) under `crates/`; the walk is broken and this guard is \
+             passing on an empty corpus. Found: {:?}",
+            manifests.len(),
+            manifests.iter().map(|(p, _)| p).collect::<Vec<_>>()
+        );
+
+        // Guard the guard, part two: the *reader* works. A section walker that returns nothing
+        // also reports a clean tree, and does so from a full corpus, which the count above
+        // cannot detect.
+        let models = manifests
+            .iter()
+            .find(|(path, _)| path.ends_with("pos-models/Cargo.toml"))
+            .expect("`crates/pos-models/Cargo.toml` must be in the walk");
+        let models_keys: Vec<String> = declared_dependencies(&models.1)
+            .into_iter()
+            .map(|(_, key)| key)
+            .collect();
+        assert!(
+            models_keys.iter().any(|key| key == "serde"),
+            "the section reader did not find `serde` in `pos-models`' dependencies — it is \
+             returning nothing and every check below is vacuous. Found: {models_keys:?}"
+        );
+
+        let offences: Vec<String> = manifests
+            .iter()
+            .flat_map(|(path, manifest)| {
+                declared_dependencies(manifest)
+                    .into_iter()
+                    .filter(|(_, key)| BANNED.contains(&key.as_str()))
+                    .map(move |(section, key)| format!("{path} — `{key}` in [{section}]"))
+            })
+            .collect();
+
+        assert!(
+            offences.is_empty(),
+            "{} view dependenc(ies) inside `crates/`. The view layer lives on the root package; \
+             a workspace crate that names a toolkit puts the domain underneath its own renderer, \
+             and breaks `--offline` for every other crate here as a side effect:\n  {}",
+            offences.len(),
+            offences.join("\n  ")
+        );
+
+        // The exemption, asserted rather than assumed. This is the positive control for the
+        // sweep above: it proves `declared_dependencies` finds a *banned* key when one is really
+        // there, which an empty `offences` alone cannot.
+        let root = fs::read_to_string(repo_root().join("Cargo.toml"))
+            .expect("the root Cargo.toml must be readable");
+        let root_view_deps: Vec<String> = declared_dependencies(&root)
+            .into_iter()
+            .filter(|(_, key)| BANNED.contains(&key.as_str()))
+            .map(|(_, key)| key)
+            .collect();
+
+        assert!(
+            root_view_deps.len() >= 3,
+            "the root manifest holds only {} view dependenc(ies) — the exempt entry is supposed \
+             to be where they live, so either the binary has moved or this scanner cannot see a \
+             banned key at all, and the sweep above proves nothing. Found: {root_view_deps:?}",
+            root_view_deps.len()
+        );
+    }
+
+    /// Every `Cargo.toml` directly under `crates/`, as `(relative path, contents)`.
+    ///
+    /// Excluded crates are included deliberately: `[workspace] exclude` removes a crate from
+    /// `--workspace` commands, not from this repository, and `pos-updater` acquiring a view
+    /// dependency would be exactly as wrong and exactly as invisible.
+    fn crate_manifests() -> Vec<(String, String)> {
+        let crates = repo_root().join("crates");
+        assert!(
+            crates.is_dir(),
+            "{} is not a directory — the scan root has moved and this guard is vacuous",
+            crates.display()
+        );
+
+        let mut found: Vec<(String, String)> = fs::read_dir(&crates)
+            .expect("`crates/` must be readable")
+            .filter_map(Result::ok)
+            .map(|entry| entry.path().join("Cargo.toml"))
+            .filter(|path| path.is_file())
+            .map(|path| {
+                let text = fs::read_to_string(&path)
+                    .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+                (relative(&path), text)
+            })
+            .collect();
+        found.sort();
+        found
+    }
+
+    /// Every `(section, key)` pair in every dependency table of a manifest.
+    ///
+    /// Covers `[dependencies]`, `[dev-dependencies]`, `[build-dependencies]`, the
+    /// `[target.'cfg(…)'.dependencies]` variants, and the `[dependencies.name]` sub-table form
+    /// where the key is in the header rather than on a line. A rule that reads only
+    /// `[dependencies]` is one `[target.'cfg(unix)'.dependencies]` away from blind.
+    ///
+    /// Comments are stripped with [`strip_hash_comment`] — TOML's `#`, not Rust's `//` — so a
+    /// dependency named only in prose is not a dependency.
+    fn declared_dependencies(manifest: &str) -> Vec<(String, String)> {
+        let mut pairs = Vec::new();
+        let mut section = String::new();
+
+        for raw in manifest.lines() {
+            let line = strip_hash_comment(raw).trim();
+            if line.is_empty() {
+                continue;
+            }
+
+            if let Some(header) = line.strip_prefix('[').and_then(|l| l.strip_suffix(']')) {
+                section = header.trim().to_string();
+                // `[dependencies.egui]` — the key is the header's last segment.
+                if let Some((table, name)) = section.rsplit_once('.') {
+                    if table.ends_with("dependencies") {
+                        pairs.push((table.to_string(), name.trim_matches('"').to_string()));
+                    }
+                }
+                continue;
+            }
+
+            if !section.ends_with("dependencies") || !line.contains('=') {
+                continue;
+            }
+            let key = line.split('=').next().unwrap_or(line);
+            let key = key.split('.').next().unwrap_or(key).trim();
+            if !key.is_empty() {
+                pairs.push((section.clone(), key.to_string()));
+            }
+        }
+
+        pairs
+    }
+
     /// The keys of one dependency section of a `Cargo.toml`.
     ///
     /// Handles both `serde.workspace = true` and `serde = { … }`; the key is what precedes the
