@@ -98,6 +98,7 @@ pub mod parse;
 pub mod platform_heartbeat_service;
 pub mod platform_sync;
 pub mod policy_service;
+pub mod policy_value;
 pub mod product_service;
 pub mod qr_service;
 pub mod return_service;
@@ -144,6 +145,7 @@ pub use platform_sync::{PlatformSync, WriteRefused};
 pub use policy_service::{
     PolicyError, PolicyResult, PolicyService, PolicyServiceResult, RangeValue,
 };
+pub use policy_value::{PolicyValue, RangeBounds};
 pub use product_service::{ProductError, ProductService};
 pub use qr_service::{QrError, QrEvent, QrPaymentResult, QrService};
 pub use return_service::{
