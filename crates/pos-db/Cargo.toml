@@ -36,3 +36,9 @@ rust_decimal.workspace = true
 
 [dev-dependencies]
 tempfile = "3"
+
+# An integration test under `tests/` links `pos-db` as an external crate, and `lib.rs` re-exports
+# no `rusqlite`, so the normal dependency above does not make `rusqlite::` nameable there.
+# Pinned identically to it on purpose: a bare `rusqlite = "0.32"` resolves without `bundled` and
+# builds a second copy of SQLite from source.
+rusqlite = { version = "0.32", features = ["bundled", "chrono"] }

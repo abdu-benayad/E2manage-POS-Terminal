@@ -380,6 +380,58 @@ pub fn to_value<T: rusqlite::ToSql + ?Sized>(value: &T) -> SqliteResult<Value> {
 pub struct UnsupportedBinding(String);
 
 // ============================================================================
+// The registry a guard can walk
+// ============================================================================
+
+/// One declared row shape, erased to the three things a guard can check about it.
+///
+/// `RowMapping<T>` is generic, so a heterogeneous list of them needs erasure. The columns are fn
+/// pointers rather than slices because both lists are *derived* — a pair entry contributes two
+/// projected columns and the managed ones exist only on the write side — and a `const` cannot run
+/// that derivation. Storing them as data would mean writing the answer down beside the question,
+/// which is the defect this whole module exists to remove.
+pub struct DeclaredShape {
+    /// The constant's own name, so a failure says which declaration is wrong.
+    pub name: &'static str,
+    /// The table it reads from and writes to, or `None` for a shape with no table behind it.
+    ///
+    /// A fn pointer like the two below, and for the same reason, learned the hard way: written as
+    /// a plain `Option<&'static str>` this field was a *copy* of the mapping's table name, and a
+    /// copy is a thing that can disagree. Measured — with `OPERATOR_ROW` re-pointed at a table
+    /// called `operatorz`, every test in `tests/mappings.rs` passed, including the one whose whole
+    /// job was to catch exactly that. The registry was answering about itself.
+    pub table: fn() -> Option<&'static str>,
+    /// The columns the projection selects, in order. A pair entry contributes two.
+    pub projected: fn() -> Vec<&'static str>,
+    /// The columns an `INSERT` names — the projection plus the managed ones. Empty for a reader.
+    pub inserted: fn() -> Vec<&'static str>,
+}
+
+/// Every `pub const` row shape in this crate.
+///
+/// Hand-listed, which is the thing a registry must not silently be: a mapping left out of it is a
+/// mapping no guard checks, and its absence looks exactly like a passing guard. So the guard that
+/// walks this list also reconstructs it from the source tree and refuses to run against a list
+/// that disagrees — see `crates/pos-db/tests/mappings.rs`. The rule it enforces is the one this
+/// list encodes: **a shape declared `pub const` belongs here**; a shape declared inside a test
+/// module does not.
+pub const DECLARED_SHAPES: &[DeclaredShape] = &[DeclaredShape {
+    name: "OPERATOR_ROW",
+    table: || Some(crate::operators::OPERATOR_ROW.table()),
+    projected: || {
+        crate::operators::OPERATOR_ROW
+            .reader()
+            .column_names()
+            .collect()
+    },
+    inserted: || {
+        crate::operators::OPERATOR_ROW
+            .insert_column_names()
+            .collect()
+    },
+}];
+
+// ============================================================================
 // Reading against a connection the caller already holds
 // ============================================================================
 
