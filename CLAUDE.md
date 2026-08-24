@@ -350,7 +350,8 @@ works but fails silently into a *stale* version, which is the one failure mode n
 
 ## Vendor Directory
 
-`vendor/` contains bundled crate sources for offline builds. It is 1.1 GB, produced by
+`vendor/` contains bundled crate sources for offline builds. It is **531 MB across 302 crate
+directories** (re-measured 2026-08-24; the long-standing 1.1 GB figure is stale), produced by
 `cargo vendor`, gitignored, and carried by no ref — **a clone does not have it**. Do not
 modify it directly; `scripts/audit-vendor.py` verifies it against each crate's
 `.cargo-checksum.json`, which a warm `target/` otherwise hides until the next cold build.
