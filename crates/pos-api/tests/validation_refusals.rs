@@ -7,6 +7,22 @@
 //! Written 2026-08-24 while answering a platform lane's question — *does the till read the
 //! `errors` array, which our migration deletes?* The literal answer is no: `ApiErrorResponse.errors`
 //! has no production reader. The useful answer turned out to be the opposite of the question.
+//!
+//! # These fixtures are captured, not composed — and they are still fossils
+//!
+//! Every literal here was read off `error-handler.middleware.ts` and `api-error.type.ts` rather
+//! than imagined, which is the difference between this file and the test it was written to correct.
+//! That is necessary and it is **not sufficient.** A captured literal freezes the day it was
+//! captured, and the platform lane's own version of this problem is instructive: a Zod 3→4 upgrade
+//! rewrote `"Required"` into `"Invalid input: expected string, received undefined"` with no code
+//! changed and nothing red. A frozen fixture passes straight through an upgrade like that.
+//!
+//! So the load-bearing assertion in this file is the **negative** one —
+//! `the_platforms_current_validation_body_does_not_parse_at_all`. It is what would have caught the
+//! dead path, and it stays pointed at whatever the platform sends next. The positives are records of
+//! an agreement, dated, and they should be re-derived rather than trusted once that migration lands.
+//! The till cannot verify a producer's body from here; the pact is the instrument that can, and the
+//! interaction for this surface is deliberately unwritten until the surface is repaired.
 
 use pos_api::{ApiErrorResponse, ServerErrorCode};
 
@@ -101,4 +117,68 @@ fn the_errors_array_survives_only_when_no_error_key_is_present() {
         serde_json::from_str::<ApiErrorResponse>(as_sent).is_err(),
         "the platform's actual pairing of `error` and `errors` must not parse"
     );
+}
+
+/// The migrated shape the platform lane committed to, and what the till does with it unchanged.
+///
+/// Agreed 2026-08-24 with `e2manage-platform-ae`, who is migrating the Zod path onto `ApiError`:
+///
+/// ```json
+/// { "error": { "code": "VALIDATION_ERROR", "message": "…",
+///     "details": { "fields": [ { "path": "pin", "code": "invalid_type", "message": "…" } ] } } }
+/// ```
+///
+/// **Measured, so the answer to "does the till need work for this" is not a guess: no.** The
+/// envelope parses, the code is [`ServerErrorCode::ValidationError`] and reads as recognised, and
+/// the `fields` payload degrades to `details: None` because [`pos_api::RefusalDetails`] models no
+/// variant for that code. `RefusalDetails::read` is total by construction — an unreadable figure
+/// must not cost the till the refusal it travelled on — so the drop is the designed behaviour and
+/// not a silent loss to repair.
+///
+/// # Why no `RefusalDetails` variant is being added ahead of it
+///
+/// Because the producer has not shipped it. A typed variant written now would be a till-side model
+/// of a payload no server sends — the same defect as the test this file exists to correct, arrived
+/// at from the opposite direction and with better intentions. When it lands, `fields` becomes worth
+/// typing and the pact interaction becomes worth writing, in that order.
+///
+/// # If it is ever typed, key it on `code` and never on `message`
+///
+/// Not a preference. `path` and `code` are Zod's issue code and location; `message` is prose the
+/// producer explicitly reserves the right to let a dependency rewrite — and did: the 3→4 upgrade
+/// changed the message text with no code change anywhere, and a middleware predicate matching on
+/// that text silently began answering 404 where it had answered 400. That defect is the reason this
+/// migration exists. A consumer keying on `message` inherits it across a patch bump.
+#[test]
+fn the_migrated_validation_shape_needs_no_change_on_this_side() {
+    let migrated = r#"{"success":false,"message":"Validation failed","error":{"code":"VALIDATION_ERROR","message":"Validation failed","details":{"fields":[{"path":"pin","code":"invalid_type","message":"Invalid input: expected string, received undefined"}]}}}"#;
+
+    let envelope: ApiErrorResponse =
+        serde_json::from_str(migrated).expect("the agreed migrated shape must parse");
+    let detail = envelope.error.expect("the nested error object");
+
+    assert_eq!(detail.code, ServerErrorCode::ValidationError);
+    assert!(detail.code.is_recognised());
+    assert!(
+        detail.details.is_none(),
+        "`fields` is expected to drop until a RefusalDetails variant models it. If this now reads \
+         Some, someone typed it — write the pact interaction in the same change"
+    );
+}
+
+/// The control for the test above: dropping an unmodelled `details` is general, not special-casing.
+///
+/// Without this, `details.is_none()` above is consistent with the payload being rejected, ignored,
+/// or mishandled specifically for `VALIDATION_ERROR`. A different code carrying a `details` object
+/// the till models no variant for behaves identically, which is what makes the drop a property of
+/// `RefusalDetails::read` rather than a fact about validation.
+#[test]
+fn an_unmodelled_details_payload_drops_for_any_code() {
+    let other = r#"{"success":false,"message":"x","error":{"code":"NOT_FOUND","message":"x","details":{"anything":1}}}"#;
+
+    let envelope: ApiErrorResponse = serde_json::from_str(other).expect("must parse");
+    let detail = envelope.error.expect("the nested error object");
+
+    assert_eq!(detail.code, ServerErrorCode::NotFound);
+    assert!(detail.details.is_none());
 }
