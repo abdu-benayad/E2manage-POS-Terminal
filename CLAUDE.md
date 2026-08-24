@@ -281,7 +281,25 @@ git commit --only -F msg -- crates/pos-api/src/client.rs crates/pos-api/src/fail
 ```
 
 `--only` is load-bearing: it leaves everything else in the index staged and untouched, so another
-session's work survives. Recovering after the fact, without disturbing their staging:
+session's work survives.
+
+**Name files, never directories — `--only` with a directory pathspec silently drops new files.**
+Measured 2026-08-24 in a throwaway repo, all three cases:
+
+| pathspec | new untracked file | result |
+| --- | --- | --- |
+| `-- src` (a directory) | **omitted** | exit 0, stat says "1 file changed", no warning |
+| `-- src/new.txt` (explicit) | — | **refuses the whole commit**: `pathspec … did not match any file(s) known to git` |
+| `git add src/new.txt` first, then explicit paths | committed | correct |
+
+The flag protects you exactly when you name files and fails you exactly when you name a directory,
+and the directory failure is the silent one. A platform lane lost a 260-line property test to it on
+2026-08-24: the production change and three modified tests landed, both *new* test files did not,
+and the only tell was a stat printing 6 files where 8 were intended — the evidence for the fix,
+missing from the commit that claimed it. **`git add` every new file before committing it, and read
+the stat's file count against the number you meant.**
+
+Recovering after the fact, without disturbing their staging:
 
 ```bash
 git log -1 --format=%B > msg     # keep the message
