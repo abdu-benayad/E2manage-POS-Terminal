@@ -171,15 +171,30 @@ cd crates/pos-contract
 cargo test                    # regenerates pacts/e2manage-pos-terminal-wadi-dms-api.json
 ```
 
-Regeneration is **byte-stable** (which is why this crate commits its `Cargo.lock`,
-against the repo-wide rule — the artifact embeds resolver versions). A non-empty
-diff on that file means an expectation genuinely changed.
+Regeneration is **byte-stable only while nothing changes.** `pact_consumer`
+**merges** into the artifact on disk rather than replacing it, keyed on
+`(description, providerState)` — so editing an existing interaction's description
+or `given` leaves the old one behind and the count silently grows. Adding a new
+interaction is safe; changing one is not. **`rm crates/pos-contract/pacts/*.json`
+before `cargo test` whenever you edit an existing interaction**, then count the
+`interactions` array out of the JSON rather than trusting the green.
 
-**The copy to the platform is manual and nothing does it for you.** After changing
-what the till expects, copy the artifact to
-`wadi-dms-api/src/modules/pos/__tests__/contracts/pacts/` and let the platform's
-`npm run test:contracts:till` confirm it still holds. Until that copy happens, the
-platform is verifying the till's *previous* expectations.
+**The copy to the platform is still a deliberate act, but it is no longer an
+unaided one.** `scripts/till-pact.mjs` at the platform monorepo root: `sync`
+performs the copy, `check` detects the forgetting via `pact-provenance.json`.
+Neither runs on its own, and `ci.sh` renders `check`'s exit 3 as "could not
+check" — never green, never gating. So until someone runs `sync`, the platform is
+verifying the till's *previous* expectations, and nothing goes red to say so.
+
+**Do not copy an interaction the platform has not satisfied.** An expectation it
+has not met fails *that* repository's suite for a change it made correctly, which
+is the one thing this contract must never do. The way to find out without
+committing anything: ask a platform lane to drop the artifact in **locally and
+uncommitted** and run `npm run test:contracts:till`. Their verifier also refuses
+any artifact naming a `given` with no handler in `provider-states.ts`
+(`till.provider.pact.e2e.test.ts:114-123`) — loudly, which is the good failure
+mode, but it means a new provider state is a platform-side change and not
+something the till can land alone.
 
 ### Three rules that are not obvious
 
