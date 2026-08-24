@@ -1222,15 +1222,30 @@ mod tests {
     ///
     /// A test that observes the *column* observes the fix; one that observes an accessor observes
     /// the accessor.
+    ///
+    /// **It still observes the columns after the migration off `row.get(0..2)`.**
+    /// [`TERMINAL_REGISTRATION_ROW`] is a declaration of the table, not an accessor: it carries no
+    /// `is_registered` filter and applies no policy, so the property this helper exists for — see
+    /// a cleared column as cleared — is unchanged. What is gone is the hand-written three-column
+    /// list, which was the only part that could drift from the table.
     fn enrolment_columns(service: &PairingService) -> (Option<String>, Option<String>, String) {
         let conn = service.db.connection();
         let conn = conn.lock();
-        conn.query_row(
-            "SELECT company_name, license_key, hardware_id FROM terminal_registration WHERE id = 1",
+        let row = read_one(
+            &conn,
+            TERMINAL_REGISTRATION_ROW.reader(),
+            "FROM terminal_registration WHERE id = 1",
             [],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
-        .expect("the seeded terminal_registration row is missing")
+        .expect("the seeded terminal_registration row is readable")
+        .expect("the seeded terminal_registration row is missing");
+
+        (
+            row.company_name,
+            row.license_key,
+            row.hardware_id
+                .expect("the seeded row always carries a hardware id"),
+        )
     }
 
     #[test]

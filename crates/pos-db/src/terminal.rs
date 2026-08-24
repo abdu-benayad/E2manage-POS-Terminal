@@ -189,7 +189,7 @@ row_mapping! {
 mod tests {
     use super::*;
     use crate::migrations::run_migrations;
-    use crate::projection::DECLARED_SHAPES;
+    use crate::projection::{scalar, DECLARED_SHAPES};
     use crate::Database;
 
     fn setup_db() -> Database {
@@ -272,26 +272,24 @@ mod tests {
             ("currency", "currency-column"),
             ("sector", "sector-column"),
         ] {
-            let matched: bool = conn
-                .query_row(
-                    &format!("SELECT {column} = ?1 FROM terminal_config"),
-                    [expected],
-                    |row| row.get(0),
-                )
-                .unwrap();
+            let matched: bool = scalar(
+                &conn,
+                &format!("SELECT {column} = ?1 FROM terminal_config"),
+                [expected],
+            )
+            .unwrap();
             assert!(matched, "the `{column}` column does not hold `{expected}`");
         }
 
         // The numeric columns, compared as numbers — a `REAL` against a bound `&str` is never
         // equal in SQLite, so these would all read `false` folded into the loop above.
         for (column, expected) in [("tax_rate", 17.5_f64), ("tax_inclusive", 1.0), ("id", 1.0)] {
-            let matched: bool = conn
-                .query_row(
-                    &format!("SELECT {column} = ?1 FROM terminal_config"),
-                    [expected],
-                    |row| row.get(0),
-                )
-                .unwrap();
+            let matched: bool = scalar(
+                &conn,
+                &format!("SELECT {column} = ?1 FROM terminal_config"),
+                [expected],
+            )
+            .unwrap();
             assert!(matched, "the `{column}` column does not hold `{expected}`");
         }
     }
@@ -400,13 +398,12 @@ mod tests {
             ("registered_at", "2026-08-24T10:00:00Z"),
             ("license_key", "license-key-column"),
         ] {
-            let matched: bool = conn
-                .query_row(
-                    &format!("SELECT {column} = ?1 FROM terminal_registration"),
-                    [expected],
-                    |row| row.get(0),
-                )
-                .unwrap();
+            let matched: bool = scalar(
+                &conn,
+                &format!("SELECT {column} = ?1 FROM terminal_registration"),
+                [expected],
+            )
+            .unwrap();
             assert!(matched, "the `{column}` column does not hold `{expected}`");
         }
     }

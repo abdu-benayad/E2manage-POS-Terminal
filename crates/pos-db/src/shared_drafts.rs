@@ -294,6 +294,32 @@ impl Database {
 mod tests {
     use super::*;
     use crate::migrations::run_migrations;
+    use crate::projection::read_one;
+    use crate::row_reader;
+
+    /// The two numeric columns and the SQLite storage class each actually landed in.
+    ///
+    /// This is the assertion that would have caught the two writers disagreeing: one bound them
+    /// through `.to_string()`, and only SQLite's affinity rule kept `TEXT` out of a `REAL` column.
+    /// It was two queries reading four columns by ordinal, where each `typeof(…)` was bound to its
+    /// value by position alone — the exact coupling this issue removes, in the test that exists to
+    /// prove the coupling is gone.
+    struct NumericColumnsAndTheirTypes {
+        item_count: i64,
+        item_count_type: String,
+        total_amount: f64,
+        total_amount_type: String,
+    }
+
+    row_reader! {
+        const NUMERIC_COLUMNS_AND_THEIR_TYPES: RowReader<NumericColumnsAndTheirTypes> =
+            from "shared_drafts" {
+                item_count,
+                item_count_type from ("typeof(item_count)" as "item_count_type"),
+                total_amount,
+                total_amount_type from ("typeof(total_amount)" as "total_amount_type"),
+            };
+    }
 
     fn setup_db() -> Database {
         let db = Database::in_memory().unwrap();
@@ -586,35 +612,34 @@ mod tests {
             ("fetched_at", "2026-08-24T11:00:00Z"),
             ("sync_status", "PENDING_CONVERT"),
         ] {
-            let matched: bool = conn
-                .query_row(
-                    &format!("SELECT {column} = ?1 FROM shared_drafts"),
-                    [expected],
-                    |row| row.get(0),
-                )
-                .unwrap();
+            let matched: bool = projection::scalar(
+                &conn,
+                &format!("SELECT {column} = ?1 FROM shared_drafts"),
+                [expected],
+            )
+            .unwrap();
             assert!(matched, "the `{column}` column does not hold `{expected}`");
         }
 
         // The two numeric columns, and the `typeof` each was stored under. This is the assertion
         // that would have caught the two writers disagreeing: one bound them through `.to_string()`
         // and only SQLite's affinity rule kept `TEXT` out of a `REAL` column.
-        let (count, count_type): (i64, String) = conn
-            .query_row(
-                "SELECT item_count, typeof(item_count) FROM shared_drafts",
-                [],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .unwrap();
-        assert_eq!((count, count_type.as_str()), (11, "integer"));
-        let (amount, amount_type): (f64, String) = conn
-            .query_row(
-                "SELECT total_amount, typeof(total_amount) FROM shared_drafts",
-                [],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .unwrap();
-        assert_eq!((amount, amount_type.as_str()), (22.25, "real"));
+        let stored = read_one(
+            &conn,
+            &NUMERIC_COLUMNS_AND_THEIR_TYPES,
+            "FROM shared_drafts",
+            [],
+        )
+        .unwrap()
+        .expect("the draft just written is there");
+        assert_eq!(
+            (stored.item_count, stored.item_count_type.as_str()),
+            (11, "integer")
+        );
+        assert_eq!(
+            (stored.total_amount, stored.total_amount_type.as_str()),
+            (22.25, "real")
+        );
     }
 
     #[test]

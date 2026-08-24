@@ -195,6 +195,7 @@ mod tests {
     use super::*;
     use crate::migrations::run_migrations;
     use crate::operators::OperatorRow;
+    use crate::projection::scalar;
     use pos_models::{OperatorName, OperatorRole};
 
     fn op_id(id: &str) -> OperatorId {
@@ -407,13 +408,12 @@ mod tests {
             ("operator_id", "operator-id-column"),
             ("shift_id", "shift-id-column"),
         ] {
-            let matched: bool = conn
-                .query_row(
-                    &format!("SELECT {column} = ?1 FROM drafts"),
-                    [expected],
-                    |row| row.get(0),
-                )
-                .unwrap();
+            let matched: bool = scalar(
+                &conn,
+                &format!("SELECT {column} = ?1 FROM drafts"),
+                [expected],
+            )
+            .unwrap();
             assert!(matched, "the `{column}` column does not hold `{expected}`");
         }
     }

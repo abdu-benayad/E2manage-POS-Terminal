@@ -226,6 +226,7 @@ impl SyncState {
 mod tests {
     use super::*;
     use crate::migrations::run_migrations;
+    use crate::projection::scalar;
 
     fn setup_db() -> Database {
         let db = Database::in_memory().unwrap();
@@ -373,19 +374,16 @@ mod tests {
             ("etag", "etag-column"),
             ("version", "version-column"),
         ] {
-            let matched: bool = conn
-                .query_row(
-                    &format!("SELECT {column} = ?1 FROM sync_state"),
-                    [expected],
-                    |row| row.get(0),
-                )
-                .unwrap();
+            let matched: bool = scalar(
+                &conn,
+                &format!("SELECT {column} = ?1 FROM sync_state"),
+                [expected],
+            )
+            .unwrap();
             assert!(matched, "the `{column}` column does not hold `{expected}`");
         }
 
-        let count: i64 = conn
-            .query_row("SELECT record_count FROM sync_state", [], |row| row.get(0))
-            .unwrap();
+        let count: i64 = scalar(&conn, "SELECT record_count FROM sync_state", []).unwrap();
         assert_eq!(count, 4242);
     }
 

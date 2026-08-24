@@ -92,6 +92,7 @@ impl Database {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::projection::scalar;
 
     #[test]
     fn test_in_memory_database() {
@@ -127,9 +128,7 @@ mod tests {
         // Verify data was committed
         let conn = db.connection();
         let conn = conn.lock();
-        let count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM test", [], |row| row.get(0))
-            .unwrap();
+        let count: i64 = scalar(&conn, "SELECT COUNT(*) FROM test", []).unwrap();
         assert_eq!(count, 2);
     }
 }

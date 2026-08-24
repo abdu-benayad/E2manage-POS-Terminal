@@ -953,13 +953,44 @@ mod guards {
     /// that under-reports gets quoted.
     #[test]
     fn the_read_by_position_scan_sees_the_forms_this_tree_has_and_no_others() {
+        // Constructed inputs first, because after this issue most arms have no tree witness left
+        // — and that is the *goal*, not a gap. An arm certified by neither a witness nor a
+        // constructed case is asserted and never demonstrated, which is how a scan comes to
+        // report a clean tree for a reason unrelated to the tree being clean.
+        //
+        // Each case runs through `blank_comments_and_strings` first, so this exercises the real
+        // pipeline rather than the matcher in isolation.
+        const CASES: [(&str, usize); 12] = [
+            ("fn f(row: &Row) { let _ = row.get(3); }", 1),
+            (
+                "fn f(row: &Row) { let _ = row.get::<_, Option<i32>>(3); }",
+                1,
+            ),
+            ("fn f(row: &Row) { let _ = row.get_unwrap(2); }", 1),
+            ("fn f(row: &Row) { let _ = row.get_ref_unwrap(2); }", 1),
+            ("fn f(row: &Row) { let _ = row.get(0usize); }", 1),
+            ("fn f(row: &Row) { let _ = row.get(0x1f); }", 1),
+            ("fn f(row: &Row) { let _ = row\n            .get(4); }", 1),
+            ("fn f(row: &Row) { let _ = read(row, 0); }", 1),
+            ("fn f(row: &Row) { let _ = read(&row, 3); }", 1),
+            ("fn f(row: &Row) { let _ = row.get(index); }", 0),
+            ("fn f(row: &Row) { let _ = row.get(\"name\"); }", 0),
+            ("fn f(parts: &[u8]) { let _ = parts.get(2); }", 0),
+        ];
+        for (source, expected) in CASES {
+            let file = SourceFile {
+                path: "constructed".to_string(),
+                code: blank_comments_and_strings(source),
+            };
+            assert_eq!(
+                indexed_reads_in(&file).len(),
+                expected,
+                "the predicate is wrong about `{}`",
+                source.replace('\n', " ⏎ ")
+            );
+        }
+
         let reads = indexed_reads();
-        assert!(
-            reads.len() > 20,
-            "the scan found {} reads by position in the whole tree; it is broken, and a ban built \
-             on it would pass on nothing",
-            reads.len()
-        );
 
         // The form that matters, and the only one no line-based scan can see. rustfmt splits a
         // positional read carrying a chained call, and that is how every one in this tree arose.
@@ -983,17 +1014,26 @@ mod guards {
             split.iter().map(|r| &r.path).collect::<Vec<_>>()
         );
 
-        // The second arm: a row handed to something else that does the indexing. Its live
-        // population is `ColumnCodec::read(row, 0)`, and asserting it non-empty is what stops the
-        // arm from being an exemption-shaped blindness — a matcher for a population that has gone
-        // away reports clean in the same words as one whose population is clean.
-        let by_argument: Vec<&IndexedRead> =
-            reads.iter().filter(|r| !r.text.contains(".get")).collect();
+        // The second arm — a row handed to something else that does the indexing — had exactly
+        // one live population, `ColumnCodec::read(row, 0)` in `column.rs`'s codec tests, and this
+        // assertion used to require it non-empty. **That requirement expired when the conversion
+        // reached it**, and the assertion fired, correctly: those two reads now go through
+        // `RowCursor::take_via`, which is the point of the whole issue. An arm whose population
+        // has legitimately gone to zero cannot be certified from the tree, so it is certified
+        // against constructed input above and that is said here rather than left as a green.
+        //
+        // This is the second time in this file a non-emptiness control has fired because the
+        // migration removed what it was calibrated against, and both times the repair was to
+        // re-point it rather than lower it.
         assert!(
-            !by_argument.is_empty(),
-            "the scan found no `f(row, <int>)` read. `ColumnCodec::read(row, 0)` in \
-             `crates/pos-db/src/column.rs` is the population; if it is gone, this arm now matches \
-             nothing and cannot tell you so"
+            reads.iter().all(|r| r.text.contains(".get")),
+            "the scan reported an `f(row, <int>)` read: {:?}. That arm has no live population — \
+             if one has come back, give it a tree witness here",
+            reads
+                .iter()
+                .filter(|r| !r.text.contains(".get"))
+                .map(|r| (&r.path, &r.line))
+                .collect::<Vec<_>>()
         );
 
         // `parts.get(2)` at `log_service.rs` is a slice read. A receiverless predicate sweeps it
@@ -1036,6 +1076,142 @@ mod guards {
                 .map(|r| (&r.path, &r.line))
                 .collect::<Vec<_>>()
         );
+    }
+
+    /// No code reads a row by column **number**.
+    ///
+    /// This is the concept `positional-row-access-in-pos-db` finished. A positional read matched a
+    /// column list by hand — three unlinked lists per table, in the worst case — and nothing
+    /// checked that the hand was steady. Inserting a column into a `SELECT` shifted every index
+    /// after it; the types still lined up, because the columns either side were all TEXT; and the
+    /// swapped read compiled, ran, and attributed one terminal's details to another. A declared
+    /// mapping makes the SELECT list and the field bindings one artifact, so the wrong column is
+    /// unrepresentable rather than merely currently-correct.
+    ///
+    /// # The rule needs no context, and that is why it is this rule
+    ///
+    /// **No row is read by position. Use a declared mapping, or [`scalar`] for a one-column
+    /// query.** The rejected alternative was to permit index `0` — cheaper, since 54 of the 60
+    /// reads were `row.get(0)` on `SELECT COUNT(*)`-shaped queries where a one-column projection
+    /// has no ordinal to get wrong. It was rejected because **deciding whether a given `row.get(0)`
+    /// is safe requires reading the `SELECT` list, which this scan cannot see.** `SELECT a,
+    /// COUNT(*)` breaks it silently. That is the original defect — a positional read checked by
+    /// hand against a column list no checker sees — reinstated one level up, inside the guard
+    /// meant to abolish it, and it would have been a check that cannot observe what it claims.
+    ///
+    /// The safety argument for a one-column read still exists; it just lives where it can be
+    /// enforced, in [`scalar`]'s own contract, rather than in a pattern scan's tolerance.
+    ///
+    /// # Two exemptions, neither a line number
+    ///
+    /// A line-number exemption in a file every migration appends to is a tripwire that fires on
+    /// the correct change and teaches whoever hits it to bump a number — `migrations.rs` records
+    /// that lesson three lines from the read exempted here.
+    ///
+    /// Both exemptions assert they are **non-empty**, because an exemption and a blind scan
+    /// produce identical output: if the guard stops seeing what it tolerates, it fails rather than
+    /// reporting a clean tree.
+    #[test]
+    fn every_row_is_read_through_its_mapping() {
+        /// The cursor's own module. `RowCursor` is where the index arithmetic is *supposed* to
+        /// live — one place, exercised by every generated mapping — and `scalar`/`optional_scalar`
+        /// /`scalars` read the single column of a one-column query beside it.
+        const CURSOR_MODULE: &str = "crates/pos-db/src/projection.rs";
+
+        /// The one read no mapping can express, keyed on the statement it belongs to. The v13
+        /// migration test asserts `pin_hash` is **gone**, so the read's success condition is that
+        /// it *fails*. A mapping describes a column that exists.
+        const REFUSAL_PROBE: &str = "SELECT pin_hash FROM operators";
+
+        let reads = indexed_reads();
+
+        // Exemption one, and its expiry. Renaming or emptying the cursor's module must fail here
+        // rather than silently permitting everything under a path that no longer exists — the
+        // construction `only_the_transport_crates_name_a_route` uses for its directory prefixes.
+        assert!(
+            repo_root().join(CURSOR_MODULE).is_file(),
+            "{CURSOR_MODULE} does not exist. It is an exemption in this guard, so its \
+             disappearance must be noticed here: move the exemption to wherever `RowCursor` now \
+             lives, and do not delete it silently"
+        );
+        assert!(
+            reads.iter().any(|read| read.path == CURSOR_MODULE),
+            "{CURSOR_MODULE} is exempted from this guard and contains no read by position. An \
+             exemption that covers nothing and a scan that sees nothing produce the same green, so \
+             this is a failure: either the cursor has stopped indexing — in which case delete the \
+             exemption — or the scan has stopped reading that file"
+        );
+
+        // Exemption two. The statement is located in the *raw* file, because `scanned_files()`
+        // blanks string literals and the key to this exemption is a string literal.
+        let spans = raw_statement_spans(REFUSAL_PROBE);
+        assert_eq!(
+            spans.len(),
+            1,
+            "{} statements in the tree contain `{REFUSAL_PROBE}`; this exemption is keyed on there \
+             being exactly one. Zero means the v13 test proving the PIN hash column is gone has \
+             moved or been deleted — re-key the exemption, or delete it with the test, but do not \
+             let it lapse silently. More than one means the key no longer identifies a single \
+             read, and the exemption has quietly widened to cover reads nobody approved. Found: \
+             {:?}",
+            spans.len(),
+            spans
+        );
+        let (refusal_file, refusal_lines) = spans.into_iter().next().expect("exactly one");
+
+        let offenders: Vec<&IndexedRead> = reads
+            .iter()
+            .filter(|read| read.path != CURSOR_MODULE)
+            .filter(|read| !(read.path == refusal_file && refusal_lines.contains(&read.line)))
+            .collect();
+
+        assert!(
+            offenders.is_empty(),
+            "{} reads by column number outside the two exemptions:\n{}\n\nRead the row through a \
+             declared mapping (`row_mapping!` / `row_reader!` with `read_one`/`read_all`), or \
+             through `scalar`/`optional_scalar`/`scalars` when the query projects one column. An \
+             index is only correct against a `SELECT` list nothing links it to.",
+            offenders.len(),
+            offenders
+                .iter()
+                .map(|read| format!(
+                    "  {}:{}  {}",
+                    read.path,
+                    read.line,
+                    read.text.replace('\n', " ⏎ ")
+                ))
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+    }
+
+    /// The file and line range of every statement containing `needle`, searched in the **raw**
+    /// source rather than the blanked source — the key to this exemption is a string literal, and
+    /// `scanned_files()` blanks those.
+    ///
+    /// A span runs from the line holding `needle` to the line holding the `;` that ends the
+    /// statement, so a read anywhere inside that statement is covered however rustfmt lays it out
+    /// and an unrelated read on a neighbouring line is not. Every occurrence is returned rather
+    /// than the first, so the caller can require that there is exactly one: an exemption keyed on
+    /// a string that appears twice covers a read nobody approved.
+    fn raw_statement_spans(needle: &str) -> Vec<(String, std::ops::RangeInclusive<usize>)> {
+        let mut spans = Vec::new();
+        for path in rust_sources() {
+            let text = fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+            let lines: Vec<&str> = text.lines().collect();
+            for (index, line) in lines.iter().enumerate() {
+                if !line.contains(needle) {
+                    continue;
+                }
+                let start = index + 1;
+                let end = (start..=lines.len())
+                    .find(|number| lines[number - 1].contains(';'))
+                    .unwrap_or(start);
+                spans.push((relative(&path), start..=end));
+            }
+        }
+        spans
     }
 
     /// An operator's identity is never a bare string.

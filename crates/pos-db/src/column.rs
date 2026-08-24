@@ -448,21 +448,33 @@ pub const PRODUCT_NATURE_OR_TANGIBLE: ColumnCodec<String> =
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::projection::RowCursor;
     use pos_models::{DiscountAuthority, DiscountPercent, Permission};
     use rusqlite::{params, Connection};
 
     /// Writes a value through the codec, binds what it produced, and reads it back through the
     /// same codec. A codec whose two halves disagree fails here rather than on a customer's row.
+    ///
+    /// **Read through a [`RowCursor`], not through `codec.read(row, 0)`.** The literal `0` was a
+    /// read by position, in the one file whose job is to stop values crossing that boundary by
+    /// number — and exempting it would have meant a third exemption for the file that defines the
+    /// rule. The cursor is not a shim invented to satisfy the guard: it is the mechanism every
+    /// generated mapping uses, so this test now exercises the production read path instead of a
+    /// hand-written one beside it.
     fn round_trip<T>(codec: ColumnCodec<T>, value: &T) -> T {
         let conn = Connection::open_in_memory().expect("in-memory database");
         let stored = codec.write(value).expect("the write half");
-        conn.query_row("SELECT ?1", params![stored], |row| codec.read(row, 0))
-            .expect("the read half")
+        conn.query_row("SELECT ?1", params![stored], |row| {
+            RowCursor::new(row).take_via(&codec)
+        })
+        .expect("the read half")
     }
 
     fn read_one<T>(codec: ColumnCodec<T>, stored: Value) -> SqliteResult<T> {
         let conn = Connection::open_in_memory().expect("in-memory database");
-        conn.query_row("SELECT ?1", params![stored], |row| codec.read(row, 0))
+        conn.query_row("SELECT ?1", params![stored], |row| {
+            RowCursor::new(row).take_via(&codec)
+        })
     }
 
     #[test]

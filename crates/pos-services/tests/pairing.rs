@@ -28,6 +28,7 @@
 use std::sync::Arc;
 
 use pos_api::ApiClient;
+use pos_db::projection::scalar;
 use pos_db::{init_memory_database, Database};
 use pos_models::HardwareEnrolment;
 use pos_services::{PairingService, PairingState};
@@ -339,10 +340,10 @@ fn a_blob_in_a_text_column(db: &Database, column: &str) {
 fn stored_hardware_id(db: &Database) -> Option<String> {
     let conn = db.connection();
     let conn = conn.lock();
-    conn.query_row(
+    scalar::<Option<String>>(
+        &conn,
         "SELECT hardware_id FROM terminal_registration WHERE id = 1",
         [],
-        |row| row.get::<_, Option<String>>(0),
     )
     .expect("the singleton registration row is readable")
 }
@@ -350,10 +351,10 @@ fn stored_hardware_id(db: &Database) -> Option<String> {
 fn stored_secret(db: &Database) -> Option<String> {
     let conn = db.connection();
     let conn = conn.lock();
-    conn.query_row(
+    scalar::<Option<String>>(
+        &conn,
         "SELECT secret FROM terminal_registration WHERE id = 1",
         [],
-        |row| row.get::<_, Option<String>>(0),
     )
     .expect("the singleton registration row is readable")
 }

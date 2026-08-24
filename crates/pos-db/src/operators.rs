@@ -208,6 +208,7 @@ impl Database {
 mod tests {
     use super::*;
     use crate::migrations::run_migrations;
+    use crate::projection::scalar;
     use pos_models::{DiscountAuthority, DiscountPercent, NameScript, Permission};
     use rust_decimal::Decimal;
 
@@ -481,28 +482,24 @@ mod tests {
             ("department", "department-column"),
             ("position", "position-column"),
         ] {
-            let matched: bool = conn
-                .query_row(
-                    &format!("SELECT {column} = ?1 FROM operators"),
-                    [expected],
-                    |row| row.get(0),
-                )
-                .unwrap();
+            let matched: bool = scalar(
+                &conn,
+                &format!("SELECT {column} = ?1 FROM operators"),
+                [expected],
+            )
+            .unwrap();
             assert!(matched, "the `{column}` column does not hold `{expected}`");
         }
 
         // The two whose stored type is not text.
-        let is_active: i64 = conn
-            .query_row("SELECT is_active FROM operators", [], |row| row.get(0))
-            .unwrap();
+        let is_active: i64 = scalar(&conn, "SELECT is_active FROM operators", []).unwrap();
         assert_eq!(is_active, 0);
-        let permissions_carries_the_authority: bool = conn
-            .query_row(
-                "SELECT permissions_json LIKE '%37%' FROM operators",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
+        let permissions_carries_the_authority: bool = scalar(
+            &conn,
+            "SELECT permissions_json LIKE '%37%' FROM operators",
+            [],
+        )
+        .unwrap();
         assert!(
             permissions_carries_the_authority,
             "the discount authority did not reach `permissions_json`"

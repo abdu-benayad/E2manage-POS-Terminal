@@ -348,6 +348,27 @@ impl Database {
 mod tests {
     use super::*;
     use crate::migrations::run_migrations;
+    use crate::projection::{read_one, scalar};
+    use crate::row_reader;
+
+    /// A value and the SQLite storage class it actually landed in, declared as one shape.
+    ///
+    /// Two columns, and the second is an expression over the first — so the ordinal was the only
+    /// thing binding `typeof(retry_count)` to `kind`. A column inserted into that `SELECT` would
+    /// have made `kind` the wrong string while both reads still type-checked and both assertions
+    /// still ran. The `field from ("expr" as "name")` entry states the expression and the name it
+    /// binds as one thing, which is what the entry exists for.
+    struct RetryCountAndItsType {
+        retry_count: i64,
+        kind: String,
+    }
+
+    row_reader! {
+        const RETRY_COUNT_AND_ITS_TYPE: RowReader<RetryCountAndItsType> = from "draft_sync_queue" {
+            retry_count,
+            kind from ("typeof(retry_count)" as "kind"),
+        };
+    }
 
     fn setup_db() -> Database {
         let db = Database::in_memory().unwrap();
@@ -595,26 +616,26 @@ mod tests {
             ("created_at", "2026-08-24T10:00:00Z"),
             ("last_attempt_at", "2026-08-24T11:00:00Z"),
         ] {
-            let matched: bool = conn
-                .query_row(
-                    &format!("SELECT {column} = ?1 FROM draft_sync_queue"),
-                    [expected],
-                    |row| row.get(0),
-                )
-                .unwrap();
+            let matched: bool = scalar(
+                &conn,
+                &format!("SELECT {column} = ?1 FROM draft_sync_queue"),
+                [expected],
+            )
+            .unwrap();
             assert!(matched, "the `{column}` column does not hold `{expected}`");
         }
 
         // `retry_count` and the type it landed under: the writer used to bind it through
         // `.to_string()` into an `INTEGER` column, which only affinity rescued.
-        let (count, kind): (i64, String) = conn
-            .query_row(
-                "SELECT retry_count, typeof(retry_count) FROM draft_sync_queue",
-                [],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .unwrap();
-        assert_eq!((count, kind.as_str()), (3, "integer"));
+        let stored = read_one(
+            &conn,
+            &RETRY_COUNT_AND_ITS_TYPE,
+            "FROM draft_sync_queue",
+            [],
+        )
+        .unwrap()
+        .expect("the queue holds the row just written");
+        assert_eq!((stored.retry_count, stored.kind.as_str()), (3, "integer"));
     }
 
     #[test]

@@ -248,6 +248,7 @@ impl Database {
 mod tests {
     use super::*;
     use crate::migrations::run_migrations;
+    use crate::projection::scalar;
 
     fn setup_test_db() -> Database {
         let db = Database::in_memory().unwrap();
@@ -266,22 +267,20 @@ mod tests {
         let conn = conn.lock();
 
         // Tables should be created during migration
-        let count: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='features'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
+        let count: i64 = scalar(
+            &conn,
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='features'",
+            [],
+        )
+        .unwrap();
         assert_eq!(count, 1);
 
-        let count: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='feature_screens'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
+        let count: i64 = scalar(
+            &conn,
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='feature_screens'",
+            [],
+        )
+        .unwrap();
         assert_eq!(count, 1);
     }
 
@@ -890,13 +889,12 @@ mod tests {
             ("feature_screens", "name_ar", "screen-name-ar-column"),
             ("feature_screens", "next_screen", "next-screen-column"),
         ] {
-            let matched: bool = conn
-                .query_row(
-                    &format!("SELECT {column} = ?1 FROM {table}"),
-                    [expected],
-                    |row| row.get(0),
-                )
-                .unwrap();
+            let matched: bool = scalar(
+                &conn,
+                &format!("SELECT {column} = ?1 FROM {table}"),
+                [expected],
+            )
+            .unwrap();
             assert!(matched, "`{table}.{column}` does not hold `{expected}`");
         }
         // The flags and orders. `is_core` is 1 where `is_enabled` is 0, so a swap between the two
@@ -908,11 +906,7 @@ mod tests {
             ("feature_screens", "is_entry_point", 1),
             ("feature_screens", "display_order", 9),
         ] {
-            let stored: i64 = conn
-                .query_row(&format!("SELECT {column} FROM {table}"), [], |row| {
-                    row.get(0)
-                })
-                .unwrap();
+            let stored: i64 = scalar(&conn, &format!("SELECT {column} FROM {table}"), []).unwrap();
             assert_eq!(stored, expected, "`{table}.{column}`");
         }
     }

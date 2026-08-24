@@ -355,6 +355,7 @@ mod tests {
     use super::*;
     use crate::migrations::run_migrations;
     use crate::operators::OperatorRow;
+    use crate::projection::scalar;
     use pos_models::{OperatorName, OperatorRole};
     use rust_decimal::Decimal;
 
@@ -627,13 +628,12 @@ mod tests {
             ("last_retry_at", "2026-08-24T11:00:00Z"),
             ("catalog_etag", "catalog-etag-column"),
         ] {
-            let matched: bool = conn
-                .query_row(
-                    &format!("SELECT {column} = ?1 FROM offline_transactions"),
-                    [expected],
-                    |row| row.get(0),
-                )
-                .unwrap();
+            let matched: bool = scalar(
+                &conn,
+                &format!("SELECT {column} = ?1 FROM offline_transactions"),
+                [expected],
+            )
+            .unwrap();
             assert!(matched, "the `{column}` column does not hold `{expected}`");
         }
 
@@ -646,13 +646,12 @@ mod tests {
             ("grand_total", 44.44),
             ("retry_count", 7.0),
         ] {
-            let matched: bool = conn
-                .query_row(
-                    &format!("SELECT {column} = ?1 FROM offline_transactions"),
-                    [expected],
-                    |row| row.get(0),
-                )
-                .unwrap();
+            let matched: bool = scalar(
+                &conn,
+                &format!("SELECT {column} = ?1 FROM offline_transactions"),
+                [expected],
+            )
+            .unwrap();
             assert!(matched, "the `{column}` column does not hold `{expected}`");
         }
     }

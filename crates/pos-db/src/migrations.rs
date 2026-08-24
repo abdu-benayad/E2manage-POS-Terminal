@@ -506,14 +506,13 @@ mod tests {
         run_migrations(&fresh).unwrap();
 
         for (route, conn) in [("upgraded from v13", &upgraded), ("created fresh", &fresh)] {
-            let exists: i32 = conn
-                .query_row(
-                    "SELECT COUNT(*) FROM sqlite_master \
-                     WHERE type = 'table' AND name = 'operator_sessions'",
-                    [],
-                    |row| row.get(0),
-                )
-                .unwrap();
+            let exists: i32 = scalar(
+                conn,
+                "SELECT COUNT(*) FROM sqlite_master \
+                 WHERE type = 'table' AND name = 'operator_sessions'",
+                [],
+            )
+            .unwrap();
             assert_eq!(exists, 1, "a till {route} must have the session table");
 
             // The one-row invariant, asserted rather than assumed: two operators signed in at once
@@ -553,13 +552,12 @@ mod tests {
         // the table would sign the cashier out on every upgrade.
         conn.execute_batch(SCHEMA_V14).unwrap();
 
-        let held: String = conn
-            .query_row(
-                "SELECT operator_id FROM operator_sessions WHERE id = 1",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
+        let held: String = scalar(
+            &conn,
+            "SELECT operator_id FROM operator_sessions WHERE id = 1",
+            [],
+        )
+        .unwrap();
         assert_eq!(held, "op-1");
     }
 
@@ -599,25 +597,31 @@ mod tests {
 
         apply_v13(&conn).unwrap();
 
-        let has_column: i32 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM pragma_table_info('operators') WHERE name = 'pin_hash'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
+        let has_column: i32 = scalar(
+            &conn,
+            "SELECT COUNT(*) FROM pragma_table_info('operators') WHERE name = 'pin_hash'",
+            [],
+        )
+        .unwrap();
         assert_eq!(has_column, 0, "the PIN hash must be gone from the table");
 
         // The operator is still there, with everything that is not a secret.
-        let (name, role): (String, String) = conn
-            .query_row(
-                "SELECT name, role FROM operators WHERE id = 'op-1'",
-                [],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .unwrap();
-        assert_eq!(name, "Ahmed");
-        assert_eq!(role, "MANAGER");
+        //
+        // Two one-column reads rather than one two-column read. The pair was `row.get(0)` and
+        // `row.get(1)` against a hand-written `SELECT` list, which is the coupling this issue
+        // removes; a declared mapping is the usual replacement, but the two columns it would have
+        // to bind are `name` and `role`, and those cross the boundary through
+        // `column::OPERATOR_NAME` (a *pair* codec, needing `name_ar` too) and
+        // `column::OPERATOR_ROLE`. Declaring a shape here to assert two raw strings survived a
+        // migration would either restate those codecs or spell an operator's identity as a
+        // `String` — which `operator_identity_never_survives_as_a_bare_string` refuses, correctly.
+        // A one-column query has no ordinal to get wrong, so `scalar` says exactly what is meant.
+        let surviving_name: String =
+            scalar(&conn, "SELECT name FROM operators WHERE id = 'op-1'", []).unwrap();
+        let surviving_role: String =
+            scalar(&conn, "SELECT role FROM operators WHERE id = 'op-1'", []).unwrap();
+        assert_eq!(surviving_name, "Ahmed");
+        assert_eq!(surviving_role, "MANAGER");
 
         // And the hash is not merely hidden — the column does not exist, so a query naming it is
         // an error rather than a value. `unwrap_or(false)` on this would be the same defect as
@@ -634,13 +638,12 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         run_migrations(&conn).unwrap();
 
-        let has_column: i32 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM pragma_table_info('operators') WHERE name = 'pin_hash'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
+        let has_column: i32 = scalar(
+            &conn,
+            "SELECT COUNT(*) FROM pragma_table_info('operators') WHERE name = 'pin_hash'",
+            [],
+        )
+        .unwrap();
         assert_eq!(has_column, 0);
         assert_eq!(get_schema_version(&conn).unwrap(), CURRENT_SCHEMA_VERSION);
 
@@ -650,9 +653,7 @@ mod tests {
         // keeping: that the constant was not raised without a migration to match. Counting the
         // recorded rows says the same thing and stays true, because every `apply_vN` writes
         // exactly one.
-        let recorded: i32 = conn
-            .query_row("SELECT COUNT(*) FROM schema_version", [], |row| row.get(0))
-            .unwrap();
+        let recorded: i32 = scalar(&conn, "SELECT COUNT(*) FROM schema_version", []).unwrap();
         assert_eq!(
             recorded, CURRENT_SCHEMA_VERSION,
             "CURRENT_SCHEMA_VERSION is {CURRENT_SCHEMA_VERSION} and {recorded} migrations recorded \
@@ -692,13 +693,12 @@ mod tests {
         ];
 
         for table in tables {
-            let count: i64 = conn
-                .query_row(
-                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?",
-                    [table],
-                    |row| row.get(0),
-                )
-                .unwrap_or(0);
+            let count: i64 = scalar(
+                &conn,
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?",
+                [table],
+            )
+            .unwrap_or(0);
 
             assert!(count > 0, "Table '{}' should exist", table);
         }

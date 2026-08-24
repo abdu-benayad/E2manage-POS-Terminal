@@ -281,6 +281,7 @@ mod tests {
     use super::*;
     use crate::migrations::run_migrations;
     use crate::operators::OperatorRow;
+    use crate::projection::scalar;
     use pos_models::{OperatorName, OperatorRole};
 
     fn op_id(id: &str) -> OperatorId {
@@ -484,13 +485,12 @@ mod tests {
             ("server_id", "server-id-column"),
             ("notes", "notes-column"),
         ] {
-            let matched: bool = conn
-                .query_row(
-                    &format!("SELECT {column} = ?1 FROM shifts"),
-                    [expected],
-                    |row| row.get(0),
-                )
-                .unwrap();
+            let matched: bool = scalar(
+                &conn,
+                &format!("SELECT {column} = ?1 FROM shifts"),
+                [expected],
+            )
+            .unwrap();
             assert!(matched, "the `{column}` column does not hold `{expected}`");
         }
 
@@ -504,13 +504,12 @@ mod tests {
             ("expected_cash", 33.0),
             ("variance", 44.0),
         ] {
-            let matched: bool = conn
-                .query_row(
-                    &format!("SELECT {column} = ?1 FROM shifts"),
-                    [expected],
-                    |row| row.get(0),
-                )
-                .unwrap();
+            let matched: bool = scalar(
+                &conn,
+                &format!("SELECT {column} = ?1 FROM shifts"),
+                [expected],
+            )
+            .unwrap();
             assert!(matched, "the `{column}` column does not hold `{expected}`");
         }
     }

@@ -429,6 +429,7 @@ impl Database {
 mod tests {
     use super::*;
     use crate::migrations::run_migrations;
+    use crate::projection::scalar;
 
     fn setup_db() -> Database {
         let db = Database::in_memory().unwrap();
@@ -807,13 +808,12 @@ mod tests {
             ("generated_at", "2026-08-24T23:00:00Z"),
             ("server_id", "server-id-column"),
         ] {
-            let matched: bool = conn
-                .query_row(
-                    &format!("SELECT {column} = ?1 FROM z_reports"),
-                    [expected],
-                    |row| row.get(0),
-                )
-                .unwrap();
+            let matched: bool = scalar(
+                &conn,
+                &format!("SELECT {column} = ?1 FROM z_reports"),
+                [expected],
+            )
+            .unwrap();
             assert!(matched, "the `{column}` column does not hold `{expected}`");
         }
 
@@ -838,13 +838,12 @@ mod tests {
             ("variance", 4096.0),
             ("synced", 1.0),
         ] {
-            let matched: bool = conn
-                .query_row(
-                    &format!("SELECT {column} = ?1 FROM z_reports"),
-                    [expected],
-                    |row| row.get(0),
-                )
-                .unwrap();
+            let matched: bool = scalar(
+                &conn,
+                &format!("SELECT {column} = ?1 FROM z_reports"),
+                [expected],
+            )
+            .unwrap();
             assert!(matched, "the `{column}` column does not hold `{expected}`");
         }
     }

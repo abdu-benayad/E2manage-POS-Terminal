@@ -349,6 +349,7 @@ impl Database {
 mod tests {
     use super::*;
     use crate::migrations::run_migrations;
+    use crate::projection::scalar;
     use std::str::FromStr;
 
     fn setup_db() -> Database {
@@ -733,13 +734,12 @@ mod tests {
             ("product_type", "SERVICE"),
             ("product_nature", "INTANGIBLE"),
         ] {
-            let matched: bool = conn
-                .query_row(
-                    &format!("SELECT {column} = ?1 FROM products"),
-                    [expected],
-                    |row| row.get(0),
-                )
-                .unwrap();
+            let matched: bool = scalar(
+                &conn,
+                &format!("SELECT {column} = ?1 FROM products"),
+                [expected],
+            )
+            .unwrap();
             assert!(matched, "the `{column}` column does not hold `{expected}`");
         }
 
@@ -750,13 +750,12 @@ mod tests {
             ("stock_qty", 44.0),
             ("min_stock", 55.0),
         ] {
-            let matched: bool = conn
-                .query_row(
-                    &format!("SELECT {column} = ?1 FROM products"),
-                    [expected],
-                    |row| row.get(0),
-                )
-                .unwrap();
+            let matched: bool = scalar(
+                &conn,
+                &format!("SELECT {column} = ?1 FROM products"),
+                [expected],
+            )
+            .unwrap();
             assert!(matched, "the `{column}` column does not hold `{expected}`");
         }
 
@@ -770,11 +769,7 @@ mod tests {
             ("is_active", 0),
             ("track_inventory", 0),
         ] {
-            let stored: i64 = conn
-                .query_row(&format!("SELECT {column} FROM products"), [], |row| {
-                    row.get(0)
-                })
-                .unwrap();
+            let stored: i64 = scalar(&conn, &format!("SELECT {column} FROM products"), []).unwrap();
             assert_eq!(stored, expected, "the `{column}` column");
         }
     }
@@ -819,30 +814,27 @@ mod tests {
             ("icon", "icon-column"),
             ("image_url", "image-url-column"),
         ] {
-            let matched: bool = conn
-                .query_row(
-                    &format!("SELECT {column} = ?1 FROM categories WHERE id = 'id-column'"),
-                    [expected],
-                    |row| row.get(0),
-                )
-                .unwrap();
+            let matched: bool = scalar(
+                &conn,
+                &format!("SELECT {column} = ?1 FROM categories WHERE id = 'id-column'"),
+                [expected],
+            )
+            .unwrap();
             assert!(matched, "the `{column}` column does not hold `{expected}`");
         }
-        let display_order: i64 = conn
-            .query_row(
-                "SELECT display_order FROM categories WHERE id = 'id-column'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
+        let display_order: i64 = scalar(
+            &conn,
+            "SELECT display_order FROM categories WHERE id = 'id-column'",
+            [],
+        )
+        .unwrap();
         assert_eq!(display_order, 66);
-        let is_active: i64 = conn
-            .query_row(
-                "SELECT is_active FROM categories WHERE id = 'id-column'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
+        let is_active: i64 = scalar(
+            &conn,
+            "SELECT is_active FROM categories WHERE id = 'id-column'",
+            [],
+        )
+        .unwrap();
         assert_eq!(is_active, 0);
     }
 

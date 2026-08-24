@@ -79,6 +79,7 @@ impl Database {
 mod tests {
     use super::*;
     use crate::migrations::run_migrations;
+    use crate::projection::scalar;
 
     fn op_id(id: &str) -> OperatorId {
         OperatorId::new(id).expect("a non-blank id")
@@ -150,8 +151,7 @@ mod tests {
         let rows: i64 = {
             let conn = db.connection();
             let conn = conn.lock();
-            conn.query_row("SELECT COUNT(*) FROM active_cart", [], |row| row.get(0))
-                .unwrap()
+            scalar(&conn, "SELECT COUNT(*) FROM active_cart", []).unwrap()
         };
         assert_eq!(rows, 1);
     }
@@ -223,30 +223,26 @@ mod tests {
             ("operator_id", "operator-id-column"),
             ("cart_json", r#"{"cart":"json-column"}"#),
         ] {
-            let matched: bool = conn
-                .query_row(
-                    &format!("SELECT {column} = ?1 FROM active_cart"),
-                    [expected],
-                    |row| row.get(0),
-                )
-                .unwrap();
+            let matched: bool = scalar(
+                &conn,
+                &format!("SELECT {column} = ?1 FROM active_cart"),
+                [expected],
+            )
+            .unwrap();
             assert!(matched, "the `{column}` column does not hold `{expected}`");
         }
 
         // `id` is the mapping's, not the caller's: the schema says `CHECK (id = 1)`.
-        let id: i64 = conn
-            .query_row("SELECT id FROM active_cart", [], |row| row.get(0))
-            .unwrap();
+        let id: i64 = scalar(&conn, "SELECT id FROM active_cart", []).unwrap();
         assert_eq!(id, 1);
 
         // …and `updated_at` is `NOT NULL`, so the store must have written it.
-        let stamped: bool = conn
-            .query_row(
-                "SELECT updated_at IS NOT NULL AND updated_at <> '' FROM active_cart",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
+        let stamped: bool = scalar(
+            &conn,
+            "SELECT updated_at IS NOT NULL AND updated_at <> '' FROM active_cart",
+            [],
+        )
+        .unwrap();
         assert!(stamped, "the store did not stamp `updated_at`");
     }
 
