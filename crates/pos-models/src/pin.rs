@@ -624,11 +624,336 @@ impl Drop for Pin {
 }
 
 // ============================================================================
+// Digit and EnteredDigits
+// ============================================================================
+
+/// One decimal digit, 0 to 9.
+///
+/// A socket that accepts a `u8` accepts 200, and the buffer below would then have to answer what
+/// it does with one. It has nothing sensible to answer, so the question is removed instead: the
+/// only way to obtain a `Digit` is through [`Self::new`], which refuses everything else.
+///
+/// It carries a **value, never a character**, and that is the whole point of its existing here
+/// rather than the buffer taking a `char`. [`Pin`] is ASCII-digits-only because the platform's
+/// own validator is `/^\d+$/` and JavaScript's `\d` is ASCII, so an Arabic-Indic digit could
+/// never match the stored hash. A pad that renders `٤` and reports `Digit(4)` is therefore
+/// correct in both scripts at once, and the rendering never reaches the credential.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Digit(u8);
+
+impl Digit {
+    /// Reads a decimal digit. `None` for anything above nine.
+    pub const fn new(value: u8) -> Option<Self> {
+        match value {
+            0..=9 => Some(Self(value)),
+            _ => None,
+        }
+    }
+
+    /// The value, 0 to 9.
+    pub const fn value(self) -> u8 {
+        self.0
+    }
+
+    /// The ASCII byte for this digit. Always in `b'0'..=b'9'`, which is what lets
+    /// [`EnteredDigits`] hold its buffer as bytes and read it back as a `&str` without allocating
+    /// a second copy of the secret.
+    const fn as_ascii(self) -> u8 {
+        b'0' + self.0
+    }
+}
+
+/// The digits a cashier has typed so far, on the way to becoming a [`Pin`].
+///
+/// # Why this is a type and not a `String` on the screen
+///
+/// `tests/guards.rs::a_live_pin_never_reaches_a_derived_debug` refuses a `Debug`-deriving type
+/// holding a field **literally named `pin`**, word-bounded. A screen's entry buffer is not called
+/// `pin` — it is `entered`, or `digits`, or `buffer` — so the guard could not see it, while the
+/// phase enum holding it derives `Debug` like every domain type here and the driver consuming it
+/// is a match statement somebody will log. One `tracing::debug!("{phase:?}")` would put a
+/// cashier's live PIN in a rotating file on the till's disk.
+///
+/// So the buffer is a domain type carrying [`Pin`]'s two protections, which defend different
+/// things and do not substitute for one another: a hand-written [`fmt::Debug`] that protects
+/// **logs**, and a zeroizing [`Drop`] that protects **memory**.
+///
+/// # The buffer never grows, and that is load-bearing
+///
+/// `zeroize`'s own documentation is explicit that it "cannot ensure that previous reallocations
+/// did not leave values on the heap". A buffer that reallocated while being typed into would
+/// leave a copy of the earlier prefix behind, unreachable and unzeroized, and no `Drop` could
+/// find it. So the allocation is made once at [`PinLength::LONGEST`] and a press beyond that is
+/// ignored rather than grown into.
+///
+/// Ignoring is the right answer rather than an error, and it matches the pad: the component
+/// library's PIN keypad suppresses a press when the caller says it is at capacity and reports
+/// nothing happened. A keypress against a full buffer is an ordinary event at a till, not a fault
+/// anybody can act on.
+pub struct EnteredDigits {
+    /// ASCII bytes, always `b'0'..=b'9'` by construction — see [`Digit::as_ascii`].
+    digits: Vec<u8>,
+}
+
+impl EnteredDigits {
+    /// An empty buffer, allocated once at the largest PIN the platform accepts.
+    pub fn empty() -> Self {
+        Self {
+            digits: Vec::with_capacity(PinLength::LONGEST.digits()),
+        }
+    }
+
+    /// Appends a digit, or does nothing if the buffer is already at the platform's maximum.
+    ///
+    /// Total on purpose. See the type docs for why a press at capacity is ignored rather than
+    /// refused, and why the buffer must not grow.
+    pub fn push(&mut self, digit: Digit) {
+        if self.digits.len() < PinLength::LONGEST.digits() {
+            self.digits.push(digit.as_ascii());
+        }
+    }
+
+    /// Removes the last digit, zeroing the byte it leaves behind.
+    ///
+    /// The zeroing is not incidental: `Vec::pop` only moves the length, so without it the digit
+    /// stays legible in the allocation for as long as the buffer lives — and a cashier correcting
+    /// a mistype is the single most common way a digit gets abandoned mid-entry.
+    ///
+    /// **What is guaranteed by what.** That the freed slot is reachable and cleared is `zeroize`'s
+    /// contract for a `Vec`'s spare capacity, not something this module can observe: reading it
+    /// back would mean reading uninitialised memory, which needs `unsafe`. What *is* checked here
+    /// is that the mechanism still behaves — see `entered_digits_zeroizing_is_not_a_no_op` — on
+    /// the same reasoning as [`Pin`]'s own zeroize test: a dependency change that turned it into a
+    /// no-op fails a test rather than silently removing the protection.
+    pub fn backspace(&mut self) {
+        self.digits.pop();
+        self.digits.spare_capacity_mut().zeroize();
+    }
+
+    /// Empties the buffer, zeroing every byte including the spare capacity.
+    ///
+    /// `Vec::clear` alone would only move the length. This is the clear a cashier expects when
+    /// they hit the clear key having mistyped, and it must actually destroy what they typed.
+    pub fn clear(&mut self) {
+        self.digits.zeroize();
+    }
+
+    /// How many digits have been entered. Safe to show — it is the fill count, not the secret.
+    pub fn len(&self) -> usize {
+        self.digits.len()
+    }
+
+    /// Whether nothing has been entered yet.
+    pub fn is_empty(&self) -> bool {
+        self.digits.is_empty()
+    }
+
+    /// Builds the [`Pin`], once, at submit.
+    ///
+    /// The only door from typed digits to a credential. `Pin::parse` re-checks the shape rather
+    /// than trusting this type's invariant, which is deliberate: the length rule lives there
+    /// because it is a fact about the platform's API, and having one place answer "is this a
+    /// PIN-shaped thing" is worth the re-scan of at most six bytes.
+    pub fn finish(&self) -> Result<Pin, PinFormatError> {
+        // Infallible in practice — every byte came from `Digit::as_ascii` — but written as a
+        // total match rather than an `expect`, because a panic here would take down a till in
+        // front of a customer to report an invariant this module already guarantees.
+        match std::str::from_utf8(&self.digits) {
+            Ok(entered) => Pin::parse(entered),
+            Err(_) => Err(PinFormatError::NotNumeric),
+        }
+    }
+}
+
+impl fmt::Debug for EnteredDigits {
+    /// Renders `EnteredDigits(****)`, with a fixed number of stars.
+    ///
+    /// Fixed for the reason [`Pin`]'s is: a redaction that tracked the length would leak how much
+    /// has been typed, and here that leaks it *continuously*, one frame at a time, to anything
+    /// logging the phase.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("EnteredDigits(****)")
+    }
+}
+
+impl Drop for EnteredDigits {
+    fn drop(&mut self) {
+        self.digits.zeroize();
+    }
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
 #[cfg(test)]
 mod tests {
+
+    // ========================================================================
+    // EnteredDigits
+    // ========================================================================
+
+    fn digit(value: u8) -> Digit {
+        Digit::new(value).expect("the fixtures use real digits")
+    }
+
+    fn entered(values: &[u8]) -> EnteredDigits {
+        let mut buffer = EnteredDigits::empty();
+        for value in values {
+            buffer.push(digit(*value));
+        }
+        buffer
+    }
+
+    #[test]
+    fn a_digit_is_zero_to_nine_and_nothing_else() {
+        for value in 0..=9u8 {
+            assert_eq!(
+                Digit::new(value).map(Digit::value),
+                Some(value),
+                "{value} is a decimal digit"
+            );
+        }
+        for value in [10u8, 11, 99, 200, u8::MAX] {
+            assert!(
+                Digit::new(value).is_none(),
+                "{value} is not a decimal digit and must not be constructible"
+            );
+        }
+    }
+
+    #[test]
+    fn entered_digits_never_render_what_was_typed() {
+        // The assertion the guard exists to back up. Asserted literally, and on a NON-EMPTY
+        // buffer: a redaction that only holds for the empty case is the one that matters least.
+        let buffer = entered(&[4, 5, 6, 7]);
+        assert_eq!(format!("{buffer:?}"), "EnteredDigits(****)");
+
+        // And the star count does not track the length, or the Debug leaks the search space one
+        // frame at a time to anything logging the phase.
+        assert_eq!(
+            format!("{:?}", entered(&[1, 2, 3, 4, 5, 6])),
+            format!("{:?}", entered(&[1, 2, 3, 4])),
+            "the redaction must not vary with how much has been typed"
+        );
+    }
+
+    #[test]
+    fn entered_digits_stop_at_the_platform_maximum_rather_than_growing() {
+        let mut buffer = EnteredDigits::empty();
+        for value in [1u8, 2, 3, 4, 5, 6, 7, 8, 9] {
+            buffer.push(digit(value));
+        }
+
+        assert_eq!(
+            buffer.len(),
+            PinLength::LONGEST.digits(),
+            "presses past the maximum must be ignored, not appended"
+        );
+
+        // The reason the ceiling exists at all: `zeroize` cannot reach a buffer that was
+        // reallocated out from under it, so growth would strand a copy of the earlier prefix.
+        // A capacity that never moves is what makes the zeroizing Drop honest.
+        assert_eq!(
+            buffer.finish().map(|pin| pin.length()).ok(),
+            Some(PinLength::LONGEST.digits()),
+            "the retained digits are the first six, and they still form a PIN"
+        );
+    }
+
+    #[test]
+    fn entered_digits_backspace_and_clear_take_the_digits_with_them() {
+        let mut buffer = entered(&[1, 2, 3, 4, 5]);
+        buffer.backspace();
+        assert_eq!(buffer.len(), 4);
+        assert_eq!(
+            buffer
+                .finish()
+                .expect("four digits is a PIN")
+                .expose_digits(),
+            "1234",
+            "backspace removes the last digit and leaves the rest in order"
+        );
+
+        buffer.clear();
+        assert!(buffer.is_empty(), "clear empties the buffer");
+        assert!(
+            matches!(
+                buffer.finish(),
+                Err(PinFormatError::LengthOutOfRange { actual: 0 })
+            ),
+            "an emptied buffer is not a PIN"
+        );
+
+        // Backspace on an empty buffer is a normal keypress at a till, not a fault.
+        buffer.backspace();
+        assert!(buffer.is_empty());
+    }
+
+    #[test]
+    fn entered_digits_become_a_pin_only_at_a_platform_legal_length() {
+        for values in [
+            vec![1u8, 2, 3, 4],
+            vec![1, 2, 3, 4, 5],
+            vec![1, 2, 3, 4, 5, 6],
+        ] {
+            let buffer = entered(&values);
+            let pin = buffer
+                .finish()
+                .unwrap_or_else(|error| panic!("{} digits must parse: {error}", values.len()));
+            assert_eq!(pin.length(), values.len());
+        }
+
+        for values in [vec![], vec![1u8], vec![1, 2], vec![1, 2, 3]] {
+            let short = entered(&values);
+            assert!(
+                matches!(short.finish(), Err(PinFormatError::LengthOutOfRange { .. })),
+                "{} digits is below the platform minimum and must not become a PIN",
+                values.len()
+            );
+        }
+    }
+
+    #[test]
+    fn entered_digits_zeroizing_is_not_a_no_op() {
+        // `clear` and `drop` call exactly this, and `backspace` calls its spare-capacity
+        // sibling. Observing either through `EnteredDigits` would mean reading a freed or
+        // uninitialised allocation, which needs `unsafe` — so the mechanism is asserted instead,
+        // the same way `pin_zeroize_clears_the_buffer_it_is_given` does. A dependency bump that
+        // turned this into a no-op fails here rather than quietly removing the protection.
+        let mut secret = vec![b'1', b'2', b'3', b'4'];
+        secret.zeroize();
+        assert!(
+            secret.is_empty(),
+            "zeroize must clear the vector it is given"
+        );
+
+        // And the spare-capacity path backspace depends on. Its *existence* is enforced by
+        // compilation — `EnteredDigits::backspace` would not build without the impl — so what is
+        // worth asserting is that calling it leaves a usable buffer rather than a poisoned one.
+        let mut buffer = entered(&[9, 8, 7]);
+        buffer.backspace();
+        buffer.push(digit(1));
+        assert_eq!(
+            buffer.finish().map(|pin| pin.expose_digits().to_string()),
+            Err(PinFormatError::LengthOutOfRange { actual: 3 }),
+            "three digits is still short of a PIN, and the buffer survived the zeroize intact"
+        );
+    }
+
+    #[test]
+    fn entered_digits_carry_values_so_the_rendering_script_never_reaches_the_credential() {
+        // The Arabic-Indic trap, pinned rather than trusted. A pad rendering `٤٥٦٧` reports the
+        // same four Digit values as one rendering `4567`, so the credential is identical and the
+        // locale cannot change what is hashed. If `push` ever took a `char`, this stops holding.
+        assert_eq!(
+            entered(&[4, 5, 6, 7])
+                .finish()
+                .expect("four digits")
+                .expose_digits(),
+            "4567"
+        );
+    }
     use super::*;
     use crate::operator::OperatorId;
 
