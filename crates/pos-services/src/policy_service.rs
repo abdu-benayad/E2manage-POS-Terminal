@@ -19,14 +19,24 @@
 //! // Refresh policies from server
 //! service.refresh().await?;
 //!
-//! // Check a policy
-//! let result = service.check_boolean("ENCRYPTION_AT_REST");
+//! // Check a policy. The match is exhaustive on purpose: the point of the last arm is that
+//! // "the till could not decide" is an answer a caller must handle, not one it can fold into
+//! // "allowed" — see [`PolicyResult`].
+//! let result = service.check_boolean("ENCRYPTION_AT_REST").await;
 //! match result {
 //!     PolicyResult::Allow => println!("Allowed"),
 //!     PolicyResult::Block(reason) => println!("Blocked: {}", reason),
 //!     PolicyResult::Warn(reason) => println!("Warning: {}", reason),
+//!     PolicyResult::Audit(reason) => println!("Allowed, audited: {}", reason),
+//!     PolicyResult::NotEvaluable { code, reason } => {
+//!         println!("No decision for {}: {}", code, reason.as_str())
+//!     }
 //! }
 //! ```
+//!
+//! This example is fenced `rust,ignore` and therefore never compiles. It had drifted before this
+//! module was touched — it was missing `Audit`, which had existed for as long as the enum had — so
+//! it is the kind of claim that stays wrong indefinitely because nothing checks it.
 
 use crate::policy_value::PolicyValue;
 use pos_api::{ApiClient, EnforcementMode, GetResult, SecurityCategory, SecurityPoliciesResponse};
@@ -36,7 +46,65 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 
-/// Result of evaluating a policy
+/// Why the till was unable to decide.
+///
+/// Every variant is a fact about the *platform's data or the till's knowledge of it*, never about
+/// the action being checked. That is the distinction [`PolicyResult`] previously could not draw.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NotEvaluableReason {
+    /// No refresh has ever succeeded, so the till does not know what its policies are.
+    ///
+    /// Distinct from *the platform sent no policies*, which is a real answer and permits.
+    PoliciesNeverLoaded,
+    /// The platform declared a type this till knows and sent a value that does not match it.
+    ValueDoesNotMatchDeclaredType,
+    /// The platform declared a policy type this till has never heard of.
+    DeclaredTypeUnrecognised,
+    /// The platform asked for an enforcement mode this till has never heard of.
+    ///
+    /// Load-bearing rather than pedantic: `EnforcementMode` carries `#[serde(other)]`, so **any**
+    /// mode introduced in future deserialises to `Unknown` on every deployed till. Answering
+    /// `Allow` there means the platform *tightening* a policy reads as no policy at all.
+    EnforcementModeUnrecognised,
+}
+
+impl NotEvaluableReason {
+    /// A fixed description, suitable for a log line or a message to an operator.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::PoliciesNeverLoaded => "the till has never loaded its security policies",
+            Self::ValueDoesNotMatchDeclaredType => {
+                "the policy's value does not match the type the platform declared for it"
+            }
+            Self::DeclaredTypeUnrecognised => {
+                "the platform declared a policy type this till does not recognise"
+            }
+            Self::EnforcementModeUnrecognised => {
+                "the platform asked for an enforcement mode this till does not recognise"
+            }
+        }
+    }
+}
+
+impl std::fmt::Display for NotEvaluableReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// The answer to "may this action proceed under this policy?"
+///
+/// # Four verdicts and one non-verdict
+///
+/// `Allow`, `Block`, `Warn` and `Audit` are **decisions**. For as long as those were the only
+/// answers, a check that *could not* decide still had to return one — and the only decision that
+/// looks safe is `Allow`. The evidence that this was a defect rather than a simplification is that
+/// the range check logged `warn!("Invalid range value for policy {}")` and then permitted: it had
+/// correctly diagnosed the condition and had nowhere to put it.
+///
+/// [`PolicyResult::NotEvaluable`] is that missing place. It is **not** a fifth verdict and must
+/// never be folded into one by a caller: it says the till has no basis for an answer, which is a
+/// different thing from having decided to permit.
 #[derive(Debug, Clone, PartialEq)]
 pub enum PolicyResult {
     /// Action is allowed
@@ -47,26 +115,47 @@ pub enum PolicyResult {
     Warn(String),
     /// Action is allowed but will be audited (enforcement mode is AUDIT)
     Audit(String),
+    /// The till could not evaluate the policy, and says so instead of guessing.
+    NotEvaluable {
+        /// The policy that could not be evaluated.
+        code: String,
+        /// What stopped the till deciding.
+        reason: NotEvaluableReason,
+    },
 }
 
 impl PolicyResult {
-    /// Returns true if the action is allowed (Allow, Warn, or Audit)
+    /// Whether the action may proceed.
+    ///
+    /// # Why this is a positive match
+    ///
+    /// It was `!matches!(self, PolicyResult::Block(_))` — *anything that is not a block is
+    /// allowed* — which would have made [`PolicyResult::NotEvaluable`] permit the moment it was
+    /// added, silently, which is the exact failure this issue exists to remove. Written
+    /// positively, a variant added later without thought is **refused** rather than permitted, and
+    /// the compiler does not have to be relied on to notice.
+    ///
+    /// `Warn` and `Audit` remain allowed, deliberately: they are advisory modes, and the platform
+    /// means them to proceed with a record.
     pub fn is_allowed(&self) -> bool {
-        !matches!(self, PolicyResult::Block(_))
+        matches!(self, Self::Allow | Self::Warn(_) | Self::Audit(_))
     }
 
-    /// Returns true if the action is blocked
+    /// Whether the platform refused the action outright.
+    ///
+    /// Not the complement of [`PolicyResult::is_allowed`], and the gap between them is the point:
+    /// [`PolicyResult::NotEvaluable`] is neither allowed nor blocked. A caller that needs to act on
+    /// one answer must handle three cases, not two.
     pub fn is_blocked(&self) -> bool {
-        matches!(self, PolicyResult::Block(_))
+        matches!(self, Self::Block(_))
     }
 
-    /// Returns the message if the result is not Allow
+    /// What to tell someone, when there is anything to tell.
     pub fn message(&self) -> Option<&str> {
         match self {
-            PolicyResult::Allow => None,
-            PolicyResult::Block(msg) | PolicyResult::Warn(msg) | PolicyResult::Audit(msg) => {
-                Some(msg)
-            }
+            Self::Allow => None,
+            Self::Block(msg) | Self::Warn(msg) | Self::Audit(msg) => Some(msg),
+            Self::NotEvaluable { reason, .. } => Some(reason.as_str()),
         }
     }
 }
@@ -619,6 +708,41 @@ mod tests {
     fn create_test_service() -> PolicyService {
         let api = Arc::new(ApiClient::new("https://api.example.com"));
         PolicyService::new(api)
+    }
+
+    /// A non-verdict is neither allowed nor blocked, and `is_allowed` is where that could rot.
+    ///
+    /// The predecessor was `!matches!(self, Block(_))`, so this variant would have been permitted
+    /// from the moment it existed — silently, with no compiler error, which is the failure shape
+    /// this whole issue is about. Written as a positive match, the next variant added without
+    /// thought is refused instead.
+    #[test]
+    fn a_result_the_till_could_not_decide_is_not_allowed_and_not_blocked() {
+        let undecided = PolicyResult::NotEvaluable {
+            code: "MIN_PIN_LENGTH".to_string(),
+            reason: NotEvaluableReason::PoliciesNeverLoaded,
+        };
+
+        assert!(!undecided.is_allowed(), "a non-verdict must not permit");
+        assert!(!undecided.is_blocked(), "and it is not a refusal either");
+        assert!(undecided.message().is_some(), "it has something to say");
+
+        // The controls, in both directions. Without the first, an `is_allowed` broken open to
+        // always-false would satisfy every assertion above and read as a pass. Without the
+        // second, the same is true of `is_blocked`.
+        assert!(PolicyResult::Allow.is_allowed());
+        assert!(PolicyResult::Block("refused".to_string()).is_blocked());
+    }
+
+    /// `Warn` and `Audit` permit, and that is deliberate rather than an oversight of the same kind.
+    ///
+    /// Asserted so a later reader tightening `is_allowed` has to do it knowingly: these are
+    /// advisory modes the platform means to proceed with a record, unlike the non-verdict above.
+    #[test]
+    fn advisory_verdicts_still_permit() {
+        assert!(PolicyResult::Warn("noted".to_string()).is_allowed());
+        assert!(PolicyResult::Audit("recorded".to_string()).is_allowed());
+        assert!(!PolicyResult::Warn("noted".to_string()).is_blocked());
     }
 
     #[tokio::test]
