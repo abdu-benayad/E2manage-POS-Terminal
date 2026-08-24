@@ -190,11 +190,24 @@ fn the_only_shape_without_a_table_is_the_one_that_has_no_table() {
 // The registry is not allowed to certify itself
 // ---------------------------------------------------------------------------------------------
 
-/// Every `.rs` file under this crate's `src/`.
+/// Every `.rs` file under the `src/` of **every crate in the workspace**, not just this one.
+///
+/// # Why this reaches outside its own package
+///
+/// It walked `crates/pos-db/src` alone until a peer named what that is: a guard written from a
+/// survey, certifying the survey. `row_mapping!` and `row_reader!` are `#[macro_export]`, so any
+/// crate that depends on `pos-db` can declare a shape — and a shape declared in `pos-services`
+/// would have been invisible to `DECLARED_SHAPES`, invisible to the schema check, **and its
+/// absence would have read as a pass**. The narrow scan was honest while `pos-db` held every
+/// shape and would have become a trap the moment one moved, which task 13 does.
+///
+/// Anchored on `CARGO_MANIFEST_DIR` rather than the working directory, because an integration
+/// test's cwd is its package root and this needs the directory above it.
 fn sources() -> Vec<PathBuf> {
     fn walk(directory: &Path, found: &mut Vec<PathBuf>) {
-        let entries = fs::read_dir(directory)
-            .unwrap_or_else(|error| panic!("cannot read {}: {error}", directory.display()));
+        let Ok(entries) = fs::read_dir(directory) else {
+            return; // a crate without a `src/`; `crates/` holds directories that are not packages
+        };
         for entry in entries {
             let path = entry.expect("a directory entry").path();
             if path.is_dir() {
@@ -204,13 +217,23 @@ fn sources() -> Vec<PathBuf> {
             }
         }
     }
+
+    let crates = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("this package sits inside `crates/`")
+        .to_path_buf();
     let mut found = Vec::new();
-    walk(Path::new("src"), &mut found);
+    for entry in fs::read_dir(&crates)
+        .unwrap_or_else(|error| panic!("cannot read {}: {error}", crates.display()))
+    {
+        let package = entry.expect("a directory entry").path();
+        walk(&package.join("src"), &mut found);
+    }
     found.sort();
     found
 }
 
-/// The name of every `pub const` shape declared by `row_mapping!` or `row_reader!` in `src/`.
+/// The name of every `pub const` shape declared by `row_mapping!` or `row_reader!`.
 ///
 /// Comment lines are dropped before matching, so the worked expansion in `row_mapping!`'s own doc
 /// comment — which contains the literal text `pub const OPERATOR_ROW: RowMapping<OperatorRow>` —
@@ -260,13 +283,44 @@ fn the_source_scan_finds_declarations_at_all() {
     let files = sources();
     assert!(
         files.len() > 5,
-        "the scan read {} file(s) under src/; that is not this crate",
+        "the scan read {} file(s); that is not this workspace",
         files.len()
     );
     assert!(
         !declared_in_source().is_empty(),
-        "the scan found no `pub const` row shape anywhere in src/"
+        "the scan found no `pub const` row shape anywhere"
     );
+
+    // It must reach past its own package, or the widening above is decoration. `pos-services`
+    // declares no shape today and is where task 13 puts the first one outside `pos-db`.
+    let crates_seen: BTreeSet<String> = files
+        .iter()
+        .filter_map(|path| {
+            let text = path.to_string_lossy();
+            let after = text.split("crates/").nth(1)?;
+            Some(after.split('/').next()?.to_string())
+        })
+        .collect();
+    for package in ["pos-db", "pos-services", "pos-models"] {
+        assert!(
+            crates_seen.contains(package),
+            "the scan never reached `{package}`; it saw {crates_seen:?}"
+        );
+    }
+
+    // The third control, and the one that is easiest to skip: the detector must **not** fire on a
+    // constructed negative. `projection.rs`'s own test module declares three shapes with a bare
+    // `const`, which are not registrable. A detector broken open passes the two assertions above
+    // and flags every one of them — and that reads as a finding rather than as a broken
+    // instrument.
+    let declared = declared_in_source();
+    for test_local in ["SAMPLE_BY_MACRO", "RENAMED", "SAMPLE_TOTALS"] {
+        assert!(
+            !declared.contains(test_local),
+            "`{test_local}` is a test-local `const` and must not be collected as registrable; \
+             the scan is matching more than `pub const`"
+        );
+    }
 }
 
 #[test]
