@@ -566,11 +566,16 @@ impl OfflineService {
         let conn = self.db.connection();
         let conn = conn.lock();
 
+        // These three were `.unwrap_or(0)`. An aggregate always returns exactly one row, so
+        // `QueryReturnedNoRows` cannot occur here and the default could only ever have absorbed a
+        // real failure — reporting an empty, healthy-looking queue for a store that could not
+        // answer. On this screen that is the worst possible lie: the operator reads "nothing
+        // pending" and concludes the till has synced.
         let total: i64 = conn
             .query_row("SELECT COUNT(*) FROM offline_transactions", [], |row| {
                 row.get(0)
             })
-            .unwrap_or(0);
+            .map_err(|e| anyhow!("Failed to count queued transactions: {}", e))?;
 
         let synced: i64 = conn
             .query_row(
@@ -578,7 +583,7 @@ impl OfflineService {
                 [],
                 |row| row.get(0),
             )
-            .unwrap_or(0);
+            .map_err(|e| anyhow!("Failed to count synced transactions: {}", e))?;
 
         let failed: i64 = conn
             .query_row(
@@ -586,7 +591,7 @@ impl OfflineService {
                 [MAX_RETRY_COUNT],
                 |row| row.get(0),
             )
-            .unwrap_or(0);
+            .map_err(|e| anyhow!("Failed to count permanently failed transactions: {}", e))?;
 
         Ok(QueueStats {
             total: total as u32,

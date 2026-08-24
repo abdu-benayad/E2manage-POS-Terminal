@@ -1806,4 +1806,216 @@ mod guards {
              prefix rule rather than the one library shape it is meant to admit"
         );
     }
+
+    // ========================================================================
+    // A READ THAT FAILS IS NOT A ROW THAT IS ABSENT
+    // ========================================================================
+
+    /// Blanks `//` comments and string literals, preserving every byte offset and newline.
+    ///
+    /// Length preservation is what lets the caller report a real line number from the blanked
+    /// text. Both classes must go: this repo's prose quotes the very combinators banned below, and
+    /// SQL literals contain the parentheses the balancer counts.
+    fn blank_comments_and_strings(source: &str) -> String {
+        let bytes: Vec<char> = source.chars().collect();
+        let mut out = bytes.clone();
+        let mut i = 0;
+        while i < bytes.len() {
+            let rest: String = bytes[i..(i + 3).min(bytes.len())].iter().collect();
+            if rest.starts_with("//") {
+                while i < bytes.len() && bytes[i] != '\n' {
+                    out[i] = ' ';
+                    i += 1;
+                }
+                continue;
+            }
+            // Raw strings: r"…", r#"…"#, r##"…"##
+            if bytes[i] == 'r' {
+                let mut hashes = 0;
+                let mut j = i + 1;
+                while j < bytes.len() && bytes[j] == '#' {
+                    hashes += 1;
+                    j += 1;
+                }
+                if j < bytes.len() && bytes[j] == '"' {
+                    let terminator: String = std::iter::once('"')
+                        .chain(std::iter::repeat_n('#', hashes))
+                        .collect();
+                    let tail: String = bytes[j + 1..].iter().collect();
+                    let end = tail.find(&terminator).map_or(bytes.len(), |at| {
+                        j + 1 + tail[..at].chars().count() + terminator.chars().count()
+                    });
+                    for slot in out.iter_mut().take(end).skip(i) {
+                        if *slot != '\n' {
+                            *slot = ' ';
+                        }
+                    }
+                    i = end;
+                    continue;
+                }
+            }
+            if bytes[i] == '"' {
+                let mut j = i + 1;
+                while j < bytes.len() {
+                    if bytes[j] == '\\' {
+                        j += 2;
+                        continue;
+                    }
+                    if bytes[j] == '"' {
+                        j += 1;
+                        break;
+                    }
+                    j += 1;
+                }
+                for slot in out.iter_mut().take(j.min(bytes.len())).skip(i) {
+                    if *slot != '\n' {
+                        *slot = ' ';
+                    }
+                }
+                i = j;
+                continue;
+            }
+            i += 1;
+        }
+        out.into_iter().collect()
+    }
+
+    /// The text immediately following a balanced `query_row( … )`, or `None` if it never closes.
+    fn tail_after_balanced_call(code: &str, open_paren: usize) -> Option<&str> {
+        let mut depth = 0usize;
+        for (offset, ch) in code[open_paren..].char_indices() {
+            match ch {
+                '(' => depth += 1,
+                ')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Some(&code[open_paren + offset + 1..]);
+                    }
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+
+    /// Whether a call's tail hands the error straight to a default.
+    ///
+    /// `.ok()` counts: it discards the error into an `Option`, which is the same loss wearing a
+    /// different type. `.map(…)` is followed through, because `.map(…).unwrap_or(…)` is the same
+    /// defect with a transformation in the middle.
+    fn discards_its_error(tail: &str) -> bool {
+        let trimmed = tail.trim_start();
+        for combinator in [".unwrap_or_default", ".unwrap_or_else", ".unwrap_or", ".ok"] {
+            if let Some(rest) = trimmed.strip_prefix(combinator) {
+                if rest.trim_start().starts_with(['(', '<']) {
+                    return true;
+                }
+            }
+        }
+        if let Some(rest) = trimmed.strip_prefix(".map") {
+            let opened = rest.find('(').map(|at| rest.len() - rest[at..].len());
+            if let Some(open) = opened {
+                if let Some(after) = tail_after_balanced_call(rest, open) {
+                    return discards_its_error(after);
+                }
+            }
+        }
+        false
+    }
+
+    struct ReadSite {
+        path: String,
+        line: usize,
+        discards: bool,
+    }
+
+    fn query_row_sites_under(relative_dir: &str) -> Vec<ReadSite> {
+        let dir = repo_root().join(relative_dir);
+        let mut sites = Vec::new();
+        for path in rust_sources() {
+            if !path.starts_with(&dir) {
+                continue;
+            }
+            let raw = std::fs::read_to_string(&path).expect("a scanned source file reads");
+            let code = blank_comments_and_strings(&raw);
+            let shown = path
+                .strip_prefix(repo_root())
+                .unwrap_or(&path)
+                .display()
+                .to_string();
+            let mut from = 0;
+            while let Some(at) = code[from..].find("query_row") {
+                let start = from + at;
+                let after = &code[start + "query_row".len()..];
+                let opened = after.find('(').filter(|at| after[..*at].trim().is_empty());
+                if let Some(open) = opened {
+                    let absolute = start + "query_row".len() + open;
+                    if let Some(tail) = tail_after_balanced_call(&code, absolute) {
+                        sites.push(ReadSite {
+                            path: shown.clone(),
+                            line: code[..start].matches('\n').count() + 1,
+                            discards: discards_its_error(tail),
+                        });
+                    }
+                }
+                from = start + "query_row".len();
+            }
+        }
+        sites
+    }
+
+    /// No read in `pos-services` turns a store failure into an answer.
+    ///
+    /// `is_registered` reported every error as "not registered" and `get_hardware_id` reported
+    /// every error as "no hardware id yet". Neither could tell `QueryReturnedNoRows` — the
+    /// fresh-install case those defaults existed to serve — from a store that could not answer,
+    /// and the second one then wrote a freshly generated identity over the one the platform had
+    /// enrolled. The rule is a predicate rather than a list of sites, because
+    /// `positional-row-access-in-pos-db` is rewriting this population and any list would be stale
+    /// within the hour.
+    ///
+    /// # This guard expects to find nothing, so it proves it can still see
+    ///
+    /// A scan whose passing result is an empty set cannot distinguish *clean* from *blind*. Both
+    /// controls below fire before the assertion that matters: the walker must still find reads,
+    /// and the detector must still recognise one.
+    #[test]
+    fn a_read_in_pos_services_never_flattens_its_error_into_a_default() {
+        let sites = query_row_sites_under("crates/pos-services/src");
+
+        assert!(
+            sites.len() >= 4,
+            "found only {} `query_row` calls in pos-services; the walker is broken and this guard \
+             is passing on an empty corpus",
+            sites.len()
+        );
+
+        assert!(
+            discards_its_error(".unwrap_or_default()"),
+            "the detector no longer recognises a discarded error, so its silence means nothing"
+        );
+        assert!(
+            discards_its_error(" .map(|row| row.get(0)).unwrap_or(0)"),
+            "the detector stopped following `.map(…)`, so the defect hides behind a transformation"
+        );
+        assert!(
+            !discards_its_error("?;"),
+            "the detector flags a propagating read, so every site would look like a violation"
+        );
+
+        let offenders: Vec<String> = sites
+            .iter()
+            .filter(|site| site.discards)
+            .map(|site| format!("{}:{}", site.path, site.line))
+            .collect();
+
+        assert!(
+            offenders.is_empty(),
+            "these reads hand their error to a default, so a store that cannot answer is \
+             indistinguishable from a row that is absent:\n  {}\nMatch on the error instead: \
+             `Err(QueryReturnedNoRows)` is the absent case, and everything else belongs to the \
+             caller.",
+            offenders.join("\n  ")
+        );
+    }
 }

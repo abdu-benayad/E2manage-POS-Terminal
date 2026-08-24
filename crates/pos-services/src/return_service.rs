@@ -468,7 +468,10 @@ impl ReturnService {
         let conn = self.db.connection();
         let conn = conn.lock();
 
-        let result: Option<OfflineTransactionRow> = conn
+        // `.ok()` here discarded the error into the same `None` that means "no such receipt", so a
+        // store that could not answer became "this transaction does not exist" — and the caller
+        // turns that into a refusal the cashier reads as a fact about the customer's receipt.
+        let result: Option<OfflineTransactionRow> = match conn
             .query_row(
                 r#"SELECT offline_id, transaction_number, transaction_type, items_json, payments_json,
                           subtotal, tax_total, discount_total, grand_total, customer_id, customer_name,
@@ -505,8 +508,16 @@ impl ReturnService {
                         catalog_etag: None, // Legacy transactions don't have catalog_etag
                     })
                 },
-            )
-            .ok();
+            ) {
+            Ok(row) => Some(row),
+            Err(rusqlite::Error::QueryReturnedNoRows) => None,
+            Err(e) => {
+                return Err(ReturnError::DatabaseError(format!(
+                    "Failed to look up transaction {}: {}",
+                    receipt_number, e
+                )))
+            }
+        };
 
         if let Some(row) = result {
             // Convert to Transaction model
