@@ -299,6 +299,14 @@ and the only tell was a stat printing 6 files where 8 were intended — the evid
 missing from the commit that claimed it. **`git add` every new file before committing it, and read
 the stat's file count against the number you meant.**
 
+**Row 2 is not a safety net for row 1 — they are disjoint.** A pathspec mixing an explicit new-file
+path with a directory takes the refusal from the *explicit* one, which names only that file. The
+author `git add`s it, re-runs, and the commit succeeds — while the directory silently keeps dropping
+everything else new underneath it. Measured: `-- explicit_new.txt dir` refuses naming only
+`explicit_new.txt`; after adding that one, the commit lands 2 files and leaves `dir/dir_new.txt`
+untracked with no warning. The loud failure and the silent one do not overlap, so surviving a
+refusal tells you nothing about what a directory in the same pathspec left behind.
+
 Recovering after the fact, without disturbing their staging:
 
 ```bash
