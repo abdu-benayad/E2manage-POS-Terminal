@@ -152,6 +152,199 @@ pub struct TerminalConfig {
     /// Enabled features
     #[serde(default)]
     pub features: Vec<String>,
+    /// The tenant's operator-PIN policy, as this terminal receives it at login.
+    ///
+    /// `Option` at *this* level and a required key one level down, which are two different
+    /// questions. A server older than the platform's PIN-policy change sends no `pinPolicy` at
+    /// all, and that is a fact about the server; a server that sends one must say what length it
+    /// requires, even if the answer is "no particular length". See [`TerminalPinPolicy`].
+    ///
+    /// A till that authenticates and immediately goes offline holds only this copy — the sync
+    /// payload's never arrives — which is why the platform puts it on the login response and why
+    /// this is the surface the till reads.
+    #[serde(default)]
+    pub pin_policy: Option<TerminalPinPolicy>,
+}
+
+/// The tenant's operator-PIN policy on the wire.
+///
+/// Mirrors the platform's `TerminalPinPolicyDto`
+/// (`pos/application/dto/terminal-pin-policy.dto.ts`), which both the login response and the sync
+/// payload are built from by one function, so the two projections cannot disagree.
+///
+/// Raw wire numbers, not domain types. The conversion into [`pos_models::PinPolicy`] lives in
+/// [`Self::assemble`] where it is visible and fallible, rather than in a `Deserialize` impl where
+/// a rejected value would read as a malformed response.
+#[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalPinPolicy {
+    /// The length a new PIN must have, or `null` when the tenant requires no particular one.
+    ///
+    /// **A required key that may be null.** The platform's DTO says so explicitly, and the reason
+    /// is that "absent because this payload predates the policy" and "this tenant requires no
+    /// particular length" are different facts a till must not merge.
+    pub pin_length: RequiredNullableLength,
+    /// Attempts before the account locks.
+    pub max_failed_attempts: i64,
+    /// How long a lockout lasts.
+    pub lockout_minutes: i64,
+    /// How long an operator session lives.
+    pub session_hours: i64,
+}
+
+/// A wire field that must be present and may be null.
+///
+/// # Why this is not `Option<i64>`
+///
+/// **Measured, not assumed: `Option<i64>` cannot express this.** `serde`'s derived struct
+/// deserialiser handles a missing field by calling the type's `Deserialize` against a synthetic
+/// deserialiser that answers `deserialize_option` with `None` — so *any* option-shaped field
+/// accepts absence and yields `None`, with or without `#[serde(default)]`, and an explicit
+/// `"pinLength": null` becomes indistinguishable from no key at all. A newtype wrapping
+/// `Option<i64>` does not help either, for the same reason: it still reaches
+/// `deserialize_option`.
+///
+/// This impl calls `deserialize_any`, which that synthetic deserialiser cannot satisfy, so a
+/// missing key is `missing field \`pinLength\`` and a null is [`Self::AnyLength`]. Verified in a
+/// throwaway crate across all three inputs before this was written, and pinned by
+/// `pin_policy_a_missing_length_key_is_not_a_null_one` below.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RequiredNullableLength {
+    /// The tenant named a length. Still a raw wire number: 7 is representable here and refused by
+    /// [`TerminalPinPolicy::assemble`].
+    Exactly(i64),
+    /// The tenant requires no particular length. An answer, not an absence.
+    AnyLength,
+}
+
+impl<'de> Deserialize<'de> for RequiredNullableLength {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct Reader;
+
+        impl serde::de::Visitor<'_> for Reader {
+            type Value = RequiredNullableLength;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("a PIN length, or null for no particular length")
+            }
+
+            fn visit_i64<E: serde::de::Error>(self, value: i64) -> Result<Self::Value, E> {
+                Ok(RequiredNullableLength::Exactly(value))
+            }
+
+            fn visit_u64<E: serde::de::Error>(self, value: u64) -> Result<Self::Value, E> {
+                i64::try_from(value)
+                    .map(RequiredNullableLength::Exactly)
+                    .map_err(|_| E::custom(format!("PIN length {value} does not fit an i64")))
+            }
+
+            fn visit_unit<E: serde::de::Error>(self) -> Result<Self::Value, E> {
+                Ok(RequiredNullableLength::AnyLength)
+            }
+
+            fn visit_none<E: serde::de::Error>(self) -> Result<Self::Value, E> {
+                Ok(RequiredNullableLength::AnyLength)
+            }
+        }
+
+        deserializer.deserialize_any(Reader)
+    }
+}
+
+/// Why a PIN policy the platform sent could not be assembled.
+///
+/// Structured rather than a string, and never flattened into a default. A policy that failed to
+/// parse is not a permissive policy: degrading it would turn an outage or a contract drift into a
+/// silent relaxation, at the moment the platform is least healthy.
+#[derive(Debug, thiserror::Error)]
+pub enum PinPolicyUnreadable {
+    /// The server sent no `pinPolicy` at all — older than the platform's PIN-policy change.
+    #[error("this server sent no PIN policy; it predates the platform's PIN-policy change")]
+    NotSent,
+    /// The length the tenant requires is not one this till can represent.
+    #[error(transparent)]
+    Length(#[from] pos_models::UninterpretablePinLength),
+    /// One of the three lockout numbers is outside the range the domain allows.
+    #[error(transparent)]
+    Knob(#[from] pos_models::PinPolicyError),
+    /// A wire number does not fit the type the domain constructor takes.
+    ///
+    /// Its own variant rather than a clamp. `maxFailedAttempts: 300` clamped to `u8::MAX` is a
+    /// policy of 255 attempts that the platform never sent and nobody chose — a silent relaxation
+    /// of exactly the control that stops brute force. The same reasoning as refusing to default a
+    /// policy that failed to parse, one layer down.
+    #[error(
+        "the platform sent `{field}` as {value}, which is outside the range this till can hold"
+    )]
+    OutOfRange {
+        /// Which wire field.
+        field: &'static str,
+        /// What it said.
+        value: i64,
+    },
+}
+
+/// Narrows a wire number, refusing rather than clamping.
+fn narrow<T: TryFrom<i64>>(field: &'static str, value: i64) -> Result<T, PinPolicyUnreadable> {
+    T::try_from(value).map_err(|_| PinPolicyUnreadable::OutOfRange { field, value })
+}
+
+impl TerminalPinPolicy {
+    /// Assembles the domain policy this till carries from login until sign-out.
+    ///
+    /// # `offline_window` is a parameter because it comes from somewhere else
+    ///
+    /// Five knobs, two sources. `OfflineWindow` is `POS_CompanyConfiguration.maxOfflineHours`,
+    /// which travels with the company configuration rather than with the PIN policy, and this DTO
+    /// does not carry it. Taking it as an argument is what makes the second source visible in the
+    /// type instead of invented here.
+    ///
+    /// # What this deliberately does not do
+    ///
+    /// It does not pre-validate anything the operator types. A credential policy governs
+    /// **minting, not presentation**: enforcing a tenant's current length when a PIN is presented
+    /// locks out every operator whose PIN predates the change, through the failed-attempt
+    /// counter. The policy is carried so the screen can *say* what is required. Rotation stays a
+    /// server verdict, arriving as `POS_PIN_ROTATION_REQUIRED`.
+    pub fn assemble(
+        &self,
+        offline_window: pos_models::OfflineWindow,
+    ) -> Result<pos_models::PinPolicy, PinPolicyUnreadable> {
+        let stored = match self.pin_length {
+            RequiredNullableLength::Exactly(digits) => Some(digits),
+            RequiredNullableLength::AnyLength => None,
+        };
+
+        Ok(pos_models::PinPolicy::new(
+            pos_models::RequiredPinLength::read(stored)?,
+            pos_models::MaxAttempts::new(narrow("maxFailedAttempts", self.max_failed_attempts)?)?,
+            pos_models::LockoutPeriod::from_minutes(narrow(
+                "lockoutMinutes",
+                self.lockout_minutes,
+            )?)?,
+            pos_models::SessionLifetime::from_hours(narrow("sessionHours", self.session_hours)?)?,
+            offline_window,
+        ))
+    }
+}
+
+impl TerminalConfig {
+    /// The tenant's PIN policy, or why this till has none.
+    ///
+    /// `NotSent` rather than a default: a screen that cannot learn the rules must say so, not
+    /// invent them. See [`PinPolicyUnreadable`].
+    pub fn pin_policy(
+        &self,
+        offline_window: pos_models::OfflineWindow,
+    ) -> Result<pos_models::PinPolicy, PinPolicyUnreadable> {
+        self.pin_policy
+            .as_ref()
+            .ok_or(PinPolicyUnreadable::NotSent)?
+            .assemble(offline_window)
+    }
 }
 
 /// Tax configuration
@@ -979,5 +1172,173 @@ mod tests {
         let unknown = VERIFIED.replace(r#""role": "SUPERVISOR""#, r#""role": "AUDITOR""#);
 
         assert!(serde_json::from_str::<VerifyPinResponse>(&unknown).is_err());
+    }
+}
+
+#[cfg(test)]
+mod pin_policy_tests {
+    use super::*;
+    use pos_models::{OfflineWindow, PinLength, RequiredPinLength};
+
+    /// A login `config` object as the platform builds it.
+    ///
+    /// **Derived from the platform's emitting code, not composed from what the shape ought to
+    /// be.** Field names and nesting come from `TerminalConfigDto`
+    /// (`authenticate-terminal.handler.ts:60-72`) and `TerminalPinPolicyDto`
+    /// (`terminal-pin-policy.dto.ts:27-49`); the values are that module's own resolved defaults
+    /// (`operator-pin.policy.ts:153-155` — 5 / 30 / 12). A fixture invented from the intended
+    /// shape is green forever over a payload nothing sends.
+    fn config_json(pin_policy: &str) -> String {
+        format!(
+            r#"{{
+                "locale": "ar",
+                "currency": "LYD",
+                "businessSector": "RETAIL",
+                "features": [],
+                "pinPolicy": {pin_policy}
+            }}"#
+        )
+    }
+
+    fn window() -> OfflineWindow {
+        OfflineWindow::from_hours(24).expect("twenty-four is not negative")
+    }
+
+    fn parse(pin_policy: &str) -> TerminalConfig {
+        serde_json::from_str(&config_json(pin_policy)).expect("the platform's own shape")
+    }
+
+    #[test]
+    fn pin_policy_a_null_length_is_an_answer_not_an_absence() {
+        let config = parse(
+            r#"{"pinLength": null, "maxFailedAttempts": 5, "lockoutMinutes": 30, "sessionHours": 12}"#,
+        );
+        let policy = config.pin_policy(window()).expect("a well-formed policy");
+        assert_eq!(policy.length(), RequiredPinLength::AnyPlatformLength);
+    }
+
+    #[test]
+    fn pin_policy_each_length_the_platform_can_send_becomes_its_own_rule() {
+        // The platform's `OPERATOR_PIN_LENGTHS` is `[4, 5, 6]` — `operator-pin.policy.ts:35`.
+        for (digits, expected) in [
+            (4, PinLength::Four),
+            (5, PinLength::Five),
+            (6, PinLength::Six),
+        ] {
+            let config = parse(&format!(
+                r#"{{"pinLength": {digits}, "maxFailedAttempts": 5, "lockoutMinutes": 30, "sessionHours": 12}}"#
+            ));
+            let policy = config.pin_policy(window()).expect("a well-formed policy");
+            assert_eq!(
+                policy.length(),
+                RequiredPinLength::Exactly(expected),
+                "the platform said {digits} digits"
+            );
+        }
+    }
+
+    #[test]
+    fn pin_policy_a_length_outside_the_domain_is_refused_rather_than_defaulted() {
+        for digits in [3, 7, 0, -1] {
+            let config = parse(&format!(
+                r#"{{"pinLength": {digits}, "maxFailedAttempts": 5, "lockoutMinutes": 30, "sessionHours": 12}}"#
+            ));
+            let failure = config
+                .pin_policy(window())
+                .expect_err("a length outside the domain must not assemble");
+            assert!(
+                matches!(failure, PinPolicyUnreadable::Length(_)),
+                "{digits} produced {failure:?} rather than a length failure"
+            );
+        }
+    }
+
+    /// The property `Option<i64>` silently cannot express. See [`RequiredNullableLength`].
+    #[test]
+    fn pin_policy_a_missing_length_key_is_not_a_null_one() {
+        let missing = serde_json::from_str::<TerminalConfig>(&config_json(
+            r#"{"maxFailedAttempts": 5, "lockoutMinutes": 30, "sessionHours": 12}"#,
+        ));
+        let error = missing.expect_err("a policy with no `pinLength` key must not deserialise");
+        assert!(
+            error.to_string().contains("pinLength"),
+            "the failure must name the missing key, got: {error}"
+        );
+
+        // Control: the *only* difference between this and the case above is the key's presence,
+        // and that case succeeds. Without this, the assertion above would also pass if the whole
+        // fixture were malformed.
+        let explicit_null = parse(
+            r#"{"pinLength": null, "maxFailedAttempts": 5, "lockoutMinutes": 30, "sessionHours": 12}"#,
+        );
+        assert_eq!(
+            explicit_null
+                .pin_policy(window())
+                .expect("an explicit null is a valid policy")
+                .length(),
+            RequiredPinLength::AnyPlatformLength
+        );
+    }
+
+    #[test]
+    fn pin_policy_an_older_server_sending_none_is_told_apart_from_one_sending_a_bad_one() {
+        let absent: TerminalConfig = serde_json::from_str(
+            r#"{"locale": "ar", "currency": "LYD", "businessSector": "RETAIL", "features": []}"#,
+        )
+        .expect("a server that predates the policy still deserialises");
+
+        assert!(
+            matches!(
+                absent.pin_policy(window()),
+                Err(PinPolicyUnreadable::NotSent)
+            ),
+            "a server that sent no policy must be distinguishable from one that sent a bad one"
+        );
+    }
+
+    #[test]
+    fn pin_policy_a_wire_number_too_large_is_refused_rather_than_clamped() {
+        // `maxFailedAttempts: 300` clamped into a `u8` is a policy of 255 attempts that nobody
+        // chose — a silent relaxation of the control that stops brute force.
+        let config = parse(
+            r#"{"pinLength": 4, "maxFailedAttempts": 300, "lockoutMinutes": 30, "sessionHours": 12}"#,
+        );
+        match config.pin_policy(window()) {
+            Err(PinPolicyUnreadable::OutOfRange { field, value }) => {
+                assert_eq!(field, "maxFailedAttempts");
+                assert_eq!(value, 300);
+            }
+            other => panic!("300 attempts produced {other:?} rather than a refusal"),
+        }
+    }
+
+    #[test]
+    fn pin_policy_the_three_lockout_numbers_arrive_as_the_platform_sent_them() {
+        let config = parse(
+            r#"{"pinLength": 6, "maxFailedAttempts": 5, "lockoutMinutes": 30, "sessionHours": 12}"#,
+        );
+        let policy = config.pin_policy(window()).expect("a well-formed policy");
+
+        assert_eq!(policy.max_attempts().get(), 5);
+        assert_eq!(policy.lockout_period().minutes_to_state(), 30);
+        assert_eq!(policy.session_lifetime().as_hours(), 12);
+        // And the fifth knob came from the argument, not from this payload.
+        assert_eq!(policy.offline_window().as_hours(), 24);
+    }
+
+    #[test]
+    fn pin_policy_assembly_never_pre_validates_what_an_operator_types() {
+        // A credential policy governs minting, not presentation. If `Pin::parse` ever grew a
+        // policy parameter, this stops compiling — which is the point.
+        let config = parse(
+            r#"{"pinLength": 6, "maxFailedAttempts": 5, "lockoutMinutes": 30, "sessionHours": 12}"#,
+        );
+        let policy = config.pin_policy(window()).expect("a well-formed policy");
+        assert_eq!(policy.length(), RequiredPinLength::Exactly(PinLength::Six));
+
+        // A four-digit PIN still parses under a six-digit rule. Enforcing the rule here would
+        // lock out every operator whose PIN predates the change, through the attempt counter.
+        let pin = Pin::parse("1234").expect("four ASCII digits are a platform-legal PIN");
+        assert_eq!(pin.length(), 4);
     }
 }
