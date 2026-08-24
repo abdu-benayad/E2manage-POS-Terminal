@@ -123,9 +123,79 @@ offer"*. So an advisory lane's timeout is a **strict red**, and reading the poli
 without reading that line gives you the wrong colour for the whole run.
 
 
+## A guard keyed on the vocabulary it surveyed — 2026-08-24
+
+Same shape as the four above, one layer in: those are about a **build selector** that cannot see
+part of the tree. This is about a **scan predicate** that cannot see part of its own target — and
+it is worse, because a named guard retires the question it fails to ask.
+
+Writing `the_till_never_reads_a_refusal_out_of_prose`, I surveyed the tree for the anti-pattern,
+found `contains("409")` and `contains("400")` and `contains("404")`, and keyed the guard on
+`contains("4xx")` / `contains("5xx")`. It passed. It would have passed forever.
+
+The real population in `SyncFailureType::classify` (`offline_service.rs:80-114`) is **nine**
+checks, and **seven are words**:
+
+```
+95:  msg.contains("conflict")        104: msg.contains("invalid")
+96:  msg.contains("already exists")  105: msg.contains("not found")
+97:  msg.contains("duplicate")       106: msg.contains("400")
+98:  msg.contains("409")             107: msg.contains("validation failed")
+                                     108: msg.contains("malformed")
+```
+
+The digit guard was blind to seven of the nine, **including `"invalid"`** — the exact matcher
+whose damage is the reason the rule exists, which classified `POS_OPERATOR_SESSION_INVALID` as a
+permanent data fault and abandoned a queued sale forever. A new file could have added
+`msg.contains("invalid")` the next day and the guard would have stayed green while reporting, by
+its name, that the till never reads a refusal out of prose.
+
+**The vocabulary is the survey; the shape is the rule.**
+
+That is the actionable form of *"a guard written from a survey certifies the survey"* — it says
+what to key on instead. The fix keys on the **branch shape**: a comment-stripped line that begins
+`if` / `} else if` / `||` / `&&` / `return` **and** tests an error-shaped value with `.contains("`,
+saying nothing about which string. Measured over `crates/` + `src/`:
+
+| predicate | matches | false positives |
+| --- | --- | --- |
+| digit vocabulary (`4xx`/`5xx`) | 5 | 1 — `operator.rs:753`, a **discount percent** of 500 |
+| branch shape | 11 in 3 files | 0 |
+
+The shape predicate also fixes the false positive for free, because it distinguishes **deciding**
+from **describing**: every test assertion that checks a rendered message begins with the receiver
+(`refused.to_string().contains(…)`) rather than with a branch keyword. The vocabulary predicate
+could not tell an assertion about a discount ceiling from a branch on an HTTP status, because at
+the level it was looking, they are the same string.
+
+### The half that only a mutation test reaches
+
+A guard that has never been seen to fail has not been tested — but *which* mutation you choose is
+the whole question here. A digit-spelled probe would have gone red against **both** versions of
+this guard and proved nothing about the difference. The probe that discriminates is the one aimed
+at the form the original measurement could not see:
+
+```
+contains("418")   on an error binding  -> red under both predicates   (proves nothing)
+contains("teapot") on an error binding -> red only under branch shape (the whole finding)
+```
+
+**Mutate toward the blind spot you suspect, not toward the case you already handle.** The
+companion lesson on this — mutation-testing a guard against the form its own measurement was blind
+to — is in `till/doc/guard-tests`; this entry is the same lesson from the population side, that
+one from the predicate side.
+
+### A probe that does not fire is not automatically a guard that failed
+
+A sixth probe here — `hardware_id.contains("418")` — did not turn the guard red, and the guard was
+right: `hardware_id` is not an error. The probe was wrong. Read a non-firing mutation as a claim
+about the probe first and about the guard second, or you will weaken a correct predicate to make a
+bad probe pass.
+
 ## The two rules a verification claim has to satisfy
 
 1. **Name the selector's blind spot before quoting its result.** `--workspace` excludes two
-   crates; `-p` excludes the root package's tests; stdout parsing excludes a silent replay.
+   crates; `-p` excludes the root package's tests; stdout parsing excludes a silent replay; **a
+   scan keyed on the vocabulary you surveyed excludes every other spelling of its own target.**
 2. **A green is a claim about what the command observed**, never about the tree. Say which one
    you mean.
