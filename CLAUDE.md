@@ -454,6 +454,42 @@ or `wc -l` on the untruncated stream. Same family as `$?` after a pipe, and it b
 reason: the care goes into the argument, and nobody spends scepticism on how they printed the
 output.
 
+**Three more instrument rules, all measured 2026-08-24, each found by a different lane.**
+
+**A scan with a tolerated class must assert that class is non-empty, or tolerance and blindness
+produce identical output.** The pact guard exempts one library-emitted matcher shape
+(`$…heldBy[*].*`). Made to skip `*` entirely, its drift list stayed **empty and it reported clean** —
+the check that finds drift cannot detect its own blindness; only an assertion about what it must
+still be seeing can. Same structure arrived independently from `pos-db`: *"the table is unchanged"*
+is also what a bulk write that never writes anything produces, so the rollback test needs a
+succeeds-and-commits control beside it. **Every expected-empty result needs a positive control, and
+the tolerated case is the best one available.**
+
+**A number that survives the repair of its own instrument is a coincidence, not a confirmation.**
+A bounded multi-line regex (`query_row\([\s\S]{0,400}?\)…`) counted 16 flattening sites, and
+**silently could not match `z_reports.rs:110` at any boundary rule** because that call's body runs
+past 400 characters. A paren-balancing scan returns 16 again — *a different sixteen*. Re-running and
+seeing the same total would have retired the question. **The membership is the reading; the total is
+a summary, and a summary can hold still while everything under it moves.** Also: publish a count with
+its boundary rule and the command, since Rule A gives 16 and Rule B gives 19 off the same scan. And
+the control was worse than the finding — the "81 total" beside it was `rg -c`, a *text* count
+including comments and test names; the call-site total is **78**. A control derived less carefully
+than the finding it certifies is not a control.
+
+**A test can be correct about an invented input indefinitely, and it reads as coverage of the real
+one.** `failure.rs::error_envelope_carries_per_field_validation_failures` feeds
+`{"message":…,"errors":[…]}` — **no `error` key at all** — and no branch of the platform's error
+middleware emits that body. Both assertions true, green since it was written, over a path that is
+dead. This is adjacent to *a guard written from a survey certifies the survey* and strictly worse:
+the survey version at least looked at the tree. **Fixtures for a remote system's responses must be
+derived from that system's emitting code or a captured response, never composed from what the shape
+ought to be.**
+
+**And two people running the same method is one derivation.** Two lanes independently "confirmed" the
+16 above using bounded regexes of the same shape, and the agreement read as corroboration.
+Independence is a property of the *method*, not of who is at the keyboard — see
+`Agreement is not corroboration` in the cross-repo section below.
+
 This is timing, not discipline — the same commands are clean whenever nothing else happens to be
 staged, which is why it survives review and bites later.
 
