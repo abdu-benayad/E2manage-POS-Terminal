@@ -49,8 +49,8 @@ use crate::parse::ParseError;
 use crate::platform_sync::PlatformSync;
 use crate::shift_service::server_shift_id;
 use pos_api::{ApiClient, ApiFailure, CreateReturnRequest, ReturnItemRequest, ServerErrorCode};
-use pos_db::decimal_from_sqlite;
-use pos_db::transactions::OfflineTransactionRow;
+use pos_db::projection::read_one;
+use pos_db::transactions::{OfflineTransactionRow, OFFLINE_TRANSACTION_ROW};
 use pos_db::Database;
 use pos_models::transaction::{
     Payment, PaymentMethod, Transaction, TransactionItem, TransactionStatus,
@@ -459,72 +459,63 @@ impl ReturnService {
         Ok(None)
     }
 
-    /// Finds a transaction in the local database
+    /// Finds one transaction row by receipt or transaction number.
+    ///
+    /// The projection is [`OFFLINE_TRANSACTION_ROW`] rather than a hand-written column list, and
+    /// that closes a live defect **by construction**: the list this replaces named 22 columns for
+    /// a 23-column type and closed with `catalog_etag: None, // Legacy transactions don't have
+    /// catalog_etag`. The column has existed since `SCHEMA_V7`; the query simply never asked for
+    /// it, so every transaction looked up by receipt for a return came back having forgotten
+    /// which catalogue version priced it. The comment stated a reason that was not the reason.
+    /// There is now nowhere to write a short projection for this shape.
+    ///
+    /// The free [`read_one`] over the guard taken here, not `Database::select_one` — the
+    /// connection lock is not reentrant and a `&self` call would hang a return lookup with the
+    /// customer standing at the till.
+    fn find_local_transaction_row(
+        &self,
+        receipt_number: &str,
+    ) -> ReturnServiceResult<Option<OfflineTransactionRow>> {
+        let conn = self.db.connection();
+        let conn = conn.lock();
+
+        // `.ok()` here once discarded the error into the same `None` that means "no such
+        // receipt", so a store that could not answer became "this transaction does not exist" —
+        // and the caller turns that into a refusal the cashier reads as a fact about the
+        // customer's receipt. `read_one` keeps the distinction the repaired code drew: no row is
+        // `None`, and anything else is an error.
+        let row: Option<OfflineTransactionRow> = read_one(
+            &conn,
+            OFFLINE_TRANSACTION_ROW.reader(),
+            "FROM offline_transactions \
+             WHERE receipt_number = ?1 OR transaction_number = ?1 \
+             LIMIT 1",
+            [receipt_number],
+        )
+        .map_err(|e| {
+            ReturnError::DatabaseError(format!(
+                "Failed to look up transaction {}: {}",
+                receipt_number, e
+            ))
+        })?;
+
+        Ok(row)
+    }
+
+    /// The same lookup, widened into the domain type.
+    ///
+    /// Split from [`Self::find_local_transaction_row`] because `Transaction` has **no**
+    /// `catalog_etag` field, so the column this task restored is invisible on the far side of
+    /// this conversion and no test through here could see it. The split is what makes the
+    /// property assertable at all; see
+    /// `a_catalog_etag_survives_the_lookup_the_projection_used_to_drop`.
     fn find_local_transaction(
         &self,
         receipt_number: &str,
     ) -> ReturnServiceResult<Option<Transaction>> {
-        // Search offline transactions table by receipt number
-        let conn = self.db.connection();
-        let conn = conn.lock();
-
-        // `.ok()` here discarded the error into the same `None` that means "no such receipt", so a
-        // store that could not answer became "this transaction does not exist" — and the caller
-        // turns that into a refusal the cashier reads as a fact about the customer's receipt.
-        let result: Option<OfflineTransactionRow> = match conn
-            .query_row(
-                r#"SELECT offline_id, transaction_number, transaction_type, items_json, payments_json,
-                          subtotal, tax_total, discount_total, grand_total, customer_id, customer_name,
-                          shift_id, operator_id, terminal_id, receipt_number, notes, created_at,
-                          sync_status, server_id, retry_count, last_error, last_retry_at
-                   FROM offline_transactions
-                   WHERE receipt_number = ?1 OR transaction_number = ?1
-                   LIMIT 1"#,
-                [receipt_number],
-                |row| {
-                    Ok(OfflineTransactionRow {
-                        offline_id: row.get(0)?,
-                        transaction_number: row.get(1)?,
-                        transaction_type: row.get(2)?,
-                        items_json: row.get(3)?,
-                        payments_json: row.get(4)?,
-                        subtotal: decimal_from_sqlite(row.get(5)?),
-                        tax_total: decimal_from_sqlite(row.get(6)?),
-                        discount_total: decimal_from_sqlite(row.get(7)?),
-                        grand_total: decimal_from_sqlite(row.get(8)?),
-                        customer_id: row.get(9)?,
-                        customer_name: row.get(10)?,
-                        shift_id: row.get(11)?,
-                        operator_id: pos_db::column::optional_operator_id(row, 12)?,
-                        terminal_id: row.get(13)?,
-                        receipt_number: row.get(14)?,
-                        notes: row.get(15)?,
-                        created_at: row.get(16)?,
-                        sync_status: row.get(17)?,
-                        server_id: row.get(18)?,
-                        retry_count: row.get(19)?,
-                        last_error: row.get(20)?,
-                        last_retry_at: row.get(21)?,
-                        catalog_etag: None, // Legacy transactions don't have catalog_etag
-                    })
-                },
-            ) {
-            Ok(row) => Some(row),
-            Err(rusqlite::Error::QueryReturnedNoRows) => None,
-            Err(e) => {
-                return Err(ReturnError::DatabaseError(format!(
-                    "Failed to look up transaction {}: {}",
-                    receipt_number, e
-                )))
-            }
-        };
-
-        if let Some(row) = result {
-            // Convert to Transaction model
-            let txn = self.row_to_transaction(&row)?;
-            Ok(Some(txn))
-        } else {
-            Ok(None)
+        match self.find_local_transaction_row(receipt_number)? {
+            Some(row) => Ok(Some(self.row_to_transaction(&row)?)),
+            None => Ok(None),
         }
     }
 
@@ -1343,5 +1334,112 @@ mod tests {
 
         let number = service.generate_return_number("TERM-001");
         assert!(number.starts_with("RTN-TERM-001-"));
+    }
+
+    // ----------------------------------------------------------------------------------------
+    // The projection that used to be one column short.
+    // ----------------------------------------------------------------------------------------
+
+    fn a_transaction_priced_by_catalogue(etag: Option<&str>) -> OfflineTransactionRow {
+        OfflineTransactionRow {
+            offline_id: "offline-1".to_string(),
+            transaction_number: Some("TXN-1".to_string()),
+            transaction_type: "SALE".to_string(),
+            items_json: "[]".to_string(),
+            payments_json: "[]".to_string(),
+            subtotal: Decimal::from(10),
+            tax_total: Decimal::from(1),
+            discount_total: Decimal::ZERO,
+            grand_total: Decimal::from(11),
+            customer_id: None,
+            customer_name: None,
+            shift_id: None,
+            operator_id: None,
+            terminal_id: Some("POS-001".to_string()),
+            receipt_number: Some("R-1".to_string()),
+            notes: None,
+            created_at: "2026-08-24T10:00:00Z".to_string(),
+            sync_status: "PENDING".to_string(),
+            server_id: None,
+            retry_count: 0,
+            last_error: None,
+            last_retry_at: None,
+            catalog_etag: etag.map(String::from),
+        }
+    }
+
+    fn a_service_over(db: Arc<Database>) -> ReturnService {
+        ReturnService::new(Arc::new(ApiClient::new("http://localhost")), db)
+    }
+
+    fn a_migrated_db() -> Arc<Database> {
+        let db = Arc::new(Database::in_memory().unwrap());
+        {
+            let conn = db.connection();
+            let conn = conn.lock();
+            pos_db::run_migrations(&conn).unwrap();
+        }
+        db
+    }
+
+    /// The column the hand-written projection never asked for comes back.
+    ///
+    /// This is the whole defect: the list this replaced named 22 columns for a 23-column type and
+    /// filled the last one with `None` under a comment blaming legacy data. It could not be
+    /// tested through `find_local_transaction`, because `Transaction` has no `catalog_etag` — the
+    /// value was dropped again one line later, so a green test there would have proved nothing.
+    #[test]
+    fn a_catalog_etag_survives_the_lookup_the_projection_used_to_drop() {
+        let db = a_migrated_db();
+        db.save_offline_transaction(&a_transaction_priced_by_catalogue(Some("catalogue-v7")))
+            .unwrap();
+
+        let found = a_service_over(db)
+            .find_local_transaction_row("R-1")
+            .unwrap()
+            .expect("the transaction this test just wrote");
+
+        assert_eq!(
+            found.catalog_etag.as_deref(),
+            Some("catalogue-v7"),
+            "the receipt lookup forgot which catalogue version priced the sale"
+        );
+    }
+
+    /// The control: a transaction genuinely written without one still reads `None`.
+    ///
+    /// Without this, a projection that hard-coded `Some("catalogue-v7")` would pass the test
+    /// above. It also pins the case the deleted comment claimed was the only case.
+    #[test]
+    fn a_transaction_with_no_catalog_etag_reads_none_rather_than_a_value() {
+        let db = a_migrated_db();
+        db.save_offline_transaction(&a_transaction_priced_by_catalogue(None))
+            .unwrap();
+
+        let found = a_service_over(db)
+            .find_local_transaction_row("R-1")
+            .unwrap()
+            .expect("the transaction this test just wrote");
+        assert_eq!(found.catalog_etag, None);
+    }
+
+    /// Lookup by transaction number, not just receipt number — the `OR` arm of the predicate.
+    #[test]
+    fn the_lookup_matches_a_transaction_number_as_well_as_a_receipt_number() {
+        let db = a_migrated_db();
+        db.save_offline_transaction(&a_transaction_priced_by_catalogue(Some("catalogue-v7")))
+            .unwrap();
+        let service = a_service_over(db);
+
+        assert!(service
+            .find_local_transaction_row("TXN-1")
+            .unwrap()
+            .is_some());
+        assert!(service.find_local_transaction_row("R-1").unwrap().is_some());
+        // …and a receipt nobody issued is `None`, not an error and not a match.
+        assert!(service
+            .find_local_transaction_row("R-nope")
+            .unwrap()
+            .is_none());
     }
 }
