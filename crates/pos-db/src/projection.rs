@@ -178,9 +178,24 @@ impl<T> RowReader<T> {
     pub fn select_list(&self) -> String {
         self.entries
             .iter()
-            .map(|(expression, _)| *expression)
+            .map(|(expression, name)| Self::aliased(expression, expression, name))
             .collect::<Vec<_>>()
             .join(", ")
+    }
+
+    /// Renders one entry, aliasing it only where the expression is not already the result name.
+    ///
+    /// The alias is not cosmetic. SQLite names the result column of `COUNT(*)` after the
+    /// expression, and [`Self::debug_assert_column_names`] compares result names against the
+    /// declared ones — so an un-aliased aggregate fails its own shape check. Every ordinary
+    /// column is its own name, which is why this went unnoticed until the first aggregate: a bug
+    /// invisible in 181 of the 184 mappings here.
+    fn aliased(rendered: &str, expression: &str, name: &str) -> String {
+        if expression == name {
+            rendered.to_string()
+        } else {
+            format!("{rendered} AS {name}")
+        }
     }
 
     /// The `SELECT` list with every column qualified by a table alias: `"p.id, p.sku, …"`.
@@ -191,7 +206,9 @@ impl<T> RowReader<T> {
     pub fn select_list_qualified(&self, alias: &str) -> String {
         self.entries
             .iter()
-            .map(|(expression, _)| format!("{alias}.{expression}"))
+            .map(|(expression, name)| {
+                Self::aliased(&format!("{alias}.{expression}"), expression, name)
+            })
             .collect::<Vec<_>>()
             .join(", ")
     }
@@ -331,6 +348,37 @@ impl<T> RowMapping<T> {
     }
 }
 
+/// Renders any `ToSql` value as an owned [`Value`].
+///
+/// The bare-identifier arm of `row_mapping!` uses this: a column whose type already knows how to
+/// cross the boundary needs no codec, and inventing one per primitive would be nine kinds of
+/// nothing. It deliberately does **not** go through `From<ValueRef> for Value`, which `expect`s on
+/// invalid UTF-8 — a panic path in non-test code, however unreachable it looks from here.
+pub fn to_value<T: rusqlite::ToSql + ?Sized>(value: &T) -> SqliteResult<Value> {
+    use rusqlite::types::{ToSqlOutput, ValueRef};
+    match value.to_sql()? {
+        ToSqlOutput::Owned(owned) => Ok(owned),
+        ToSqlOutput::Borrowed(ValueRef::Null) => Ok(Value::Null),
+        ToSqlOutput::Borrowed(ValueRef::Integer(int)) => Ok(Value::Integer(int)),
+        ToSqlOutput::Borrowed(ValueRef::Real(real)) => Ok(Value::Real(real)),
+        ToSqlOutput::Borrowed(ValueRef::Text(bytes)) => String::from_utf8(bytes.to_vec())
+            .map(Value::Text)
+            .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error))),
+        ToSqlOutput::Borrowed(ValueRef::Blob(bytes)) => Ok(Value::Blob(bytes.to_vec())),
+        // `ToSqlOutput` is `#[non_exhaustive]`, and the remaining variants are all behind rusqlite
+        // features this crate does not enable. If one ever arrives, it arrives as an error naming
+        // itself rather than as a silently wrong binding.
+        other => Err(rusqlite::Error::ToSqlConversionFailure(Box::new(
+            UnsupportedBinding(format!("{other:?}")),
+        ))),
+    }
+}
+
+/// A `ToSql` output shape this crate has no column for.
+#[derive(Debug, thiserror::Error)]
+#[error("a value rendered as `{0}`, which no column here can hold")]
+pub struct UnsupportedBinding(String);
+
 // ============================================================================
 // Reading against a connection the caller already holds
 // ============================================================================
@@ -346,13 +394,21 @@ pub fn scalar<T: FromSql>(conn: &Connection, sql: &str, params: impl Params) -> 
 }
 
 /// Reads at most one row of `shape`.
+///
+/// `from_clause` is everything after the projection and **includes its own `FROM`** — `"FROM
+/// operators WHERE id = ?1"`. It is spelled that way because [`read_all_qualified`]'s one caller
+/// needs `FROM products p JOIN products_fts fts …`, which is not a table name with decoration.
+/// The parameter is named for the clause rather than the table because a `&str` that must begin
+/// with a keyword is an unmarked socket: the author of this module wrote three call sites without
+/// the `FROM` within an hour of writing the function. The failure is loud — SQLite refuses the
+/// statement — so the name is the fix, not a validator.
 pub fn read_one<T>(
     conn: &Connection,
     shape: &RowReader<T>,
-    table_expression: &str,
+    from_clause: &str,
     params: impl Params,
 ) -> SqliteResult<Option<T>> {
-    let sql = format!("SELECT {} {table_expression}", shape.select_list());
+    let sql = format!("SELECT {} {from_clause}", shape.select_list());
     conn.query_row(&sql, params, |row| shape.read(row))
         .optional()
 }
@@ -361,10 +417,10 @@ pub fn read_one<T>(
 pub fn read_all<T>(
     conn: &Connection,
     shape: &RowReader<T>,
-    table_expression: &str,
+    from_clause: &str,
     params: impl Params,
 ) -> SqliteResult<Vec<T>> {
-    let sql = format!("SELECT {} {table_expression}", shape.select_list());
+    let sql = format!("SELECT {} {from_clause}", shape.select_list());
     let mut statement = conn.prepare(&sql)?;
     let rows = statement.query_map(params, |row| shape.read(row))?;
     rows.collect()
@@ -378,11 +434,11 @@ pub fn read_all_qualified<T>(
     conn: &Connection,
     shape: &RowReader<T>,
     alias: &str,
-    table_expression: &str,
+    from_clause: &str,
     params: impl Params,
 ) -> SqliteResult<Vec<T>> {
     let sql = format!(
-        "SELECT {} {table_expression}",
+        "SELECT {} {from_clause}",
         shape.select_list_qualified(alias)
     );
     let mut statement = conn.prepare(&sql)?;
@@ -415,24 +471,24 @@ impl Database {
     pub fn select_one<T>(
         &self,
         shape: &RowReader<T>,
-        table_expression: &str,
+        from_clause: &str,
         params: impl Params,
     ) -> SqliteResult<Option<T>> {
         let conn = self.connection();
         let conn = conn.lock();
-        read_one(&conn, shape, table_expression, params)
+        read_one(&conn, shape, from_clause, params)
     }
 
     /// Reads every row of `shape`. See [`Database::select_one`] on the lock.
     pub fn select_all<T>(
         &self,
         shape: &RowReader<T>,
-        table_expression: &str,
+        from_clause: &str,
         params: impl Params,
     ) -> SqliteResult<Vec<T>> {
         let conn = self.connection();
         let conn = conn.lock();
-        read_all(&conn, shape, table_expression, params)
+        read_all(&conn, shape, from_clause, params)
     }
 
     /// Reads every row of `shape` with each column qualified. See the lock note above.
@@ -440,12 +496,12 @@ impl Database {
         &self,
         shape: &RowReader<T>,
         alias: &str,
-        table_expression: &str,
+        from_clause: &str,
         params: impl Params,
     ) -> SqliteResult<Vec<T>> {
         let conn = self.connection();
         let conn = conn.lock();
-        read_all_qualified(&conn, shape, alias, table_expression, params)
+        read_all_qualified(&conn, shape, alias, from_clause, params)
     }
 
     /// Reads a single-column, single-row query. See the lock note above.
@@ -461,6 +517,328 @@ impl Database {
         let conn = conn.lock();
         write(&conn, mapping, value)
     }
+}
+
+// ============================================================================
+// Declaring a row shape
+// ============================================================================
+
+/// Declares a row shape that can be read **and** written.
+///
+/// One declaration produces four things that used to be four hand-maintained lists: the `SELECT`
+/// projection, the reader, the `INSERT` column list, and the parameter binding. They cannot
+/// disagree because they come from one token sequence.
+///
+/// ```ignore
+/// row_mapping! {
+///     /// Every column of `operators` the till reads and writes, in one order.
+///     pub const OPERATOR_ROW: RowMapping<OperatorRow> = for "operators" {
+///         id                                  via column::OPERATOR_ID,
+///         code,
+///         employee_id,
+///         name from ("name", "name_ar")       via column::OPERATOR_NAME,
+///         role                                via column::OPERATOR_ROLE,
+///         permissions from "permissions_json" via column::PERMISSIONS,
+///         is_active,
+///         managed "updated_at" = "datetime('now')",
+///     } on_conflict OnConflict::Replace;
+/// }
+/// ```
+///
+/// `RowMapping<OperatorRow>` there is **macro syntax, not a type path**: the macro matches those
+/// tokens and writes `$crate::projection::RowMapping<OperatorRow>` itself, so the declaring module
+/// does not import `RowMapping`. It is spelled out because the declaration should read as what it
+/// produces. The same is true of `RowReader<T>` in [`row_reader!`]. `OnConflict` is a real path and
+/// is imported.
+///
+/// # The seven entry shapes
+///
+/// | shape | meaning |
+/// |---|---|
+/// | `field` | column named after the field, ordinary `FromSql`/`ToSql` |
+/// | `field via CODEC` | column named after the field, domain conversion |
+/// | `field from "col"` | column named differently, ordinary conversion |
+/// | `field from "col" via CODEC` | both |
+/// | `field from ("a", "b") via PAIR` | one value, two columns |
+/// | `field from ("expr" as "name") [via CODEC]` | an aggregate: the SQL differs from the result name |
+/// | `managed "col" = "sql"` | store-written, never read, never bound |
+///
+/// A **bare identifier means the column is named after the field**, which is 181 of the 184
+/// mappings in this crate. Divergence costs explicit syntax, so the three real ones are the only
+/// three places the question is even asked.
+///
+/// # What it expands to
+///
+/// Twenty readers stop being greppable and stop being visible to `symbol` when they move inside a
+/// macro. This is the only mitigation, so it is written out rather than described:
+///
+/// ```ignore
+/// pub const OPERATOR_ROW: RowMapping<OperatorRow> = {
+///     fn read(row: &rusqlite::Row<'_>) -> rusqlite::Result<OperatorRow> {
+///         let mut cursor = RowCursor::new(row);
+///         let id = cursor.take_via(&column::OPERATOR_ID)?;
+///         let code = cursor.take()?;
+///         let name = cursor.take_pair_via(&column::OPERATOR_NAME)?;   // consumes TWO columns
+///         // …one `let` per entry, in declaration order…
+///         Ok(OperatorRow { id, code, name, /* …every field… */ })
+///     }
+///     fn bind(value: &OperatorRow) -> rusqlite::Result<Vec<Value>> {
+///         let mut out = Vec::new();
+///         out.extend([column::OPERATOR_ID.write(&value.id)?]);
+///         out.extend([to_value(&value.code)?]);
+///         { let (a, b) = column::OPERATOR_NAME.write(&value.name)?; out.extend([a, b]); }
+///         Ok(out)
+///     }
+///     RowMapping::new(
+///         RowReader::new(&[("id", "id"), ("code", "code"), ("name", "name"), ("name_ar", "name_ar"), /* … */], read),
+///         &[("updated_at", "datetime('now')")],
+///         "operators",
+///         OnConflict::Replace,
+///         bind,
+///     )
+/// };
+/// ```
+///
+/// Every arm contributes an **array** rather than a value, which is why `bind` extends instead of
+/// pushing: a pair column contributes two, and an entry that could only ever contribute one would
+/// have no arm for it.
+///
+/// The `let` sequence and the column list come from the same tokens, so an index cannot disagree
+/// with a name. The struct literal is built from **named locals**, so its field order is
+/// irrelevant — reordering fields in the struct declaration cannot swap a column.
+///
+/// # What the compiler refuses, and what it does not
+///
+/// - a field of the struct absent from the declaration → **E0063**, missing field in initializer;
+/// - an entry that is not a field → **E0560**, no field named;
+/// - a field listed twice → **E0062**, field specified more than once.
+///
+/// **And there it stops. The field set is policed; the column strings are not.** This compiles
+/// clean with zero warnings:
+///
+/// ```ignore
+/// department from "position" via column::OPTIONAL_TEXT,
+/// position,
+/// ```
+///
+/// and `department` silently receives the `position` value. Nothing here ties a `from` literal to
+/// the schema. Two other things do, and they are not optional extras: the per-mapping
+/// no-duplicate-column assertion and the `PRAGMA table_info` subset check
+/// (`every_mapping_names_columns_the_schema_has`) catch a column that does not exist or is already
+/// spoken for, and the column-identity tests — write through the store, read every column back
+/// **by name** in a hand-written query — catch a column that exists and is the wrong one.
+///
+/// # There is no rest-init arm, and there must not be
+///
+/// Two row shapes in this crate close their reads with `..Default::default()` because the struct
+/// is wider than the table. Teaching this macro that would make "a column cannot be added to a row
+/// type without being added to the declaration" false for every declaration that used it —
+/// starting with the shape that carries money. Those two split at the store boundary instead.
+#[macro_export]
+macro_rules! row_mapping {
+    (
+        $(#[$meta:meta])*
+        $vis:vis const $name:ident: RowMapping<$row:ident> = for $table:literal {
+            $($entries:tt)*
+        } on_conflict $conflict:expr;
+    ) => {
+        $(#[$meta])*
+        $vis const $name: $crate::projection::RowMapping<$row> = $crate::__row_shape!(
+            @munch (mapping $table $conflict) $row cursor value out
+            [] [] [] [] []
+            $($entries)*
+        );
+    };
+}
+
+/// Declares a row shape that can only be **read**.
+///
+/// For a shape with no table to write back to — an aggregate. Because it produces a
+/// [`RowReader`] and never a [`RowMapping`], and `write` takes a `RowMapping`, writing one is a
+/// compile error rather than a runtime check. The entry shapes are the same, minus `managed`.
+///
+/// ```ignore
+/// row_reader! {
+///     /// The day's totals, aggregated over `offline_transactions`.
+///     pub const DAY_TOTALS_ROW: RowReader<DayTotalsRow> = {
+///         transaction_count from ("COALESCE(COUNT(*), 0)" as "transaction_count"),
+///         gross_sales from ("COALESCE(SUM(total), 0)" as "gross_sales") via column::DECIMAL,
+///     };
+/// }
+/// ```
+#[macro_export]
+macro_rules! row_reader {
+    (
+        $(#[$meta:meta])*
+        $vis:vis const $name:ident: RowReader<$row:ident> = {
+            $($entries:tt)*
+        };
+    ) => {
+        $(#[$meta])*
+        $vis const $name: $crate::projection::RowReader<$row> = $crate::__row_shape!(
+            @munch (reader) $row cursor value out
+            [] [] [] [] []
+            $($entries)*
+        );
+    };
+}
+
+/// The token muncher behind [`row_mapping!`] and [`row_reader!`]. Not public API.
+///
+/// A muncher rather than one arm, and this is not a stylistic preference. `macro_rules!` has no
+/// `else`, so a single arm with optional `$(via …)?` fragments silently drops them; and a
+/// two-column entry has to contribute **two** elements to a `&'static [_]`, which a macro in
+/// expression position cannot do at all. The cursor, the bound value and the output vector are
+/// threaded as `$cur $val $out` because macro hygiene would otherwise make the identifier written
+/// in the terminal arm a *different* identifier from the one written in the recursive arms.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __row_shape {
+    // ---------------------------------------------------------------- terminal: read-only
+    (@munch (reader) $row:ident $cur:ident $val:ident $out:ident
+        [$($entry:expr,)*] [$($read:tt)*] [$($field:ident,)*] [$($bind:tt)*] [$($managed:expr,)*]
+    ) => {{
+        fn read(row: &::rusqlite::Row<'_>) -> ::rusqlite::Result<$row> {
+            let mut $cur = $crate::projection::RowCursor::new(row);
+            $($read)*
+            ::std::result::Result::Ok($row { $($field,)* })
+        }
+        $crate::projection::RowReader::new(&[$($entry,)*], read)
+    }};
+
+    // ---------------------------------------------------------------- terminal: readable + writable
+    (@munch (mapping $table:literal $conflict:expr) $row:ident $cur:ident $val:ident $out:ident
+        [$($entry:expr,)*] [$($read:tt)*] [$($field:ident,)*] [$($bind:tt)*] [$($managed:expr,)*]
+    ) => {{
+        fn read(row: &::rusqlite::Row<'_>) -> ::rusqlite::Result<$row> {
+            let mut $cur = $crate::projection::RowCursor::new(row);
+            $($read)*
+            ::std::result::Result::Ok($row { $($field,)* })
+        }
+        fn bind($val: &$row) -> ::rusqlite::Result<::std::vec::Vec<::rusqlite::types::Value>> {
+            let mut $out = ::std::vec::Vec::new();
+            $($bind)*
+            ::std::result::Result::Ok($out)
+        }
+        $crate::projection::RowMapping::new(
+            $crate::projection::RowReader::new(&[$($entry,)*], read),
+            &[$($managed,)*],
+            $table,
+            $conflict,
+            bind,
+        )
+    }};
+
+    // ---------------------------------------------------------------- managed "col" = "sql"
+    (@munch $mode:tt $row:ident $cur:ident $val:ident $out:ident
+        [$($entry:expr,)*] [$($read:tt)*] [$($field:ident,)*] [$($bind:tt)*] [$($managed:expr,)*]
+        managed $column:literal = $sql:literal, $($rest:tt)*
+    ) => {
+        $crate::__row_shape!(@munch $mode $row $cur $val $out
+            [$($entry,)*] [$($read)*] [$($field,)*] [$($bind)*] [$($managed,)* ($column, $sql),]
+            $($rest)*)
+    };
+
+    // ---------------------------------------------------------------- field from ("expr" as "name") via CODEC
+    (@munch $mode:tt $row:ident $cur:ident $val:ident $out:ident
+        [$($entry:expr,)*] [$($read:tt)*] [$($field:ident,)*] [$($bind:tt)*] [$($managed:expr,)*]
+        $f:ident from ($expr:literal as $name:literal) via $codec:path, $($rest:tt)*
+    ) => {
+        $crate::__row_shape!(@munch $mode $row $cur $val $out
+            [$($entry,)* ($expr, $name),]
+            [$($read)* let $f = $cur.take_via(&$codec)?;]
+            [$($field,)* $f,]
+            [$($bind)* $out.extend([$codec.write(&$val.$f)?]);]
+            [$($managed,)*]
+            $($rest)*)
+    };
+
+    // ---------------------------------------------------------------- field from ("expr" as "name")
+    (@munch $mode:tt $row:ident $cur:ident $val:ident $out:ident
+        [$($entry:expr,)*] [$($read:tt)*] [$($field:ident,)*] [$($bind:tt)*] [$($managed:expr,)*]
+        $f:ident from ($expr:literal as $name:literal), $($rest:tt)*
+    ) => {
+        $crate::__row_shape!(@munch $mode $row $cur $val $out
+            [$($entry,)* ($expr, $name),]
+            [$($read)* let $f = $cur.take()?;]
+            [$($field,)* $f,]
+            [$($bind)* $out.extend([$crate::projection::to_value(&$val.$f)?]);]
+            [$($managed,)*]
+            $($rest)*)
+    };
+
+    // ---------------------------------------------------------------- field from ("a", "b") via PAIR
+    (@munch $mode:tt $row:ident $cur:ident $val:ident $out:ident
+        [$($entry:expr,)*] [$($read:tt)*] [$($field:ident,)*] [$($bind:tt)*] [$($managed:expr,)*]
+        $f:ident from ($first:literal, $second:literal) via $codec:path, $($rest:tt)*
+    ) => {
+        $crate::__row_shape!(@munch $mode $row $cur $val $out
+            [$($entry,)* ($first, $first), ($second, $second),]
+            [$($read)* let $f = $cur.take_pair_via(&$codec)?;]
+            [$($field,)* $f,]
+            [$($bind)* {
+                let (first, second) = $codec.write(&$val.$f)?;
+                $out.extend([first, second]);
+            }]
+            [$($managed,)*]
+            $($rest)*)
+    };
+
+    // ---------------------------------------------------------------- field from "col" via CODEC
+    (@munch $mode:tt $row:ident $cur:ident $val:ident $out:ident
+        [$($entry:expr,)*] [$($read:tt)*] [$($field:ident,)*] [$($bind:tt)*] [$($managed:expr,)*]
+        $f:ident from $column:literal via $codec:path, $($rest:tt)*
+    ) => {
+        $crate::__row_shape!(@munch $mode $row $cur $val $out
+            [$($entry,)* ($column, $column),]
+            [$($read)* let $f = $cur.take_via(&$codec)?;]
+            [$($field,)* $f,]
+            [$($bind)* $out.extend([$codec.write(&$val.$f)?]);]
+            [$($managed,)*]
+            $($rest)*)
+    };
+
+    // ---------------------------------------------------------------- field from "col"
+    (@munch $mode:tt $row:ident $cur:ident $val:ident $out:ident
+        [$($entry:expr,)*] [$($read:tt)*] [$($field:ident,)*] [$($bind:tt)*] [$($managed:expr,)*]
+        $f:ident from $column:literal, $($rest:tt)*
+    ) => {
+        $crate::__row_shape!(@munch $mode $row $cur $val $out
+            [$($entry,)* ($column, $column),]
+            [$($read)* let $f = $cur.take()?;]
+            [$($field,)* $f,]
+            [$($bind)* $out.extend([$crate::projection::to_value(&$val.$f)?]);]
+            [$($managed,)*]
+            $($rest)*)
+    };
+
+    // ---------------------------------------------------------------- field via CODEC
+    (@munch $mode:tt $row:ident $cur:ident $val:ident $out:ident
+        [$($entry:expr,)*] [$($read:tt)*] [$($field:ident,)*] [$($bind:tt)*] [$($managed:expr,)*]
+        $f:ident via $codec:path, $($rest:tt)*
+    ) => {
+        $crate::__row_shape!(@munch $mode $row $cur $val $out
+            [$($entry,)* (stringify!($f), stringify!($f)),]
+            [$($read)* let $f = $cur.take_via(&$codec)?;]
+            [$($field,)* $f,]
+            [$($bind)* $out.extend([$codec.write(&$val.$f)?]);]
+            [$($managed,)*]
+            $($rest)*)
+    };
+
+    // ---------------------------------------------------------------- field
+    (@munch $mode:tt $row:ident $cur:ident $val:ident $out:ident
+        [$($entry:expr,)*] [$($read:tt)*] [$($field:ident,)*] [$($bind:tt)*] [$($managed:expr,)*]
+        $f:ident, $($rest:tt)*
+    ) => {
+        $crate::__row_shape!(@munch $mode $row $cur $val $out
+            [$($entry,)* (stringify!($f), stringify!($f)),]
+            [$($read)* let $f = $cur.take()?;]
+            [$($field,)* $f,]
+            [$($bind)* $out.extend([$crate::projection::to_value(&$val.$f)?]);]
+            [$($managed,)*]
+            $($rest)*)
+    };
 }
 
 #[cfg(test)]
@@ -570,10 +948,15 @@ mod tests {
         // The one shape where the two halves of an entry differ, and the reason `entries` is a
         // pair. Holding only the result name here would emit `SELECT gross_sales FROM …` against
         // a table that has no such column.
-        const TOTALS: RowReader<i64> = RowReader::new(
-            &[("COALESCE(SUM(amount), 0) AS gross_sales", "gross_sales")],
-            |row| row.get(0),
-        );
+        //
+        // The `AS` is **derived, not declared**. This test used to write it into the expression
+        // by hand — `("COALESCE(…) AS gross_sales", "gross_sales")` — which spells the alias
+        // twice and lets the two spellings disagree. `select_list` renders it now, so an entry
+        // cannot project one name and read another.
+        const TOTALS: RowReader<i64> =
+            RowReader::new(&[("COALESCE(SUM(amount), 0)", "gross_sales")], |row| {
+                row.get(0)
+            });
         assert_eq!(
             TOTALS.select_list(),
             "COALESCE(SUM(amount), 0) AS gross_sales"
@@ -900,5 +1283,227 @@ mod tests {
             .query_map([], |row| SAMPLE_READER.read(row))
             .unwrap()
             .collect::<Vec<_>>();
+    }
+
+    // ------------------------------------------------------------------ the declaration macro
+    //
+    // `OPERATOR_ROW` in `operators.rs` exercises four of the seven entry shapes — bare, `via`,
+    // the pair, and `from "col" via` — plus `managed`. The two it cannot reach are here: a column
+    // whose name differs from the field with no codec, and the aggregate arm, which needs a shape
+    // with no table behind it.
+
+    row_mapping! {
+        /// The same shape as the hand-written [`SAMPLE`] above, declared instead of assembled.
+        const SAMPLE_BY_MACRO: RowMapping<Sample> = for "sample" {
+            id,
+            label via column::OPTIONAL_TEXT,
+            managed "updated_at" = "datetime('now')",
+        } on_conflict OnConflict::Replace;
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct Renamed {
+        key: String,
+        caption: Option<String>,
+    }
+
+    row_mapping! {
+        /// Two fields, neither named after its column. Nothing here is checked by the compiler —
+        /// that is the point of declaring it.
+        const RENAMED: RowMapping<Renamed> = for "sample" {
+            key from "id",
+            caption from "label" via column::OPTIONAL_TEXT,
+            managed "updated_at" = "datetime('now')",
+        } on_conflict OnConflict::Fail;
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct SampleTotals {
+        rows: i64,
+        last_id: Option<String>,
+    }
+
+    row_reader! {
+        /// An aggregate: every column is an expression, and there is no row to write back.
+        const SAMPLE_TOTALS: RowReader<SampleTotals> = {
+            rows from ("COUNT(*)" as "rows"),
+            last_id from ("MAX(id)" as "last_id") via column::OPTIONAL_TEXT,
+        };
+    }
+
+    #[test]
+    fn the_macro_reproduces_a_hand_written_mapping_exactly() {
+        // The control for every other test in this section. If the macro's four products can
+        // diverge from the four lists a human would write, they diverge here first.
+        assert_eq!(
+            SAMPLE_BY_MACRO.reader().select_list(),
+            SAMPLE.reader().select_list()
+        );
+        assert_eq!(
+            SAMPLE_BY_MACRO.insert_statement(),
+            SAMPLE.insert_statement()
+        );
+
+        let db = database();
+        let value = Sample {
+            id: "id-value".to_string(),
+            label: Some("label-value".to_string()),
+        };
+        db.insert(&SAMPLE_BY_MACRO, &value).unwrap();
+
+        // Read the row back through the *hand-written* reader: the macro wrote it, the human's
+        // code reads it, so an agreement here is not the macro agreeing with itself.
+        let read = db
+            .select_one(SAMPLE.reader(), "FROM sample WHERE id = ?1", ["id-value"])
+            .unwrap()
+            .expect("the row the macro's mapping wrote");
+        assert_eq!(read, value);
+    }
+
+    #[test]
+    fn a_field_reads_and_writes_the_column_its_from_clause_names_not_its_own() {
+        let db = database();
+        let value = Renamed {
+            key: "key-value".to_string(),
+            caption: Some("caption-value".to_string()),
+        };
+        db.insert(&RENAMED, &value).unwrap();
+
+        assert_eq!(
+            RENAMED.insert_statement(),
+            "INSERT INTO sample (id, label, updated_at) VALUES (?1, ?2, datetime('now'))"
+        );
+
+        // By name, in a query the declaration had no hand in: `key` reached `id`, not `label`.
+        let conn = db.connection();
+        let conn = conn.lock();
+        let id: String = conn
+            .query_row("SELECT id FROM sample", [], |row| row.get(0))
+            .unwrap();
+        let label: String = conn
+            .query_row("SELECT label FROM sample", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(id, "key-value");
+        assert_eq!(label, "caption-value");
+
+        let read = read_one(
+            &conn,
+            RENAMED.reader(),
+            "FROM sample WHERE id = ?1",
+            ["key-value"],
+        )
+        .unwrap()
+        .expect("the row this test just wrote");
+        assert_eq!(read, value);
+    }
+
+    #[test]
+    fn an_aggregate_shape_selects_its_expressions_under_the_names_it_declares() {
+        // The `as` in the entry is not decoration: without it the result column is named
+        // `COUNT(*)`, and the debug-only name check in `RowReader::read` compares against the
+        // declared name. This asserts the rendered SQL, then runs it under the same check.
+        assert_eq!(
+            SAMPLE_TOTALS.select_list(),
+            "COUNT(*) AS rows, MAX(id) AS last_id"
+        );
+
+        let db = database();
+        for id in ["a-id", "b-id"] {
+            db.insert(
+                &SAMPLE,
+                &Sample {
+                    id: id.to_string(),
+                    label: None,
+                },
+            )
+            .unwrap();
+        }
+
+        let totals = db
+            .select_one(&SAMPLE_TOTALS, "FROM sample", [])
+            .unwrap()
+            .expect("an aggregate always returns a row");
+        assert_eq!(
+            totals,
+            SampleTotals {
+                rows: 2,
+                last_id: Some("b-id".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn an_aggregate_over_no_rows_still_answers_and_says_so() {
+        // `COUNT(*)` is 0 and `MAX(id)` is NULL. A shape that read the empty case as "no row"
+        // would be the silent-zero defect, and this is the shape most likely to grow one.
+        let db = database();
+        let totals = db
+            .select_one(&SAMPLE_TOTALS, "FROM sample", [])
+            .unwrap()
+            .expect("an aggregate always returns a row");
+        assert_eq!(
+            totals,
+            SampleTotals {
+                rows: 0,
+                last_id: None,
+            }
+        );
+    }
+
+    #[test]
+    fn a_managed_column_is_written_by_the_store_and_absent_from_the_projection() {
+        let db = database();
+        db.insert(
+            &SAMPLE_BY_MACRO,
+            &Sample {
+                id: "id-value".to_string(),
+                label: None,
+            },
+        )
+        .unwrap();
+
+        assert!(
+            !SAMPLE_BY_MACRO
+                .reader()
+                .column_names()
+                .any(|name| name == "updated_at"),
+            "a managed column must not be readable"
+        );
+        assert!(SAMPLE_BY_MACRO
+            .insert_column_names()
+            .any(|name| name == "updated_at"));
+
+        let stamped: Option<String> = db
+            .select_scalar("SELECT updated_at FROM sample", [])
+            .unwrap();
+        assert!(
+            stamped.is_some_and(|value| !value.is_empty()),
+            "the store's expression did not run"
+        );
+    }
+
+    #[test]
+    fn a_declared_mappings_conflict_disposition_is_the_one_it_names() {
+        // `RENAMED` declares `Fail` where the other two declare `Replace`, so this reads
+        // differently for the two dispositions rather than confirming a constant.
+        let db = database();
+        let value = Renamed {
+            key: "key-value".to_string(),
+            caption: None,
+        };
+        db.insert(&RENAMED, &value).unwrap();
+        assert!(
+            db.insert(&RENAMED, &value).is_err(),
+            "`OnConflict::Fail` accepted a second write"
+        );
+
+        db.execute("DELETE FROM sample", &[]).unwrap();
+        let replaceable = Sample {
+            id: "key-value".to_string(),
+            label: None,
+        };
+        db.insert(&SAMPLE_BY_MACRO, &replaceable).unwrap();
+        db.insert(&SAMPLE_BY_MACRO, &replaceable)
+            .expect("`OnConflict::Replace` refused a second write");
     }
 }
