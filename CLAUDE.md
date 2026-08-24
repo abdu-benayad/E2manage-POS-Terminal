@@ -347,6 +347,15 @@ lane's rode along* — and the second is the failure this whole section exists t
 guards omission only; reading the names guards both directions. `git show --stat` prints them, so it
 costs nothing.
 
+**And no stat shows a mode change.** Measured 2026-08-24: `git diff --stat`, and the stat
+`git commit` itself prints, both omit `mode change 100755 => 100644` entirely — only `--summary` or
+`--raw` carries it (controlled: `--raw` reported `:100755 100644` for the same file that `--stat`
+showed as a plain edit). So a permission change ships invisibly through the names rule above, which
+guards content and nothing else. It bites exactly when you follow the rule two sections down and
+replace a file by renaming a new one over it: the replacement gets your umask, not the original's
+mode. That stripped the exec bit off a script here today. **`chmod --reference=<target> <tmp>`
+before the rename, and `git diff --summary` before the commit.**
+
 **Row 2 is not a safety net for row 1 — they are disjoint.** A pathspec mixing an explicit new-file
 path with a directory takes the refusal from the *explicit* one, which names only that file. The
 author `git add`s it, re-runs, and the commit succeeds — while the directory silently keeps dropping
