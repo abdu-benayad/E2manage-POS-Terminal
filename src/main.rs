@@ -17,8 +17,9 @@ use std::process::ExitCode;
 
 use abdu_egui_ui::{Environment, Locale};
 use driver::{data_directory, AuthDriver, StartupFailure, TillServices};
+use e2manage_pos_terminal::screen::{self, Reading};
 use e2manage_pos_terminal::ui::sign_in::{
-    advance, AuthEnquiry, AuthPhase, EnquiryKind, PendingEnquiry,
+    advance, apply, AuthEnquiry, AuthPhase, EnquiryIds, EnquiryKind, PendingEnquiry,
 };
 use tracing::{info, warn};
 use tracing_appender::non_blocking::WorkerGuard;
@@ -166,6 +167,16 @@ struct Till {
     /// every frame would also be correct — the library documents `install` as safe per frame — but
     /// it would hide a locale that flickers between two sessions' values.
     installed_locale: String,
+
+    /// Ids for enquiries the *intent* fold sends.
+    ///
+    /// Separate from the driver's own sequence, and deliberately so: two independent minters can
+    /// issue the same number, which is why nothing here matches an answer to an enquiry by id
+    /// alone. The driver keys single-flight on `EnquiryKind`, and `advance` binds an accepted
+    /// verification in every phase whatever id it names — both of which hold under duplicate ids.
+    /// The one place an id is compared is `Verifying`'s `awaiting` against the enquiry the same
+    /// `apply` call just stamped, which cannot straddle two minters.
+    intent_ids: EnquiryIds,
 }
 
 impl Till {
@@ -182,6 +193,7 @@ impl Till {
             phase: AuthPhase::Splash,
             driver,
             installed_locale: DEFAULT_LOCALE.to_owned(),
+            intent_ids: EnquiryIds::new(),
         })
     }
 
@@ -250,21 +262,27 @@ impl eframe::App for Till {
         self.settle();
         self.follow_session_locale(ui.ctx());
 
-        // Exhaustive with no catch-all, for the reason every other match in this issue is: a new
-        // phase must fail to compile rather than fall through to a blank screen.
-        match &self.phase {
-            AuthPhase::Splash
-            | AuthPhase::Stalled(_)
-            | AuthPhase::Pairing { .. }
-            | AuthPhase::OperatorSelect { .. }
-            | AuthPhase::PinEntry { .. }
-            | AuthPhase::SignedIn(_) => {
-                // Step 13 renders these. One arm rather than six placeholders, so the compiler
-                // still forces every phase to be considered when it does.
-                ui.centered_and_justified(|ui| {
-                    ui.spinner();
-                });
-            }
+        let reading = if reads_right_to_left(&self.installed_locale) {
+            Reading::RightToLeft
+        } else {
+            Reading::LeftToRight
+        };
+
+        // Drawing reads the phase and returns what was done to it. It never mutates and never
+        // calls a service, so the sign-in rules stay in the two folds.
+        let intents = screen::render(ui, &self.phase, reading);
+
+        // Folded in order. A frame can produce more than one — a keypad press and a submit click
+        // are separate widgets reported in the same pass — and applying only the first would
+        // silently drop the other.
+        for intent in intents {
+            let (next, sent) = apply(
+                std::mem::replace(&mut self.phase, AuthPhase::Splash),
+                intent,
+                &mut self.intent_ids,
+            );
+            self.phase = next;
+            self.driver.send_all(sent);
         }
     }
 }

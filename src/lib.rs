@@ -39,6 +39,7 @@
 // Local modules (not split into workspace crates yet)
 pub mod hardware;
 pub mod platform;
+pub mod screen;
 pub mod ui;
 pub mod utils;
 

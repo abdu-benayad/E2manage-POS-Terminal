@@ -206,12 +206,32 @@ impl AuthDriver {
     /// configuration. Two interleaved polls can leave the client presenting one session while the
     /// stored configuration holds another, and nothing downstream would report the mismatch.
     pub fn dispatch(&mut self, pending: PendingEnquiry) {
-        let kind = pending.asking.kind();
+        let stamped = pending.dispatch(&mut self.ids);
+        self.send(stamped);
+    }
+
+    /// Sends an enquiry that already carries its id.
+    ///
+    /// The intent fold mints its own, because `PinEntryStanding::Verifying` names the enquiry it
+    /// is waiting for and therefore cannot be built before the id exists. Those arrive here
+    /// already stamped, and re-minting would hand the screen an id that matches nothing.
+    ///
+    /// # A refusal here can strand a `Verifying` standing, and that is the safe direction
+    ///
+    /// Single-flight may drop this enquiry. If it does, a phase that has already moved to
+    /// `Verifying` waits for an answer that will never come — but the enquiry it collided with is
+    /// a verification for the same operator that *is* in flight, and `advance` binds an accepted
+    /// verification in **every** phase regardless of which id it names. So the live one resolves
+    /// the screen. The opposite choice — sending both — spends two attempts out of the operator's
+    /// budget for one PIN, which no later answer can undo.
+    pub fn send(&mut self, stamped: DispatchedEnquiry) {
+        let kind = stamped.asking.kind();
 
         if let Some(already) = self.outstanding.get(&kind) {
             debug!(
                 ?kind,
                 outstanding = already.id.get(),
+                dropped = stamped.id.get(),
                 "an enquiry of this kind is already in flight; not sending a second"
             );
             return;
@@ -221,7 +241,7 @@ impl AuthDriver {
             id,
             run_after,
             asking,
-        } = pending.dispatch(&mut self.ids);
+        } = stamped;
 
         let abandon = Arc::new(AtomicBool::new(false));
         self.outstanding.insert(
@@ -264,10 +284,17 @@ impl AuthDriver {
         });
     }
 
-    /// Sends each of the enquiries a fold asked for.
+    /// Sends each of the enquiries the answer fold asked for.
     pub fn dispatch_all(&mut self, pending: Vec<PendingEnquiry>) {
         for enquiry in pending {
             self.dispatch(enquiry);
+        }
+    }
+
+    /// Sends each of the enquiries the intent fold asked for, ids and all.
+    pub fn send_all(&mut self, stamped: Vec<DispatchedEnquiry>) {
+        for enquiry in stamped {
+            self.send(enquiry);
         }
     }
 

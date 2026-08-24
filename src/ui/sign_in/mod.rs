@@ -8,6 +8,7 @@
 //! them alike. [`notice`] carries the reasoning.
 
 pub mod enquiry;
+pub mod intent;
 pub mod notice;
 pub mod phase;
 pub mod strings;
@@ -16,6 +17,7 @@ pub use enquiry::{
     AuthAnswer, AuthEnquiry, Discardable, DispatchedEnquiry, EnquiryId, EnquiryIds, EnquiryKind,
     PairingCode, PendingEnquiry,
 };
+pub use intent::{apply, Intent};
 pub use notice::{PadOffer, Recheck, RefusalNotice, SignedInAtTheTill, UndecidedNotice};
 pub use phase::{advance, AuthPhase, OperatorCard, PinEntryStanding, PAIRING_POLL_INTERVAL};
 pub use strings::Sentence;

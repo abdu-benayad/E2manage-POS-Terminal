@@ -167,12 +167,51 @@ pub const STARTUP_PROBE_FAILED: Sentence = Sentence::new(
     "This till could not complete its start-up checks.",
 );
 
+// ============================================================================
+// Pairing, and the words a control needs
+// ============================================================================
+
+/// Offered wherever a retry could produce a different answer, and nowhere else.
+pub const TRY_AGAIN: Sentence = Sentence::new("إعادة المحاولة", "Try again");
+
+/// The destructive form of the pairing sentence.
+///
+/// The platform says this hardware is already enrolled, so approving this code **archives a
+/// working terminal** — possibly one somebody is selling on right now. It is the only enrolment
+/// state that warns, and it has to actually warn: an approval is not reversible from this screen.
+pub const APPROVING_REPLACES_A_LIVE_TERMINAL: Sentence = Sentence::new(
+    "تحذير: هذا الجهاز مسجّل بالفعل. الموافقة على هذا الرمز ستؤرشف نقطة البيع العاملة الحالية.",
+    "Warning: this device is already enrolled. Approving this code will archive the working till it is registered as.",
+);
+
+/// The ordinary form. A first enrolment destroys nothing, so it says so plainly and does not
+/// borrow the warning's tone.
+pub const FIRST_ENROLMENT: Sentence = Sentence::new(
+    "هذا تسجيل جديد لهذا الجهاز.",
+    "This is a new enrolment for this device.",
+);
+
+/// Shown beside the code so somebody reading it aloud knows how long it is good for.
+pub const CODE_EXPIRES_AT: Sentence = Sentence::new("ينتهي في", "Valid until");
+
+/// The pairing screen's standing instruction.
+pub const AWAITING_APPROVAL: Sentence = Sentence::new(
+    "في انتظار الموافقة على هذا الرمز من لوحة التحكم.",
+    "Waiting for this code to be approved in the back office.",
+);
+
+/// A pairing code could not be fetched at all.
+pub const NO_PAIRING_CODE: Sentence = Sentence::new(
+    "تعذّر الحصول على رمز اقتران.",
+    "Could not get a pairing code.",
+);
+
 /// Every sentence in this module, for tests that must enumerate rather than reach.
 ///
 /// **This is the witness for step 14's both-directions sweep.** A sentence absent from this array
 /// is invisible to that sweep, so a test asserts the array's length against the number of
 /// distinct sentences declared here.
-pub const EVERY_SENTENCE: [Sentence; 15] = [
+pub const EVERY_SENTENCE: [Sentence; 21] = [
     WRONG_PIN,
     LOCKED,
     OPERATOR_UNKNOWN,
@@ -188,4 +227,10 @@ pub const EVERY_SENTENCE: [Sentence; 15] = [
     TERMINAL_NOT_PROVISIONED,
     CONTRACT_BREACH,
     STARTUP_PROBE_FAILED,
+    TRY_AGAIN,
+    APPROVING_REPLACES_A_LIVE_TERMINAL,
+    FIRST_ENROLMENT,
+    CODE_EXPIRES_AT,
+    AWAITING_APPROVAL,
+    NO_PAIRING_CODE,
 ];
