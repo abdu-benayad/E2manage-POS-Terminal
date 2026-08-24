@@ -223,11 +223,18 @@ something the till can land alone.
   against the platform's real verifier, four runs changing one thing: the same unsatisfiable regex
   at `$.error.details.notAField` **passes, exit 0, unmentioned in the output**, while at
   `$.error.code` it **fails**, exit 1, naming the path. So rules *are* enforced and the interaction
-  *is* verified — and a path typo silently disarms the rule. `$.data.sessionTokan` verifies green
-  forever, invisible in the artifact, in the diff, and in the run. **The only way to know a rule is
-  attached is to make it fail on purpose**: mutate it to something unsatisfiable, watch it go red,
-  restore. All 14 interactions were checked against their bodies when this was measured and none was
-  vacuous — the hazard is real and currently unexploited.
+  *is* verified — and a rule whose path the *response* lacks is never checked. **The only way to know a rule is attached is to make it fail on purpose**: mutate
+  it to something unsatisfiable, watch it go red, restore.
+
+  **How that arises here is not a typo, and the difference matters.** Every matcher path in this
+  crate is *derived from where the matcher sits in the declared body* — `json_pattern!` (14 uses)
+  and `like!` (35) are the only matcher constructors, and no API here takes an explicit rule path.
+  Measured 2026-08-24: **0 of 14** committed rule paths are absent from their own declared body, so
+  the paths cannot drift from the body through this API. The live route is instead **a declared body
+  that is wrong about the response shape** — believe `heldBy` sits at `$.error.heldBy`, declare it
+  there, and the matcher attaches to a path the real response does not have. Whether that *also*
+  trips missing-key detection is **unmeasured**, and the rule above about `eachKey` disabling
+  missing-key detection at a node is the reason not to assume it does.
 - **A pact detects a field *moving*, never one *appearing*.** It cannot police data
   exposure. Expressing absence needs a V4 `eachKey` whitelist, and defining an
   each-key matcher at a node disables missing-key detection at that same node —
