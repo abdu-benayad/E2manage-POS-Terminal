@@ -20,9 +20,10 @@ disables missing-key detection at that same node.** So buying exposure detection
 detection, which is the pact's primary job here. The trade is not worth it, and the reason it is
 not is the kind of thing that has to be written down or it gets re-litigated as an oversight.
 
-**Coverage is small on purpose.** Seven interactions out of the **36 `/api/pos/*` paths** the
-till calls — **35 in `crates/pos-api/`, plus `/api/pos/version/check` at
-`crates/pos-updater/src/version.rs:55`.**
+**Coverage is small on purpose.** Seven interactions against a surface of **41 distinct route
+templates** — **36 under `/api/pos/`** (35 in `crates/pos-api/`, plus `/api/pos/version/check` at
+`crates/pos-updater/src/version.rs:55`), **4 under `/api/carts/`**, and `/api/health`
+(`client.rs:592`).
 
 That decomposition is written down because the number is a trap. A fresh enumeration of
 `pos-api` returns **35**, and the obvious next move is to "correct" the 36 — measured
@@ -37,7 +38,19 @@ allows route literals in exactly `pos-api`, `pos-contract`, `pos-updater`, and m
 
 Two independent enumerations of `pos-api` — one reading call sites, one normalising literals
 and stripping query strings — returned the **same 35 paths**. The convergence is what makes the
-count trustworthy; the missing crate is what makes it 36. A surface where the two sides already disagree **cannot** be pinned without failing
+count trustworthy; the missing crate is what makes it 36.
+
+**And 36 was still the wrong headline, for a third reason nobody had named: it is the count under
+one mount, not the till's surface.** Re-measured 2026-08-24 over all three crates the guard allows,
+code lines only: **41 templates — 36 `/api/pos/`, 4 `/api/carts/`, 1 `/api/health`.** Every
+enumeration above had been scoped to `/api/pos/` by the search string, so each one confirmed the
+others while all of them answered a narrower question than the sentence they were quoted in.
+`project/till`'s brief independently reached 41 and split it 37/4, folding `/api/health` into the
+`/api/pos` bucket — two measurements agreeing on a total and disagreeing on its parts, which is the
+tell that both were derived and neither was transcribed.
+
+The rule this leaves: **a count is only as scoped as its search string, and the search string is
+usually invisible in the sentence that quotes the count.** State the predicate with the number. A surface where the two sides already disagree **cannot** be pinned without failing
 the platform's suite for a change it made correctly — the pact would encode the till's bug as
 the platform's obligation. Coverage grows one interaction per repaired surface, never ahead of
 one.
