@@ -20,7 +20,7 @@ use std::num::NonZeroU64;
 use std::time::Duration;
 
 use pos_db::OperatorRow;
-use pos_models::{EnteredDigits, OperatorId, PinVerification};
+use pos_models::{OperatorId, Pin, PinPolicy, PinVerification};
 use pos_services::{PairingState, TerminalSession};
 
 // ============================================================================
@@ -124,10 +124,35 @@ pub enum Discardable {
     },
 }
 
+/// Which question an enquiry is, with the payload thrown away.
+///
+/// # Why this exists separately from [`AuthEnquiry`]
+///
+/// The driver may have at most one enquiry of each kind outstanding, and "of each kind" has to
+/// mean something a `HashMap` key can express. [`AuthEnquiry`] cannot serve: it is deliberately
+/// not `Clone` (a [`Pin`] must not be duplicated into a buffer nothing will zeroize)
+/// and two `PairingStatus` enquiries carrying different codes are the *same* question asked
+/// twice, which is exactly the collision single-flight has to catch.
+///
+/// Discarding the payload is the point rather than a limitation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum EnquiryKind {
+    /// [`AuthEnquiry::RestoreSession`].
+    RestoreSession,
+    /// [`AuthEnquiry::RequestPairingCode`].
+    RequestPairingCode,
+    /// [`AuthEnquiry::PairingStatus`].
+    PairingStatus,
+    /// [`AuthEnquiry::LoadOperators`].
+    LoadOperators,
+    /// [`AuthEnquiry::VerifyPin`].
+    VerifyPin,
+}
+
 /// What the screen has asked the services to find out.
 ///
-/// Not `Clone`: [`Self::VerifyPin`] owns an [`EnteredDigits`], which zeroizes on drop and must not
-/// be duplicated into a buffer nothing will zeroize.
+/// Not `Clone`: [`Self::VerifyPin`] owns a [`Pin`], which zeroizes on drop and must not be
+/// duplicated into a buffer nothing will zeroize.
 #[derive(Debug)]
 pub enum AuthEnquiry {
     /// Is somebody already signed in at this till?
@@ -168,8 +193,37 @@ pub enum AuthEnquiry {
     VerifyPin {
         /// Whose PIN is being checked.
         operator: OperatorId,
-        /// The digits, in the buffer that zeroizes when it drops.
-        digits: EnteredDigits,
+        /// The credential, already well-formed.
+        ///
+        /// A [`Pin`], not the [`EnteredDigits`] buffer it came from, and the difference is the
+        /// whole reason this field is shaped this way. `AuthService::verify_pin` takes a `&Pin`,
+        /// so somebody has to call `EnteredDigits::finish`, which is fallible — and
+        /// [`AuthAnswer::PinVerified`] carries a bare [`PinVerification`] with no `Result` around
+        /// it, because the domain type is already total in all three directions. A driver handed
+        /// raw digits would therefore have nowhere to put a `PinFormatError`: the only reachable
+        /// destinations are `Undetermined(ContractBreach)`, which blames the platform for a
+        /// keypad, and a fabricated `Refused`, which spends an attempt out of the operator's
+        /// budget for a PIN that was never checked. Both are lies told by the type.
+        ///
+        /// Converting in the **view** has somewhere to go: it holds the buffer, it knows the
+        /// required length, and "these digits do not form a PIN yet" is exactly the state in
+        /// which it should not be offering to submit. The failure stops being an error to report
+        /// and becomes a button that is not there.
+        ///
+        /// `Pin` redacts its own `Debug` and zeroizes on `Drop`, so nothing is given up by
+        /// carrying it here.
+        pin: Pin,
+        /// The rules to check them against, carried rather than fetched.
+        ///
+        /// `AuthService::verify_pin` needs a [`PinPolicy`], and the driver must not go and find
+        /// one: `pos_models::PinPolicy` is documented **"carried, never looked up — the policy
+        /// arrives with the terminal session at login, strictly before any operator is
+        /// selected"**, precisely so that "PIN entry verified against rules fetched afterwards"
+        /// has no way to be written. An enquiry that omitted it would push that lookup into the
+        /// driver and reintroduce the state the domain type exists to forbid.
+        ///
+        /// `PinPolicy` is `Copy`, so the phase keeps its own and this is not a handoff.
+        policy: PinPolicy,
     },
 }
 
@@ -179,6 +233,21 @@ impl AuthEnquiry {
     /// Exhaustive with no catch-all arm. A new enquiry must fail to compile here, because the
     /// wrong default is [`Discardable::Freely`] — which silently drops the record of an effect
     /// that has already happened.
+    /// Which question this is, without its payload.
+    ///
+    /// One arm per variant with no catch-all: a sixth enquiry must fail to compile here rather
+    /// than silently share another's single-flight slot, which would let two of it run at once
+    /// while `HashMap` reported one.
+    pub const fn kind(&self) -> EnquiryKind {
+        match self {
+            Self::RestoreSession => EnquiryKind::RestoreSession,
+            Self::RequestPairingCode => EnquiryKind::RequestPairingCode,
+            Self::PairingStatus { .. } => EnquiryKind::PairingStatus,
+            Self::LoadOperators => EnquiryKind::LoadOperators,
+            Self::VerifyPin { .. } => EnquiryKind::VerifyPin,
+        }
+    }
+
     pub const fn discardable(&self) -> Discardable {
         match self {
             Self::LoadOperators => Discardable::Freely,
@@ -358,21 +427,38 @@ impl AuthAnswer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pos_models::Digit;
+    use pos_models::{
+        Digit, EnteredDigits, LockoutPeriod, MaxAttempts, OfflineWindow, PinLength,
+        RequiredPinLength, SessionLifetime,
+    };
 
     fn operator() -> OperatorId {
         OperatorId::new("op-1").expect("a well-formed operator id")
     }
 
-    fn digits() -> EnteredDigits {
+    /// Built through the entry buffer rather than `Pin::parse`, so the fixture exercises the
+    /// same door the view will use: keypad digits in, credential out.
+    fn pin() -> Pin {
         let mut entered = EnteredDigits::empty();
         for value in [1, 2, 3, 4] {
             entered.push(Digit::new(value).expect("a single decimal digit"));
         }
-        entered
+        entered.finish().expect("four keypad digits form a PIN")
     }
 
     /// Every enquiry, so a new variant fails this list as well as the match in `discardable`.
+    /// The tenant rules a verification is checked against. Values are arbitrary but valid; no
+    /// assertion here depends on them, only on the field being carried at all.
+    fn policy() -> PinPolicy {
+        PinPolicy::new(
+            RequiredPinLength::Exactly(PinLength::Four),
+            MaxAttempts::new(3).expect("a non-zero budget"),
+            LockoutPeriod::from_minutes(15).expect("fifteen is not negative"),
+            SessionLifetime::from_hours(8).expect("eight is positive"),
+            OfflineWindow::from_hours(72).expect("seventy-two is not negative"),
+        )
+    }
+
     fn every_enquiry() -> [AuthEnquiry; 5] {
         [
             AuthEnquiry::RestoreSession,
@@ -383,7 +469,8 @@ mod tests {
             AuthEnquiry::LoadOperators,
             AuthEnquiry::VerifyPin {
                 operator: operator(),
-                digits: digits(),
+                pin: pin(),
+                policy: policy(),
             },
         ]
     }
@@ -421,6 +508,45 @@ mod tests {
     // The property step 08 keys on
     // ------------------------------------------------------------------
 
+    /// Single-flight keys on [`EnquiryKind`], so two kinds sharing a value would let two
+    /// enquiries of different kinds run while the map reported one — and the map would look
+    /// correct while doing it. A copy-paste in `kind()` is the whole failure mode.
+    #[test]
+    fn sign_in_no_two_enquiry_kinds_share_a_value() {
+        let kinds: std::collections::HashSet<EnquiryKind> =
+            every_enquiry().iter().map(AuthEnquiry::kind).collect();
+
+        assert_eq!(
+            kinds.len(),
+            every_enquiry().len(),
+            "two enquiries map to one kind, so single-flight would run both while reporting \
+             one outstanding. Kinds: {kinds:?}"
+        );
+    }
+
+    /// The other direction, and the one that is easy to get backwards: two polls of *different
+    /// codes* are the same question asked twice. If the payload leaked into the kind, the
+    /// interleaved-poll hazard single-flight exists to prevent would be wide open — two
+    /// `check_pairing_status` calls each performing a terminal login.
+    #[test]
+    fn sign_in_two_polls_of_different_codes_are_one_kind() {
+        let (one, other) = (PairingCode::new("AAA-111"), PairingCode::new("BBB-222"));
+        assert_ne!(
+            one.as_str(),
+            other.as_str(),
+            "the fixture is wrong: these must differ for the assertion below to mean anything"
+        );
+
+        let first = AuthEnquiry::PairingStatus { code: one };
+        let second = AuthEnquiry::PairingStatus { code: other };
+        assert_eq!(
+            first.kind(),
+            second.kind(),
+            "the payload leaked into the kind, so single-flight cannot see two polls as one \
+             question and both would run"
+        );
+    }
+
     #[test]
     fn sign_in_every_enquiry_declares_whether_its_answer_may_be_dropped() {
         // Table-style on purpose: adding an enquiry without answering this question fails here as
@@ -439,7 +565,8 @@ mod tests {
             (
                 AuthEnquiry::VerifyPin {
                     operator: operator(),
-                    digits: digits(),
+                    pin: pin(),
+                    policy: policy(),
                 },
                 false,
             ),
@@ -515,7 +642,8 @@ mod tests {
             Duration::ZERO,
             AuthEnquiry::VerifyPin {
                 operator: operator(),
-                digits: digits(),
+                pin: pin(),
+                policy: policy(),
             },
         );
         assert_eq!(verify.run_after, Duration::ZERO);

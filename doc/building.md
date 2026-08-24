@@ -68,6 +68,35 @@ A `0.x` version mismatch against the library's `0.34` is *not* unified by cargo 
 incompatible `egui` copies, which surface as type errors passing `&mut Ui` across the boundary —
 so the second command is the one that catches it.
 
+## The root package names `rusqlite` directly, and the pin is not decoration
+
+`src/driver.rs` reports startup failures as a `thiserror` enum, and the database arm carries the
+underlying error as a `#[source]` rather than a string. That means naming its type.
+
+`pos-db` exposes `SqliteResult<T> = rusqlite::Result<T>` and re-exports no part of `rusqlite`, so
+every caller that handles one of its failures has to depend on the crate itself. The root manifest
+therefore declares:
+
+```toml
+rusqlite = { version = "0.32", features = ["bundled", "chrono"] }
+```
+
+**Pinned identically to `crates/pos-db/Cargo.toml`, on purpose.** `crates/pos-db/Cargo.toml:41-44`
+already records the reason for its own dev-dependency copy: a bare `rusqlite = "0.32"` resolves
+*without* `bundled`, and cargo unions features across one resolved version — so a mismatched
+declaration does not fail, it changes what everything else links against. Verify with:
+
+```bash
+cargo tree -p e2manage-pos-terminal -i rusqlite --depth 0     # must print exactly one version
+```
+
+Measured 2026-08-24: `rusqlite v0.32.1`, one line. The control on that reading is that the command
+prints every version it finds, so two would be two lines rather than a silent pick.
+
+The alternative — a `pub use rusqlite::Error` from `pos-db` — is the better long-term shape, since
+a database crate whose errors cannot be named without its implementation crate is leaking. It was
+not taken here only because `pos-db` was mid-refactor in another lane at the time.
+
 ## Snapshot tests
 
 ```bash

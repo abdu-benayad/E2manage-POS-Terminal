@@ -146,6 +146,14 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # File-based logging with rotation
 tracing-appender = "0.2"
 
+# The database's own error type, so `StartupFailure` can carry a `#[source]` rather than a string.
+#
+# `pos-db` exposes `SqliteResult<T> = rusqlite::Result<T>` and re-exports no part of `rusqlite`, so
+# any caller that handles one of its failures has to name the crate. Pinned identically to
+# `crates/pos-db/Cargo.toml` — same version, same features — for the reason recorded there: a bare
+# `rusqlite = "0.32"` resolves without `bundled`, and two feature sets would compile two SQLites.
+rusqlite = { version = "0.32", features = ["bundled", "chrono"] }
+
 # System Directories
 directories = "5"
 
