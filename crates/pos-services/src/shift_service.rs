@@ -7,8 +7,9 @@ use parking_lot::RwLock;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
+use crate::platform_sync::PlatformSync;
 use pos_api::{ApiClient, ApiResult, DenominationDto, EndShiftRequest, StartShiftRequest};
 use pos_db::shifts::{ShiftRow, ShiftStatus};
 use pos_db::Database;
@@ -249,8 +250,12 @@ pub struct StartShiftResult {
     pub shift_id: String,
     /// The shift number
     pub shift_number: String,
-    /// Whether synced to server
-    pub synced: bool,
+    /// What the platform did with the opening.
+    ///
+    /// The identifier it carries is the one every sale in this shift must name: `shiftId` is a
+    /// `@db.Uuid` with a foreign key to the platform's own shift row, so a transaction quoting the
+    /// till's local id names a shift the platform never issued.
+    pub platform: PlatformSync,
 }
 
 /// Result of closing a shift
@@ -264,8 +269,8 @@ pub struct CloseShiftResult {
     pub variance: Decimal,
     /// Variance status
     pub variance_status: VarianceStatus,
-    /// Whether synced to server
-    pub synced: bool,
+    /// What the platform did with the closing.
+    pub platform: PlatformSync,
     /// X-Report data for printing
     pub report: ShiftSummary,
 }
@@ -391,10 +396,11 @@ impl ShiftService {
 
         *self.current_shift.write() = Some(summary);
 
-        // Try to sync to server
-        let synced = if self.api.is_online().await.is_online() {
-            match self
-                .sync_shift_start(
+        // Try to sync to server. The pre-check is a fast path only: a request that goes out and
+        // finds nobody answers `PlatformSync::Queued` too, so both routes reach the same value.
+        let platform = if self.api.is_online().await.is_online() {
+            PlatformSync::of(
+                self.sync_shift_start(
                     &shift_id,
                     &shift_number,
                     operator_id,
@@ -403,28 +409,54 @@ impl ShiftService {
                     currency,
                     &now.to_rfc3339(),
                 )
-                .await
-            {
-                Ok(server_id) => {
-                    // Update local record with server ID
-                    let _ = self.db.mark_shift_synced(&shift_id, &server_id);
-                    info!("Shift {} synced to server", shift_number);
-                    true
-                }
-                Err(e) => {
-                    warn!("Failed to sync shift to server: {}", e);
-                    false
-                }
-            }
+                .await,
+            )
         } else {
             info!("Offline - shift {} queued for sync", shift_number);
-            false
+            PlatformSync::Queued
         };
+
+        match &platform {
+            PlatformSync::Recorded(server_id) => {
+                // The identifier every sale in this shift has to name. Persisting it was a
+                // `let _ =`, which meant the write could fail while the shift still reported as
+                // synced — after which every transaction in it would quote an id the platform
+                // never issued, and nothing would say why. It is an `error!` because it is a
+                // data-integrity failure, not weather; the consequence is that the shift behaves
+                // as one opened offline, which is a case that has to be handled regardless.
+                if let Err(e) = self.db.mark_shift_synced(&shift_id, server_id) {
+                    error!(
+                        "Shift {} was recorded by the platform as {}, and this till could not \
+                         store that id: {}. Sales in this shift cannot name it.",
+                        shift_number, server_id, e
+                    );
+                } else {
+                    info!(
+                        "Shift {} recorded by the platform as {}",
+                        shift_number, server_id
+                    );
+                }
+            }
+            PlatformSync::Queued => {}
+            PlatformSync::Refused(refused) => {
+                warn!(
+                    "The platform refused to open shift {} ({}): {}",
+                    shift_number, refused.code, refused.message
+                );
+            }
+            PlatformSync::Undetermined => {
+                warn!(
+                    "The platform answered the opening of shift {} with a body this till cannot \
+                     read; the shift is open locally and the platform's view is unknown",
+                    shift_number
+                );
+            }
+        }
 
         Ok(StartShiftResult {
             shift_id,
             shift_number,
-            synced,
+            platform,
         })
     }
 
@@ -509,25 +541,36 @@ impl ShiftService {
         final_summary.status = ShiftStatus::Closed;
         final_summary.note = note.map(String::from);
 
-        // Try to sync to server
-        let synced = if self.api.is_online().await.is_online() {
-            match self
-                .sync_shift_end(&shift.id, counted_cash, shift.expected_cash, variance, note)
-                .await
-            {
-                Ok(_) => {
-                    info!("Shift {} end synced to server", shift.shift_number);
-                    true
-                }
-                Err(e) => {
-                    warn!("Failed to sync shift end to server: {}", e);
-                    false
-                }
-            }
+        // Try to sync to server. As with the opening, the pre-check is a fast path: an
+        // unanswered request reaches `Queued` by the other route.
+        let platform = if self.api.is_online().await.is_online() {
+            // The close route answers no payload, so there is no identifier to carry. The shift's
+            // own id is what `Recorded` names — the platform already knows it, since the till
+            // addressed the request with it.
+            PlatformSync::of(
+                self.sync_shift_end(&shift.id, counted_cash, shift.expected_cash, variance, note)
+                    .await
+                    .map(|()| shift.id.clone()),
+            )
         } else {
             info!("Offline - shift end queued for sync");
-            false
+            PlatformSync::Queued
         };
+
+        match &platform {
+            PlatformSync::Recorded(_) => {
+                info!("Shift {} end recorded by the platform", shift.shift_number)
+            }
+            PlatformSync::Queued => {}
+            PlatformSync::Refused(refused) => warn!(
+                "The platform refused to close shift {} ({}): {}",
+                shift.shift_number, refused.code, refused.message
+            ),
+            PlatformSync::Undetermined => warn!(
+                "The platform answered the close of shift {} with a body this till cannot read",
+                shift.shift_number
+            ),
+        }
 
         // Clear current shift and cash count
         *self.current_shift.write() = None;
@@ -538,7 +581,7 @@ impl ShiftService {
             shift_number: shift.shift_number,
             variance,
             variance_status,
-            synced,
+            platform,
             report: final_summary,
         })
     }

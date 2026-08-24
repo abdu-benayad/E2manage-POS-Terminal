@@ -96,6 +96,7 @@ pub mod operator_sign_in;
 pub mod pairing_service;
 pub mod parse;
 pub mod platform_heartbeat_service;
+pub mod platform_sync;
 pub mod policy_service;
 pub mod product_service;
 pub mod qr_service;
@@ -139,6 +140,7 @@ pub use platform_heartbeat_service::{
     HeartbeatError, HeartbeatEvent, PlatformHeartbeatService, SystemMetrics,
     DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
 };
+pub use platform_sync::{PlatformSync, WriteRefused};
 pub use policy_service::{
     PolicyError, PolicyResult, PolicyService, PolicyServiceResult, RangeValue,
 };

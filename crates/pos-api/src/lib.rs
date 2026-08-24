@@ -44,7 +44,8 @@ pub mod transactions;
 // Re-export main types
 pub use client::{ApiClient, ApiErrorDetail, ApiErrorResponse, Enveloped, GetResult, OnlineStatus};
 pub use failure::{
-    ApiFailure, ApiResult, OperatorSessionRefusal, ServerErrorCode, TerminalStanding,
+    ApiFailure, ApiResult, CapabilityStanding, OperatorSessionRefusal, ServerErrorCode,
+    TerminalStanding,
 };
 
 pub use refusal_details::{

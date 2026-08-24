@@ -22,13 +22,16 @@
 //! counted as weather.
 //!
 //! `handle_response` now builds these three, `verify_pin` branches on them, and only
-//! [`ApiFailure::Unreachable`] reaches the local leg. [`TerminalStanding`] and
-//! [`OperatorSessionRefusal`], further down, read a refusal for what it says about the terminal
-//! and about the operator's session.
+//! [`ApiFailure::Unreachable`] reaches the local leg. [`TerminalStanding`],
+//! [`OperatorSessionRefusal`] and [`CapabilityStanding`], further down, read a refusal for what it
+//! says about the terminal, about the operator's session, and about the operator's authority to
+//! make this particular write.
 
 use std::fmt;
 
-use crate::refusal_details::RefusalDetails;
+use crate::refusal_details::{
+    OperatorCapabilityDeniedDetails, RefusalDetails, SupervisorApprovalRequiredDetails,
+};
 use pos_models::{EnrolmentState, Repudiation};
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
@@ -1212,5 +1215,244 @@ mod terminal_standing_tests {
         assert_eq!(TerminalStanding::Unaffected.repudiation(), None);
         assert_eq!(TerminalStanding::SessionLapsed.repudiation(), None);
         assert_eq!(TerminalStanding::NotProvisioned.repudiation(), None);
+    }
+}
+
+// ============================================================================
+// CapabilityStanding
+// ============================================================================
+
+/// What a refusal says about the operator's authority to make **this** write.
+///
+/// # Why two answers and not one 403
+///
+/// All three till-facing refusals of this kind are `403`, and the till must branch on the code
+/// rather than the status, because the two that matter mean opposite things to the person standing
+/// at the drawer:
+///
+/// | code | means | the honest sentence |
+/// | --- | --- | --- |
+/// | `POS_SUPERVISOR_APPROVAL_REQUIRED` | a role **above** this one holds it | fetch one of these people |
+/// | `POS_OPERATOR_CAPABILITY_DENIED` | **no** operator role holds it at all | not available at a till |
+///
+/// Collapsing them into one "forbidden" is a defect rather than a simplification. Rendering
+/// *denied* as "fetch a supervisor" sends a cashier to fetch someone who is refused in turn: it
+/// wastes a trip and teaches the shop that the prompt is noise, which is worse than a flat 403,
+/// because a flat 403 at least does not lie.
+///
+/// # The till reads `heldBy`; it never carries a role table
+///
+/// [`Self::SupervisorHolds`] carries the roles the platform named, lowest first. A client that
+/// hard-codes "refunds need a supervisor" is a second copy of the role table on the far side of a
+/// network boundary, updated by a separate release train — the arrangement that let the platform's
+/// CSRF exemption list drift from the guards it described. A refusal that names the roles is the
+/// server holding the ladder; a client that infers them is the ladder copied.
+///
+/// The worked example is a refund. `CASHIER_CAPABILITIES` is `['POS_READ', 'POS_CREATE']`
+/// (`operator-capabilities.ts:66`) and `POS_REFUND` sits at SUPERVISOR (`:76-80`), deliberately —
+/// a refund moves money out of the drawer against an already-paid sale. An unattended terminal
+/// holds the same two capabilities (`:136-137`) and is refused at the same gate with the same
+/// code, one tier further down.
+///
+/// # `POS_ATTRIBUTION_REQUIRES_OPERATOR` is deliberately absent
+///
+/// It is unreachable from a till, so an arm for it would be dead code. `buildPosRouter` wires
+/// `requirePosCapability` **ahead** of the handler (`pos-route-table.ts:124-130`), and every route
+/// that reaches `requirePrincipal` declares a capability an unattended terminal does not hold —
+/// returns `POS_REFUND`, void `POS_VOID`, and the z-report is back-office-audienced. So the
+/// capability gate refuses first and the attribution check is never reached. It goes live only if
+/// someone relaxes `POS_REFUND` on the returns row or adds a till-audienced route at `POS_CREATE`;
+/// that is a property of three capability declarations, not of this enum.
+///
+/// # The open-set arm, stated rather than discovered
+///
+/// Like [`TerminalStanding::of`] and [`OperatorSessionRefusal::of`], [`Self::of`] ends in a
+/// catch-all, so a `ServerErrorCode` variant added later reads as [`Self::Unaffected`] here with
+/// no compiler complaint. That is the deliberate trade the two neighbours already make — the code
+/// set is open by construction (`errorCodeFor` returns `UNKNOWN_ERROR` for anything outside its
+/// table) so exhaustiveness here would be a fiction. `refusal_details::RefusalDetails::parse` is
+/// the one that *is* exhaustive, and it is where a new code gets caught.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CapabilityStanding {
+    /// The refusal was not about the operator's authority. Whatever it says, it says about the
+    /// request.
+    Unaffected,
+
+    /// A role above this operator holds what was refused.
+    ///
+    /// The payload is `None` when the platform sent the code without readable details — a contract
+    /// breach [`RefusalDetails::read`] has already logged, and one that still leaves an honest
+    /// sentence: *someone with more authority can do this*. **Do not fabricate the roles, and do
+    /// not read a missing list as [`Self::NoOperatorRoleHolds`].** The first invents a person for
+    /// a cashier to go and find; the second sends them away from help that exists.
+    SupervisorHolds(Option<SupervisorApprovalRequiredDetails>),
+
+    /// No operator role holds it at all, so escalating at the till cannot help.
+    ///
+    /// The person who can do this is signed into the admin UI, not standing at the drawer. The
+    /// payload names the capability when the platform sent it.
+    NoOperatorRoleHolds(Option<OperatorCapabilityDeniedDetails>),
+}
+
+impl CapabilityStanding {
+    /// Reads a refusal for what it says about the operator's authority.
+    ///
+    /// Only [`ApiFailure::Refused`] can say anything: an unreachable server has made no claim
+    /// about anybody's authority, and a body that could not be read is a bug rather than a
+    /// verdict. Both answer [`Self::Unaffected`] — *this failure tells you nothing about what the
+    /// operator may do*.
+    pub fn of(failure: &ApiFailure) -> Self {
+        let ApiFailure::Refused { code, details, .. } = failure else {
+            return Self::Unaffected;
+        };
+
+        match code {
+            ServerErrorCode::PosSupervisorApprovalRequired => {
+                Self::SupervisorHolds(match details {
+                    Some(RefusalDetails::SupervisorApprovalRequired(approval)) => {
+                        Some(approval.clone())
+                    }
+                    _ => None,
+                })
+            }
+            ServerErrorCode::PosOperatorCapabilityDenied => {
+                Self::NoOperatorRoleHolds(match details {
+                    Some(RefusalDetails::OperatorCapabilityDenied(denial)) => Some(denial.clone()),
+                    _ => None,
+                })
+            }
+            _ => Self::Unaffected,
+        }
+    }
+
+    /// Whether fetching someone more senior, here, now, can get this write through.
+    ///
+    /// True for exactly one of the three. Exhaustive with no catch-all arm: a fourth standing has
+    /// to answer this deliberately, because answering it wrongly is the whole defect — a `true`
+    /// here on a denied capability is what sends a cashier to fetch a person who is refused in
+    /// turn.
+    pub const fn escalating_at_the_till_can_help(&self) -> bool {
+        match self {
+            Self::SupervisorHolds(_) => true,
+            Self::Unaffected | Self::NoOperatorRoleHolds(_) => false,
+        }
+    }
+}
+
+#[cfg(test)]
+mod capability_standing_tests {
+    use super::*;
+
+    fn refusal(code: ServerErrorCode, details: Option<RefusalDetails>) -> ApiFailure {
+        ApiFailure::Refused {
+            status: StatusCode::FORBIDDEN,
+            code,
+            message: "refused".to_string(),
+            details,
+        }
+    }
+
+    fn supervisor_details() -> RefusalDetails {
+        RefusalDetails::SupervisorApprovalRequired(SupervisorApprovalRequiredDetails {
+            capability: crate::refusal_details::CapabilityCode::new("POS_REFUND".to_string())
+                .expect("a fixture capability is never blank"),
+            held_by: crate::refusal_details::HeldBy::new(vec![
+                pos_models::OperatorRole::Supervisor,
+                pos_models::OperatorRole::Manager,
+            ])
+            .expect("a fixture role list is never empty"),
+        })
+    }
+
+    /// The two codes get two standings, and the roles survive.
+    #[test]
+    fn a_supervisor_refusal_names_who_can_supply_it() {
+        let standing = CapabilityStanding::of(&refusal(
+            ServerErrorCode::PosSupervisorApprovalRequired,
+            Some(supervisor_details()),
+        ));
+
+        let CapabilityStanding::SupervisorHolds(Some(approval)) = standing else {
+            panic!("expected a named supervisor standing, got: {standing:?}");
+        };
+        assert_eq!(approval.capability.as_str(), "POS_REFUND");
+        assert_eq!(
+            approval.held_by.lowest(),
+            pos_models::OperatorRole::Supervisor
+        );
+    }
+
+    /// The control for the test above, and the reason this type exists.
+    ///
+    /// A denial and an approval-required are both 403 and both about a capability. If the two
+    /// collapsed onto one standing, the test above would pass against a till that renders every
+    /// 403 as "fetch a supervisor" — which is precisely the defect.
+    #[test]
+    fn a_denied_capability_is_not_a_supervisor_refusal() {
+        let standing = CapabilityStanding::of(&refusal(
+            ServerErrorCode::PosOperatorCapabilityDenied,
+            Some(RefusalDetails::OperatorCapabilityDenied(
+                OperatorCapabilityDeniedDetails {
+                    capability: crate::refusal_details::CapabilityCode::new(
+                        "POS_MANAGE".to_string(),
+                    )
+                    .expect("a fixture capability is never blank"),
+                },
+            )),
+        ));
+
+        let CapabilityStanding::NoOperatorRoleHolds(Some(denial)) = &standing else {
+            panic!("expected a denial, got: {standing:?}");
+        };
+        assert_eq!(denial.capability.as_str(), "POS_MANAGE");
+        assert!(!standing.escalating_at_the_till_can_help());
+    }
+
+    /// A supervisor code whose `heldBy` did not survive is still a supervisor code.
+    ///
+    /// `RefusalDetails::read` answers `None` for a details payload it cannot parse, so this state
+    /// is reachable rather than hypothetical. Reading it as a denial would send a cashier away
+    /// from help that exists; inventing a role list would put a name in front of them that the
+    /// platform never sent.
+    #[test]
+    fn a_supervisor_refusal_with_no_roles_is_still_escalatable() {
+        let standing = CapabilityStanding::of(&refusal(
+            ServerErrorCode::PosSupervisorApprovalRequired,
+            None,
+        ));
+
+        assert_eq!(standing, CapabilityStanding::SupervisorHolds(None));
+        assert!(standing.escalating_at_the_till_can_help());
+    }
+
+    /// Details of the wrong shape beside the right code do not silently become the right shape.
+    #[test]
+    fn details_belonging_to_another_code_are_not_borrowed() {
+        let standing = CapabilityStanding::of(&refusal(
+            ServerErrorCode::PosOperatorCapabilityDenied,
+            Some(supervisor_details()),
+        ));
+
+        assert_eq!(standing, CapabilityStanding::NoOperatorRoleHolds(None));
+    }
+
+    /// Every failure that is not a refusal says nothing about authority.
+    ///
+    /// The `Unaffected` half of the partition, and the one that keeps the offline path honest: a
+    /// server nobody reached has not denied anybody anything.
+    #[test]
+    fn only_a_refusal_can_speak_to_authority() {
+        assert_eq!(
+            CapabilityStanding::of(&refusal(ServerErrorCode::Forbidden, None)),
+            CapabilityStanding::Unaffected,
+            "a bare 403 carries no capability verdict — that is why the codes exist"
+        );
+        assert_eq!(
+            CapabilityStanding::of(&ApiFailure::Unreadable(
+                serde_json::from_str::<u8>("{").expect_err("this is not a u8")
+            )),
+            CapabilityStanding::Unaffected
+        );
+        assert!(!CapabilityStanding::Unaffected.escalating_at_the_till_can_help());
     }
 }

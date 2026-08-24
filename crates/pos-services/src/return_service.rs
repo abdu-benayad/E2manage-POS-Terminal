@@ -46,6 +46,7 @@ use chrono::{DateTime, Utc};
 use std::str::FromStr;
 
 use crate::parse::ParseError;
+use crate::platform_sync::PlatformSync;
 use pos_api::{ApiClient, ApiFailure, CreateReturnRequest, ReturnItemRequest, ServerErrorCode};
 use pos_db::decimal_from_sqlite;
 use pos_db::transactions::OfflineTransactionRow;
@@ -333,8 +334,12 @@ pub struct ReturnResult {
     pub refund_method: RefundMethod,
     /// Number of items returned
     pub item_count: usize,
-    /// Whether synced to server
-    pub synced: bool,
+    /// What the platform did with the refund.
+    ///
+    /// A return is the worked example of why this cannot be a boolean. `POS_REFUND` sits at
+    /// SUPERVISOR, so a cashier attempting one is refused — and the till has to say *fetch one of
+    /// these people* rather than *saved, will sync later*.
+    pub platform: PlatformSync,
 }
 
 /// Return service error types
@@ -912,7 +917,7 @@ impl ReturnService {
         self.save_return_transaction(&return_txn, original_txn, items)?;
 
         // Try to sync to server
-        let synced = self.sync_return_to_server(&return_txn, original_txn).await;
+        let platform = self.sync_return_to_server(&return_txn, original_txn).await;
 
         Ok(ReturnResult {
             return_transaction_id: return_id,
@@ -921,7 +926,7 @@ impl ReturnService {
             currency: original_txn.currency.clone(),
             refund_method,
             item_count: items.len(),
-            synced,
+            platform,
         })
     }
 
@@ -1004,10 +1009,10 @@ impl ReturnService {
         &self,
         return_txn: &Transaction,
         original_txn: &Transaction,
-    ) -> bool {
+    ) -> PlatformSync {
         if !self.api.is_online().await.is_online() {
             debug!("Offline - return will be synced later");
-            return false;
+            return PlatformSync::Queued;
         }
 
         let request = CreateReturnRequest {
@@ -1032,23 +1037,46 @@ impl ReturnService {
             shift_id: return_txn.shift_id.clone(),
         };
 
-        match self.api.create_return(&request).await {
-            Ok(response) => {
-                info!("Return synced to server: {}", response.id);
-                // Update sync status
-                let _ = self
-                    .db
-                    .mark_transaction_synced(&return_txn.id, &response.id);
-                true
+        let platform = PlatformSync::of(
+            self.api
+                .create_return(&request)
+                .await
+                .map(|response| response.id),
+        );
+
+        match &platform {
+            PlatformSync::Recorded(server_id) => {
+                info!("Return recorded by the platform as {}", server_id);
+                if let Err(e) = self.db.mark_transaction_synced(&return_txn.id, server_id) {
+                    error!("Return {} synced but not marked: {}", return_txn.id, e);
+                }
             }
-            Err(e) => {
-                error!("Failed to sync return to server: {}", e);
-                let _ = self
+            PlatformSync::Queued => debug!("Nobody answered; the return stays queued for replay"),
+            // Recorded against the queued row by **code**, not by rendered message. The messages
+            // arrive translated — Arabic is the fallback locale — and a queue that stores one and
+            // later matches on it is the substring anti-pattern rebuilt in the database.
+            PlatformSync::Refused(refused) => {
+                error!(
+                    "The platform refused the return ({}): {}",
+                    refused.code, refused.message
+                );
+                if let Err(e) = self
                     .db
-                    .mark_transaction_failed(&return_txn.id, &e.to_string());
-                false
+                    .mark_transaction_failed(&return_txn.id, &refused.code.to_string())
+                {
+                    error!(
+                        "Could not record the refusal against {}: {}",
+                        return_txn.id, e
+                    );
+                }
             }
+            PlatformSync::Undetermined => error!(
+                "The platform answered the return with a body this till cannot read; \
+                 leaving it queued for a human rather than guessing"
+            ),
         }
+
+        platform
     }
 }
 

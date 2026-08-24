@@ -10,6 +10,7 @@ use rust_decimal::Decimal;
 use std::sync::Arc;
 use tracing::{info, warn};
 
+use crate::platform_sync::PlatformSync;
 use pos_api::{
     ApiClient, ApiResult, CreateTransactionRequest, CreateTransactionResponse, PaymentDto,
     TransactionItemDto, VoidTransactionRequest,
@@ -69,10 +70,13 @@ pub struct CompleteResult {
     pub transaction_number: String,
     /// The receipt number
     pub receipt_number: String,
-    /// Whether the transaction was synced online
-    pub synced: bool,
-    /// Server ID if synced
-    pub server_id: Option<String>,
+    /// What the platform did with it.
+    ///
+    /// Replaces a `synced: bool` beside a `server_id: Option<String>` that was `None` exactly when
+    /// the boolean was false. The sale is on disk before this is decided either way — see
+    /// [`PlatformSync`] for why "the platform refused it" and "nobody answered" must not both
+    /// arrive here as `false`.
+    pub platform: PlatformSync,
     /// Change due to customer
     pub change_due: Decimal,
 }
@@ -272,23 +276,49 @@ impl TransactionService {
             .map_err(|e| TransactionError::InvalidState(e.to_string()))?;
 
         // 5. Try online sync (safe to fail - already in queue)
-        let (synced, server_id) = match self.sync_to_backend(&txn).await {
-            Ok(response) => {
+        let platform =
+            PlatformSync::of(self.sync_to_backend(&txn).await.map(|response| response.id));
+        match &platform {
+            PlatformSync::Recorded(server_id) => {
                 info!(
-                    "Transaction synced: {} -> {}",
-                    txn.transaction_number, response.id
+                    "Transaction recorded by the platform: {} -> {}",
+                    txn.transaction_number, server_id
                 );
-                // Update the queued record with server_id
-                if let Err(e) = self.db.mark_transaction_synced(&txn.id, &response.id) {
+                if let Err(e) = self.db.mark_transaction_synced(&txn.id, server_id) {
                     warn!("Failed to mark transaction as synced: {}", e);
                 }
-                (true, Some(response.id))
             }
-            Err(e) => {
-                info!("Online sync deferred, queued for later: {}", e);
-                (false, None)
+            PlatformSync::Queued => {
+                info!(
+                    "Nobody answered; {} stays queued for replay",
+                    txn.transaction_number
+                );
             }
-        };
+            // A refusal must not be left looking like weather in the queue. The platform has
+            // already decided, so replaying it produces the same refusal on every pass — the
+            // shape that turns one refusal into a steady stream of them.
+            PlatformSync::Refused(refused) => {
+                warn!(
+                    "The platform refused {} ({}): {}",
+                    txn.transaction_number, refused.code, refused.message
+                );
+                if let Err(e) = self
+                    .db
+                    .mark_transaction_failed(&txn.id, &refused.code.to_string())
+                {
+                    warn!("Failed to record the refusal against the queued row: {}", e);
+                }
+            }
+            // Neither replay nor refuse: the till does not know which happened, and saying so is
+            // the only honest answer. Left `Pending` deliberately — a human decides.
+            PlatformSync::Undetermined => {
+                warn!(
+                    "The platform answered {} with a body this till cannot read; \
+                     leaving it queued for a human rather than guessing",
+                    txn.transaction_number
+                );
+            }
+        }
 
         // 6. Store change due before clearing
         let change_due = txn.change_due();
@@ -300,8 +330,7 @@ impl TransactionService {
             transaction_id: txn.id,
             transaction_number: txn.transaction_number,
             receipt_number,
-            synced,
-            server_id,
+            platform,
             change_due,
         })
     }
