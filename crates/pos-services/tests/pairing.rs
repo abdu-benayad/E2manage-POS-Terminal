@@ -336,6 +336,17 @@ fn a_blob_in_a_text_column(db: &Database, column: &str) {
     .expect("the singleton registration row updates");
 }
 
+fn stored_hardware_id(db: &Database) -> Option<String> {
+    let conn = db.connection();
+    let conn = conn.lock();
+    conn.query_row(
+        "SELECT hardware_id FROM terminal_registration WHERE id = 1",
+        [],
+        |row| row.get::<_, Option<String>>(0),
+    )
+    .expect("the singleton registration row is readable")
+}
+
 fn stored_secret(db: &Database) -> Option<String> {
     let conn = db.connection();
     let conn = conn.lock();
@@ -375,14 +386,23 @@ fn an_unreadable_registration_flag_reads_as_not_registered() {
     );
 }
 
-/// The destructive step: an unreadable hardware id makes the till delete its own credentials.
+/// An unreadable hardware id no longer costs the secret — and still silently replaces the id.
 ///
-/// This is the whole issue in one test. `get_hardware_id` reads `hardware_id`, gets `""` from the
-/// swallowed error, treats that as "no hardware id yet", generates a fresh one, and writes it with
-/// `INSERT OR REPLACE` — which is not an upsert of the named columns but a delete-and-insert, so
-/// every column the statement does not name is reset.
+/// This test pins **both halves of a partial fix**, because a test asserting only the repaired half
+/// would read as though the defect were closed.
+///
+/// `save_hardware_id` used `INSERT OR REPLACE`, which is not an upsert of the named columns but a
+/// delete-and-insert: every column it did not name was reset, including the terminal secret and the
+/// platform licence key. It is a targeted `UPDATE` now, so a till that reaches this path keeps its
+/// credentials and its enrolment.
+///
+/// **What that does not fix is the reason it got here.** `get_hardware_id` still cannot tell
+/// `QueryReturnedNoRows` from a read that failed, so it still concludes "no hardware id yet" and
+/// still writes a freshly generated one over the real one. The till then presents an identity the
+/// platform has never seen, while believing itself registered. That is the defect this issue's next
+/// step closes, and the assertions below are what will change when it does.
 #[test]
-fn an_unreadable_hardware_id_makes_the_till_destroy_its_own_secret() {
+fn an_unreadable_hardware_id_no_longer_costs_the_secret_but_still_replaces_the_id() {
     let (service, db) = service("http://127.0.0.1:1");
     holding_a_secret(&db);
 
@@ -398,17 +418,25 @@ fn an_unreadable_hardware_id_makes_the_till_destroy_its_own_secret() {
         .get_hardware_id()
         .expect("the call does not surface the failure");
 
-    assert_ne!(
-        regenerated, HARDWARE_ID,
-        "the till invented a new hardware id rather than reading the one it had"
-    );
+    // Repaired.
     assert_eq!(
-        stored_secret(&db),
-        None,
-        "and `INSERT OR REPLACE` took the terminal secret with it"
+        stored_secret(&db).as_deref(),
+        Some("a-real-looking-secret"),
+        "a targeted UPDATE leaves the terminal secret alone"
     );
     assert!(
-        !service.is_registered().expect("the flag is readable again"),
-        "the till is now unregistered, and the recovery path for that was deliberately removed"
+        service.is_registered().expect("the flag is readable"),
+        "and leaves the enrolment alone — recording a hardware id is not a claim about enrolment"
+    );
+
+    // Still broken, on purpose, until the read distinguishes absent from unreadable.
+    assert_ne!(
+        regenerated, HARDWARE_ID,
+        "the till still invents a new hardware id rather than surfacing the failed read"
+    );
+    assert_eq!(
+        stored_hardware_id(&db).as_deref(),
+        Some(regenerated.as_str()),
+        "and still writes it over the identity the platform knows this till by"
     );
 }

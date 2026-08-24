@@ -151,15 +151,42 @@ impl PairingService {
         Ok(hardware_id)
     }
 
-    /// Saves the hardware ID
+    /// Writes the hardware ID onto the singleton registration row, touching nothing else.
+    ///
+    /// # `UPDATE`, deliberately, and never `INSERT OR REPLACE`
+    ///
+    /// This was `INSERT OR REPLACE INTO terminal_registration (id, hardware_id, is_registered)`,
+    /// which is not an upsert of the named columns: SQLite deletes the conflicting row and inserts
+    /// a new one, so **every column the statement does not name is reset**. Three of the columns it
+    /// did not name are the terminal secret, the platform licence key, and the company association.
+    ///
+    /// That only matters because the caller can reach here holding a live registration.
+    /// [`Self::get_hardware_id`] guards this call on the stored id being empty, and reads that id
+    /// through a combinator that turns *any* failure into an empty string — so a read that fails
+    /// rather than a row that is absent sends a registered till down this path and it emerges with
+    /// its credentials gone. The recovery route for a lost secret was removed on purpose (see
+    /// [`Self::request_pairing_code`]), which makes that state terminal.
+    ///
+    /// An `UPDATE` cannot express that mistake. The row is seeded by the schema, so there is no
+    /// insert to perform, and `is_registered` is left alone because recording a hardware id is not
+    /// a statement about enrolment.
     fn save_hardware_id(&self, hardware_id: &str) -> Result<()> {
         let conn = self.db.connection();
         let conn = conn.lock();
 
-        conn.execute(
-            "INSERT OR REPLACE INTO terminal_registration (id, hardware_id, is_registered) VALUES (1, ?1, 0)",
+        let updated = conn.execute(
+            "UPDATE terminal_registration SET hardware_id = ?1 WHERE id = 1",
             [hardware_id],
         )?;
+
+        // An UPDATE matching nothing succeeds, so the swallowed failure this method exists to stop
+        // would come straight back one layer down. The schema seeds row 1; zero rows means the
+        // store is not the one this code was written against, and that is worth saying out loud.
+        anyhow::ensure!(
+            updated == 1,
+            "the singleton terminal_registration row (id = 1) is missing, so the hardware id could \
+             not be stored; the schema seeds this row and something has removed it"
+        );
 
         Ok(())
     }
