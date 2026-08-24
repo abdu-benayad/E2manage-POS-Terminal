@@ -1127,11 +1127,23 @@ mod tests {
 
         // Control: the same row with a secret is an enrolment, so the refusal above is about the
         // blank secret and not about this read refusing everything.
+        //
+        // It asserts the whole value rather than the variant, which makes it double as the
+        // every-nullable-column-NULL case this table's round-trips are supposed to carry
+        // (`doc/considerations-inbox` §A pattern worth copying): `company_name` and
+        // `registered_at` are never written above, so a fallback firing over them fails here.
         write_secret("secret-1");
-        assert!(matches!(
+        assert_eq!(
             service.get_registration().unwrap(),
-            TerminalRegistration::Enrolled { .. }
-        ));
+            TerminalRegistration::Enrolled {
+                hardware_id: "hardware-id-1".to_string(),
+                terminal_id: "terminal-id-1".to_string(),
+                terminal_code: "terminal-code-1".to_string(),
+                secret: "secret-1".to_string(),
+                company_name: None,
+                registered_at: None,
+            }
+        );
     }
 
     #[test]
