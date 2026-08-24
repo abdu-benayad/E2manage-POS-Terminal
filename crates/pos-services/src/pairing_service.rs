@@ -421,11 +421,15 @@ impl PairingService {
         Ok(())
     }
 
-    /// Clears the API authentication token.
-    /// Call this after `clear_registration()` so the next pairing request
-    /// goes out without a stale Authorization header.
-    pub async fn clear_api_token(&self) {
-        self.api.clear_token().await;
+    /// Stops presenting this till's credentials — the terminal's and the operator's both.
+    ///
+    /// Call it after [`Self::clear_registration`] so the next pairing request goes out
+    /// presenting nothing. Both, not just the terminal's: an operator token held without a
+    /// terminal token is a credential that can no longer be used and can still do harm, because
+    /// it is the field the platform attributes a write to. [`ApiClient::clear_credentials`]
+    /// enforces that at the field; this wrapper must not describe less than it does.
+    pub async fn clear_api_credentials(&self) {
+        self.api.clear_credentials().await;
     }
 
     // ========================================================================
