@@ -634,7 +634,7 @@ impl PolicyService {
         let PolicyValue::Range(range) = &policy.value else {
             return None;
         };
-        range.min().to_u32()
+        range.configured().to_u32()
     }
 
     /// Gets the session timeout in minutes
@@ -645,7 +645,7 @@ impl PolicyService {
             return None;
         };
         // Return min as default, or could return a default value from range
-        range.min().to_u32()
+        range.configured().to_u32()
     }
 
     /// Gets the maximum offline transaction amount
@@ -655,7 +655,7 @@ impl PolicyService {
         let PolicyValue::Range(range) = &policy.value else {
             return None;
         };
-        range.max().to_f64()
+        range.configured().to_f64()
     }
 
     /// Gets the heartbeat interval in seconds
@@ -665,7 +665,7 @@ impl PolicyService {
         let PolicyValue::Range(range) = &policy.value else {
             return None;
         };
-        range.min().to_u32()
+        range.configured().to_u32()
     }
 
     /// Checks if PCI compliance mode is enabled
@@ -696,7 +696,7 @@ impl PolicyService {
         let PolicyValue::Range(range) = &policy.value else {
             return None;
         };
-        range.min().to_u32()
+        range.configured().to_u32()
     }
 }
 

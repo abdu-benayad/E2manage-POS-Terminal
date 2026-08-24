@@ -62,17 +62,23 @@ use serde_json::Value;
 pub struct RangeBounds {
     min: Decimal,
     max: Decimal,
+    default: Option<Decimal>,
 }
 
 impl RangeBounds {
-    /// Builds bounds, refusing an inverted range.
+    /// Builds bounds, refusing a range that contradicts itself.
     ///
-    /// `min > max` admits no value at all. That is a policy the platform has got wrong, not a range
-    /// that happens to be empty, and the caller records it as [`PolicyValue::Malformed`] — the same
-    /// standing as a range whose value was not an object. There is deliberately no constructor that
-    /// accepts one, so no later code has to re-check.
-    pub fn new(min: Decimal, max: Decimal) -> Option<Self> {
-        (min <= max).then_some(Self { min, max })
+    /// Two contradictions are refused, and both are the platform having got the policy wrong
+    /// rather than a range that happens to be unusual. The caller records either as
+    /// [`PolicyValue::Malformed`]. There is deliberately no constructor that accepts one, so no
+    /// later code has to re-check.
+    ///
+    /// - `min > max` admits no value at all.
+    /// - a `default` outside `min..=max` is a chosen setting the same policy forbids.
+    pub fn new(min: Decimal, max: Decimal, default: Option<Decimal>) -> Option<Self> {
+        let ordered = min <= max;
+        let default_permitted = default.is_none_or(|d| min <= d && d <= max);
+        (ordered && default_permitted).then_some(Self { min, max, default })
     }
 
     /// The lower bound.
@@ -83,6 +89,31 @@ impl RangeBounds {
     /// The upper bound.
     pub fn max(&self) -> Decimal {
         self.max
+    }
+
+    /// The setting the platform actually chose, falling back to the lowest it permits.
+    ///
+    /// # Why this is not `min()`
+    ///
+    /// A RANGE policy here is *the span of permitted configurations plus the one in force* —
+    /// `HEARTBEAT_INTERVAL_SECONDS` is `{"min":30,"max":300,"default":60}`. Reading `min` returns
+    /// the lowest value an administrator could have chosen, not the value they did choose.
+    ///
+    /// That was live: the heartbeat timer at `src/platform.rs:143` ran at **30 seconds against a
+    /// configured 60**, twice the intended rate. `get_session_timeout_minutes` returned 5 for a
+    /// configured 15, and `get_receipt_retention_days` 7 for a configured 90.
+    ///
+    /// **`get_min_pin_length` was correct, by coincidence** — that row's `min` and `default` are
+    /// both 4. Checking one accessor cleared the whole family, which is why the fixtures below are
+    /// the measured rows rather than one example.
+    ///
+    /// The fallback to `min` is what the predecessor did, kept for the case the platform omits
+    /// `default`. Measured 2026-08-24: present on all 9 RANGE rows — but the table gained two rows
+    /// during the measurement, is written through a path that casts `policyValue as any` into an
+    /// unconstrained `Json` column, and has no write validation at all. Uniformity across nine
+    /// rows at one instant is not a promise about the tenth.
+    pub fn configured(&self) -> Decimal {
+        self.default.unwrap_or(self.min)
     }
 
     /// Whether a value falls within the bounds, inclusive.
@@ -163,15 +194,43 @@ impl PolicyValue {
     }
 }
 
-/// Reads `{ "min": …, "max": … }` into bounds, or `None` if it is not that.
+/// Reads `{ "min": …, "max": …, "default": … }` into bounds, or `None` if it is not that.
+///
+/// `default` is optional and its absence is not a failure; a `default` present but unreadable is,
+/// because a policy naming a setting the till cannot read is not a policy the till should apply
+/// half of.
 fn parse_bounds(value: &Value) -> Option<RangeBounds> {
     let object = value.as_object()?;
     let min = decimal_from(object.get("min")?)?;
     let max = decimal_from(object.get("max")?)?;
-    RangeBounds::new(min, max)
+    let default = match object.get("default") {
+        None => None,
+        Some(declared) => Some(decimal_from(declared)?),
+    };
+    RangeBounds::new(min, max, default)
 }
 
-/// Reads an array of strings, refusing one that contains anything else.
+/// Reads `{ "allowed": [...] }` into the permitted values.
+///
+/// # Why the wrapper object, and why a bare array is refused
+///
+/// Because that is what the platform sends. Measured against its live table 2026-08-24, the only
+/// LIST policy in existence is
+/// `ALLOWED_PAYMENT_METHODS = {"allowed":["CASH","CARD","MOBILE","CREDIT_ACCOUNT"]}`, and its own
+/// evaluator reads `(policy.policyValue as { allowed: string[] }).allowed || []`.
+///
+/// This type was originally written to expect a bare array — from the name `LIST`, not from the
+/// data — so the till's only LIST policy read as [`PolicyValue::Malformed`]. **The predecessor was
+/// no better and was worse:** `as_array()` on that object returned `None` and `unwrap_or_default()`
+/// made it `vec![]`, which `check_list` reads as *allow all*. `ALLOWED_PAYMENT_METHODS` has never
+/// been enforced by this till.
+///
+/// A bare array is refused rather than tolerated, and the platform's own behaviour is the reason:
+/// `.allowed` on `["CASH","CARD"]` is `undefined`, so its evaluator reads that as `[]` too.
+/// Accepting it here would have the till enforce a rule the platform does not — worse than either
+/// side failing alone. The platform's e2e tests do create bare arrays, and one deliberately stores
+/// the string `"not-an-array"`; there is no write validation on that column, so both shapes can
+/// arrive and both are unreadable.
 ///
 /// # Why a non-string element poisons the whole list
 ///
@@ -188,6 +247,8 @@ fn parse_bounds(value: &Value) -> Option<RangeBounds> {
 /// read, and it says so.
 fn parse_list(value: &Value) -> Option<Vec<String>> {
     value
+        .as_object()?
+        .get("allowed")?
         .as_array()?
         .iter()
         .map(|element| element.as_str().map(str::to_string))
@@ -251,7 +312,7 @@ mod tests {
             PolicyValue::Regex("^[0-9]{4}$".to_string())
         );
         assert_eq!(
-            read(PolicyType::List, json!(["CASH", "CARD"])),
+            read(PolicyType::List, json!({"allowed": ["CASH", "CARD"]})),
             PolicyValue::List(vec!["CASH".to_string(), "CARD".to_string()])
         );
 
@@ -266,7 +327,7 @@ mod tests {
         for value in [
             read(PolicyType::Boolean, json!(false)),
             read(PolicyType::Enum, json!("X")),
-            read(PolicyType::List, json!([])),
+            read(PolicyType::List, json!({"allowed": []})),
         ] {
             assert!(value.is_understood(), "{value:?}");
         }
@@ -280,7 +341,10 @@ mod tests {
     /// confuse a deliberate rule with a failure to read one.
     #[test]
     fn a_deliberate_empty_list_is_not_the_same_value_as_an_unreadable_one() {
-        assert_eq!(read(PolicyType::List, json!([])), PolicyValue::List(vec![]));
+        assert_eq!(
+            read(PolicyType::List, json!({"allowed": []})),
+            PolicyValue::List(vec![])
+        );
         assert!(matches!(
             read(PolicyType::List, json!("CASH")),
             PolicyValue::Malformed { .. }
@@ -337,7 +401,7 @@ mod tests {
     /// while silently permitting less than the platform wrote, or more.
     #[test]
     fn a_list_with_a_non_string_element_does_not_become_a_shorter_list() {
-        let value = read(PolicyType::List, json!(["CASH", 42, "CARD"]));
+        let value = read(PolicyType::List, json!({"allowed": ["CASH", 42, "CARD"]}));
 
         assert!(
             matches!(value, PolicyValue::Malformed { .. }),
@@ -351,7 +415,7 @@ mod tests {
     /// `filter_map` emptied it, and empty was read as permit. Neither step looks wrong alone.
     #[test]
     fn a_list_of_non_strings_is_not_an_empty_allow_everything_list() {
-        let value = read(PolicyType::List, json!([1, 2, 3]));
+        let value = read(PolicyType::List, json!({"allowed": [1, 2, 3]}));
 
         assert!(
             matches!(value, PolicyValue::Malformed { .. }),
@@ -370,11 +434,11 @@ mod tests {
             read(PolicyType::Range, json!({"min": 9, "max": 4})),
             PolicyValue::Malformed { .. }
         ));
-        assert!(RangeBounds::new(Decimal::from(9), Decimal::from(4)).is_none());
+        assert!(RangeBounds::new(Decimal::from(9), Decimal::from(4), None).is_none());
 
         // Control: the degenerate single-value range is legal, so the constructor is refusing
         // inversion rather than refusing everything.
-        assert!(RangeBounds::new(Decimal::from(4), Decimal::from(4)).is_some());
+        assert!(RangeBounds::new(Decimal::from(4), Decimal::from(4), None).is_some());
     }
 
     #[test]
@@ -445,9 +509,157 @@ mod tests {
         assert_eq!(bounds.max(), Decimal::from_str("2500.75").unwrap());
     }
 
+    /// Every policy the platform's live table actually holds, read by this type.
+    ///
+    /// **These fixtures are the measured rows, verbatim, not compositions of what the shapes ought
+    /// to be.** This type was originally written from the declared type names — `LIST` reads like
+    /// a bare array — and every one of its tests passed while the only LIST policy in existence
+    /// was unreadable. A test can be right about an invented input indefinitely.
+    ///
+    /// Measured 2026-08-24 against the platform's dev database. Caveats worth carrying: it is
+    /// **dev**, not production; `POS_SecurityPolicy` has no `companyId`, so there is one global row
+    /// set; and nothing in the platform repo creates these rows — no seed file, and
+    /// `MIN_PIN_LENGTH` appears once in that entire checkout. A repo-only search reports this
+    /// vocabulary does not exist, which is wrong in the dangerous direction.
+    #[test]
+    fn every_policy_the_platform_actually_holds_is_understood() {
+        let rows = [
+            (PolicyType::Range, r#"{"max":8,"min":4,"default":4}"#),
+            (PolicyType::Range, r#"{"max":60,"min":5,"default":15}"#),
+            (PolicyType::Range, r#"{"max":10,"min":3,"default":5}"#),
+            (PolicyType::Range, r#"{"max":10000,"min":0,"default":1000}"#),
+            (PolicyType::Range, r#"{"max":1000,"min":10,"default":100}"#),
+            (PolicyType::Range, r#"{"max":300,"min":30,"default":60}"#),
+            (PolicyType::Range, r#"{"max":30,"min":1,"default":5}"#),
+            (PolicyType::Range, r#"{"max":365,"min":7,"default":90}"#),
+            (PolicyType::Range, r#"{"max":90,"min":7,"default":30}"#),
+            (
+                PolicyType::List,
+                r#"{"allowed":["CASH","CARD","MOBILE","CREDIT_ACCOUNT"]}"#,
+            ),
+            (PolicyType::Boolean, "true"),
+            (PolicyType::Boolean, "true"),
+        ];
+
+        for (declared, raw) in rows {
+            let value: Value = serde_json::from_str(raw).expect("the platform's own JSON");
+            let read = PolicyValue::from_declared(&declared, &value);
+            assert!(
+                read.is_understood(),
+                "the platform sends {raw} for a {declared:?} policy and the till cannot read it: {read:?}"
+            );
+        }
+    }
+
+    /// The allow-list the platform actually sends yields exactly its four methods.
+    #[test]
+    fn the_payment_methods_policy_reads_as_its_four_methods() {
+        let raw: Value =
+            serde_json::from_str(r#"{"allowed":["CASH","CARD","MOBILE","CREDIT_ACCOUNT"]}"#)
+                .expect("the platform's own JSON");
+
+        assert_eq!(
+            PolicyValue::from_declared(&PolicyType::List, &raw),
+            PolicyValue::List(vec![
+                "CASH".to_string(),
+                "CARD".to_string(),
+                "MOBILE".to_string(),
+                "CREDIT_ACCOUNT".to_string(),
+            ])
+        );
+    }
+
+    /// Accepting the wrapper object must not mean accepting anything.
+    ///
+    /// The negative controls, and not hypothetical ones: the platform's own e2e tests create LIST
+    /// policies as bare arrays, and one deliberately stores the string `"not-an-array"`. There is
+    /// no write validation on that column. A bare array is refused because `.allowed` on it is
+    /// `undefined` in the platform's evaluator too — being lenient here would have the till enforce
+    /// a rule the platform does not.
+    #[test]
+    fn the_shapes_the_platform_can_also_emit_are_still_unreadable() {
+        for raw in [r#"["CASH","CARD","QR"]"#, r#""not-an-array""#, "42"] {
+            let value: Value = serde_json::from_str(raw).expect("valid JSON");
+            let read = PolicyValue::from_declared(&PolicyType::List, &value);
+            assert!(
+                matches!(read, PolicyValue::Malformed { .. }),
+                "{raw} is not a readable allow-list, got {read:?}"
+            );
+        }
+    }
+
+    /// A range names the setting in force, not the lowest one permitted.
+    ///
+    /// The second case is the control and it is the one that matters: `MIN_PIN_LENGTH` has `min`
+    /// and `default` both 4, so an implementation ignoring `default` entirely still passes it.
+    /// Checking that accessor alone cleared the whole family, which is how the heartbeat came to
+    /// run at half its configured interval.
+    #[test]
+    fn a_range_carries_the_setting_in_force_and_not_only_its_span() {
+        let heartbeat: Value =
+            serde_json::from_str(r#"{"max":300,"min":30,"default":60}"#).expect("valid JSON");
+        let PolicyValue::Range(bounds) = PolicyValue::from_declared(&PolicyType::Range, &heartbeat)
+        else {
+            panic!("the platform's own heartbeat row reads as a range");
+        };
+        assert_eq!(
+            bounds.configured(),
+            Decimal::from(60),
+            "configured, not min"
+        );
+        assert_eq!(
+            bounds.min(),
+            Decimal::from(30),
+            "the span is still available"
+        );
+
+        let pin: Value =
+            serde_json::from_str(r#"{"max":8,"min":4,"default":4}"#).expect("valid JSON");
+        let PolicyValue::Range(bounds) = PolicyValue::from_declared(&PolicyType::Range, &pin)
+        else {
+            panic!("the platform's own PIN row reads as a range");
+        };
+        assert_eq!(bounds.configured(), Decimal::from(4));
+    }
+
+    /// A range with no `default` falls back to its minimum, as the predecessor did.
+    ///
+    /// Measured 2026-08-24: `default` is present on all 9 RANGE rows. Modelled as absent-able
+    /// anyway — the column has no write validation, is written through a path casting
+    /// `policyValue as any`, and the table gained two rows during the measurement itself.
+    /// Uniformity across nine rows at one instant is not a promise about the tenth.
+    #[test]
+    fn a_range_without_a_chosen_setting_falls_back_to_its_minimum() {
+        let raw: Value = serde_json::from_str(r#"{"min":30,"max":300}"#).expect("valid JSON");
+        let PolicyValue::Range(bounds) = PolicyValue::from_declared(&PolicyType::Range, &raw)
+        else {
+            panic!("a range without a default is still a range");
+        };
+        assert_eq!(bounds.configured(), Decimal::from(30));
+    }
+
+    /// A setting the same policy forbids is a contradiction, not a range.
+    #[test]
+    fn a_default_outside_its_own_bounds_is_malformed() {
+        let raw: Value =
+            serde_json::from_str(r#"{"min":30,"max":300,"default":9000}"#).expect("valid JSON");
+
+        assert!(matches!(
+            PolicyValue::from_declared(&PolicyType::Range, &raw),
+            PolicyValue::Malformed { .. }
+        ));
+
+        // Control: the same row with its default inside the bounds is fine, so the constructor is
+        // refusing the contradiction rather than refusing every default.
+        let ok: Value =
+            serde_json::from_str(r#"{"min":30,"max":300,"default":90}"#).expect("valid JSON");
+        assert!(PolicyValue::from_declared(&PolicyType::Range, &ok).is_understood());
+    }
+
     #[test]
     fn bounds_are_inclusive_at_both_ends() {
-        let bounds = RangeBounds::new(Decimal::from(4), Decimal::from(8)).expect("valid bounds");
+        let bounds =
+            RangeBounds::new(Decimal::from(4), Decimal::from(8), None).expect("valid bounds");
 
         assert!(bounds.contains(Decimal::from(4)));
         assert!(bounds.contains(Decimal::from(8)));
