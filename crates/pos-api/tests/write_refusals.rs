@@ -22,7 +22,8 @@
 
 use pos_api::{
     ApiClient, ApiFailure, CreateReturnRequest, CreateTransactionRequest, EndShiftRequest,
-    RefusalDetails, ReturnItemRequest, ServerErrorCode, StartShiftRequest, VoidTransactionRequest,
+    RefusalDetails, ReturnItemRequest, ServerErrorCode, ServerShiftId, StartShiftRequest,
+    VoidTransactionRequest,
 };
 use pos_models::OperatorId;
 use rust_decimal::Decimal;
@@ -50,7 +51,7 @@ fn a_sale() -> CreateTransactionRequest {
         currency: "LYD".to_string(),
         customer_id: None,
         customer_name: None,
-        shift_id: "shift-1".to_string(),
+        shift_id: Some(ServerShiftId::new("srv-shift-1").expect("a fixture id is never blank")),
         terminal_id: "TERM-001".to_string(),
         operator_id: operator(),
         note: None,
@@ -93,7 +94,7 @@ fn a_refund() -> CreateReturnRequest {
         refund_amount: Decimal::ONE,
         operator_id: operator(),
         terminal_id: "TERM-001".to_string(),
-        shift_id: "shift-1".to_string(),
+        shift_id: Some(ServerShiftId::new("srv-shift-1").expect("a fixture id is never blank")),
     }
 }
 

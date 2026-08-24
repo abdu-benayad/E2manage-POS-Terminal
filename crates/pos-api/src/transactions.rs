@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::client::{ApiClient, Enveloped};
 use crate::failure::ApiResult;
+use crate::shifts::ServerShiftId;
 use pos_models::{OperatorId, RecordedOperatorName};
 
 /// A transaction as the till submits it to `POST /api/pos/transactions`.
@@ -36,7 +37,14 @@ pub struct CreateTransactionRequest {
     pub currency: String,
     pub customer_id: Option<String>,
     pub customer_name: Option<String>,
-    pub shift_id: String,
+    /// The platform's identifier for the shift this sale belongs to, when it has one.
+    ///
+    /// Omitted rather than blanked when absent — see [`ServerShiftId`]. `POS_Transaction.shiftId`
+    /// is a nullable `@db.Uuid` with a foreign key, and the validator marks it `.optional()`, so
+    /// an omitted field is a sale the platform records against no shift. A *local* id here would
+    /// be refused as a malformed UUID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shift_id: Option<ServerShiftId>,
     pub terminal_id: String,
     pub operator_id: OperatorId,
     pub note: Option<String>,
@@ -203,5 +211,64 @@ impl ApiClient {
         );
         let response: Enveloped<_> = self.get_or_failure(&path).await?;
         Ok(response.into_inner())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::shifts::ServerShiftId;
+
+    fn a_sale(shift_id: Option<ServerShiftId>) -> CreateTransactionRequest {
+        CreateTransactionRequest {
+            transaction_number: "TXN-1".to_string(),
+            transaction_type: "SALE".to_string(),
+            items: vec![],
+            payments: vec![],
+            subtotal: Decimal::ONE,
+            tax_total: Decimal::ZERO,
+            discount_total: Decimal::ZERO,
+            grand_total: Decimal::ONE,
+            currency: "LYD".to_string(),
+            customer_id: None,
+            customer_name: None,
+            shift_id,
+            terminal_id: "TERM-001".to_string(),
+            operator_id: OperatorId::new("op-1").expect("a fixture id is never blank"),
+            note: None,
+            created_at: "2026-08-24T09:00:00Z".to_string(),
+            completed_at: None,
+        }
+    }
+
+    /// A sale in a shift the platform knows quotes the platform's identifier.
+    #[test]
+    fn a_sale_names_the_shift_the_platform_issued() {
+        let id = ServerShiftId::new("9f1c0f6e-0000-4000-8000-000000000001")
+            .expect("a fixture id is never blank");
+        let body = serde_json::to_value(a_sale(Some(id))).expect("the request serialises");
+
+        assert_eq!(body["shiftId"], "9f1c0f6e-0000-4000-8000-000000000001");
+    }
+
+    /// A sale in a shift the platform has never seen omits the field entirely.
+    ///
+    /// The control for the test above, and the case an offline-first till spends most of its life
+    /// in. **Omitted, not blank and not the local id.** `POS_Transaction.shiftId` is a nullable
+    /// `@db.Uuid` and `transaction.validator.ts:100` marks the field `.optional()`, so the absence
+    /// is legal — while `""` and a local primary key both fail the UUID check, and a local id that
+    /// somehow passed it would break the foreign key.
+    #[test]
+    fn a_sale_in_an_unsynced_shift_names_no_shift_at_all() {
+        let body = serde_json::to_value(a_sale(None)).expect("the request serialises");
+
+        assert!(
+            body.get("shiftId").is_none(),
+            "an absent shift must be an absent field, not a blank or a local id: {body}"
+        );
+        // The control on the control: the rest of the body is still there, so a serialiser that
+        // dropped everything would not read as a pass.
+        assert_eq!(body["transactionNumber"], "TXN-1");
+        assert_eq!(body["terminalId"], "TERM-001");
     }
 }

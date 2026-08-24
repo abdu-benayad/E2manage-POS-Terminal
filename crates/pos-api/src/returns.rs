@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::client::{ApiClient, Enveloped};
 use crate::failure::ApiResult;
+use crate::shifts::ServerShiftId;
 use pos_models::OperatorId;
 
 /// A refund against an earlier transaction.
@@ -21,7 +22,16 @@ pub struct CreateReturnRequest {
     pub refund_amount: Decimal,
     pub operator_id: OperatorId,
     pub terminal_id: String,
-    pub shift_id: String,
+    /// The platform's identifier for the shift, when it has one.
+    ///
+    /// `POS_Return.shiftId` is a nullable `@db.Uuid` (`prisma/pos.prisma:894`) exactly like the
+    /// transaction column. Its validator is *weaker* — `return.validator.ts:46` is
+    /// `z.string().optional()` with no UUID check — which makes this the more dangerous of the
+    /// two: a local id passes validation and reaches Postgres, where the column type refuses it
+    /// as a 500 rather than a 400. Task 09 named only the transaction; the defect is the same
+    /// field and repairing one would have left the other.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shift_id: Option<ServerShiftId>,
 }
 
 /// One line being returned.

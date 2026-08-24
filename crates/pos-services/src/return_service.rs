@@ -47,6 +47,7 @@ use std::str::FromStr;
 
 use crate::parse::ParseError;
 use crate::platform_sync::PlatformSync;
+use crate::shift_service::server_shift_id;
 use pos_api::{ApiClient, ApiFailure, CreateReturnRequest, ReturnItemRequest, ServerErrorCode};
 use pos_db::decimal_from_sqlite;
 use pos_db::transactions::OfflineTransactionRow;
@@ -1034,7 +1035,7 @@ impl ReturnService {
             refund_amount: return_txn.grand_total.abs(),
             operator_id: return_txn.operator_id.clone(),
             terminal_id: return_txn.terminal_id.clone(),
-            shift_id: return_txn.shift_id.clone(),
+            shift_id: server_shift_id(&self.db, &return_txn.shift_id),
         };
 
         let platform = PlatformSync::of(

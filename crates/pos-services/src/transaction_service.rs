@@ -11,6 +11,7 @@ use std::sync::Arc;
 use tracing::{info, warn};
 
 use crate::platform_sync::PlatformSync;
+use crate::shift_service::server_shift_id;
 use pos_api::{
     ApiClient, ApiResult, CreateTransactionRequest, CreateTransactionResponse, PaymentDto,
     TransactionItemDto, VoidTransactionRequest,
@@ -387,7 +388,7 @@ impl TransactionService {
             currency: txn.currency.clone(),
             customer_id: txn.customer_id.clone(),
             customer_name: txn.customer_name.clone(),
-            shift_id: txn.shift_id.clone(),
+            shift_id: server_shift_id(&self.db, &txn.shift_id),
             terminal_id: txn.terminal_id.clone(),
             operator_id: txn.operator_id.clone(),
             note: txn.note.clone(),

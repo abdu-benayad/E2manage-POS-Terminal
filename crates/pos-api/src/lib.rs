@@ -120,7 +120,10 @@ pub use transactions::{
     VoidTransactionRequest,
 };
 
-pub use shifts::{DenominationDto, EndShiftRequest, StartShiftRequest, StartShiftResponse};
+pub use shifts::{
+    BlankServerShiftId, DenominationDto, EndShiftRequest, ServerShiftId, StartShiftRequest,
+    StartShiftResponse,
+};
 
 pub use offline::{UploadOfflineTransactionRequest, UploadOfflineTransactionResponse};
 

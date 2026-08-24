@@ -10,7 +10,9 @@ use std::sync::Arc;
 use tracing::{error, info, warn};
 
 use crate::platform_sync::PlatformSync;
-use pos_api::{ApiClient, ApiResult, DenominationDto, EndShiftRequest, StartShiftRequest};
+use pos_api::{
+    ApiClient, ApiResult, DenominationDto, EndShiftRequest, ServerShiftId, StartShiftRequest,
+};
 use pos_db::shifts::{ShiftRow, ShiftStatus};
 use pos_db::Database;
 use pos_models::{OperatorId, RecordedOperatorName};
@@ -243,6 +245,35 @@ pub struct ShiftSummary {
 // sentinel wearing the newtype, which is the one outcome this migration must not produce.
 // `shifts.operator_id` is `NOT NULL`; there is no such shift to model.
 
+/// The platform's identifier for a shift the till holds locally, if the platform has issued one.
+///
+/// **The read that was missing.** `shifts.server_id` was written by `mark_shift_synced` and read
+/// by nothing in the codebase, while every sale went out quoting `shifts.id` — the till's own
+/// primary key. `POS_Transaction.shiftId` is a `@db.Uuid` with a foreign key to the platform's
+/// shift row, so those sales named a shift the platform never issued.
+///
+/// `None` is a real answer with three causes, none of them an error here: the shift was opened
+/// while the network was down, the platform refused to open it, or the identifier came back and
+/// failed to persist. The caller omits the field, which is what the nullable column and the
+/// `.optional()` validator permit. Resolved at request-build time rather than cached, so a queued
+/// sale replayed after its shift finally syncs picks the identifier up.
+///
+/// A row that cannot be read, or one holding a blank, is also `None` — a lookup failure must not
+/// promote the local id onto the wire, and there is no constructor here that could.
+pub fn server_shift_id(db: &Database, local_shift_id: &str) -> Option<ServerShiftId> {
+    match db.get_shift_by_id(local_shift_id) {
+        Ok(Some(row)) => row.server_id.and_then(|id| ServerShiftId::new(id).ok()),
+        Ok(None) => {
+            warn!("no local shift {local_shift_id}; the sale will name no shift");
+            None
+        }
+        Err(e) => {
+            error!("could not read shift {local_shift_id} to find its platform id: {e}");
+            None
+        }
+    }
+}
+
 /// Result of starting a shift
 #[derive(Debug, Clone)]
 pub struct StartShiftResult {
@@ -409,7 +440,8 @@ impl ShiftService {
                     currency,
                     &now.to_rfc3339(),
                 )
-                .await,
+                .await
+                .map(|id| id.as_str().to_string()),
             )
         } else {
             info!("Offline - shift {} queued for sync", shift_number);
@@ -671,7 +703,7 @@ impl ShiftService {
         opening_cash: Decimal,
         currency: &str,
         started_at: &str,
-    ) -> ApiResult<String> {
+    ) -> ApiResult<ServerShiftId> {
         let request = StartShiftRequest {
             shift_number: shift_number.to_string(),
             operator_id: operator_id.clone(),
