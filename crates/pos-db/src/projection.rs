@@ -459,6 +459,35 @@ pub fn write<T>(conn: &Connection, mapping: &RowMapping<T>, value: &T) -> Sqlite
     )
 }
 
+/// Writes every value through `mapping` in one transaction, preparing the statement once.
+///
+/// Not a loop over [`write`]. Two things differ and both matter: the statement is prepared once
+/// rather than per row, and a failure part-way rolls the whole batch back rather than leaving the
+/// store holding a prefix of a catalogue sync. The hand-written bulk paths this replaces had the
+/// first property and not the second — they counted iterations and committed whatever had already
+/// gone in.
+///
+/// The count is rows *changed*, summed from SQLite, not values offered.
+pub fn write_all<T>(
+    conn: &Connection,
+    mapping: &RowMapping<T>,
+    values: &[T],
+) -> SqliteResult<usize> {
+    let transaction = conn.unchecked_transaction()?;
+    let written = {
+        let mut statement = conn.prepare(&mapping.insert_statement())?;
+        values
+            .iter()
+            .try_fold(0usize, |written, value| -> SqliteResult<usize> {
+                let bound = mapping.bind(value)?;
+                let changed = statement.execute(rusqlite::params_from_iter(bound.iter()))?;
+                Ok(written + changed)
+            })?
+    };
+    transaction.commit()?;
+    Ok(written)
+}
+
 // ============================================================================
 // The same, for callers not already holding the lock
 // ============================================================================
@@ -516,6 +545,13 @@ impl Database {
         let conn = self.connection();
         let conn = conn.lock();
         write(&conn, mapping, value)
+    }
+
+    /// Writes every value through `mapping`, in one transaction. See the lock note above.
+    pub fn insert_all<T>(&self, mapping: &RowMapping<T>, values: &[T]) -> SqliteResult<usize> {
+        let conn = self.connection();
+        let conn = conn.lock();
+        write_all(&conn, mapping, values)
     }
 }
 

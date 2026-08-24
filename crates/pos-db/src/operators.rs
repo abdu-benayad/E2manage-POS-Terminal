@@ -4,32 +4,12 @@
 
 use pos_models::{OperatorId, OperatorName, OperatorPermissions, OperatorRole};
 
-// `read_permissions` moved to `crate::column` as the read half of `column::PERMISSIONS`. It was a
-// fourth positional reader living outside the module that owns them, which is why no measurement
-// of this repo's positional reads has ever counted it. Aliased rather than renamed at the call
-// sites so this task changes one line; task 04 migrates the four callers and drops the alias.
 use crate::column;
-use crate::column::{operator_id, operator_name, operator_role, permissions as read_permissions};
 use crate::projection::OnConflict;
 use crate::row_mapping;
-use rusqlite::{params, OptionalExtension, Result as SqliteResult};
+use rusqlite::{params, Result as SqliteResult};
 
 use super::Database;
-
-/// Serialises an operator's permissions for the `permissions_json` column.
-///
-/// `pos_models::OperatorPermissions` owns the only mapping to the server's shape, so this is a
-/// call into it rather than a second spelling of the keys.
-fn permissions_json(operator: &OperatorRow) -> SqliteResult<Option<String>> {
-    operator
-        .permissions
-        .as_ref()
-        .map(|permissions| {
-            serde_json::to_string(permissions)
-                .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))
-        })
-        .transpose()
-}
 
 /// Operator row from database (HR Employee integrated)
 ///
@@ -108,184 +88,64 @@ row_mapping! {
 // something.
 
 impl Database {
-    /// Saves or updates an operator
+    /// Saves or updates an operator.
     pub fn save_operator(&self, operator: &OperatorRow) -> SqliteResult<()> {
-        self.execute(
-            r#"INSERT OR REPLACE INTO operators
-               (id, code, employee_id, employee_number, name, name_ar, role, department, position, permissions_json, is_active, updated_at)
-               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, datetime('now'))"#,
-            &[
-                &operator.id.as_str(),
-                &operator.code,
-                &operator.employee_id,
-                &operator.employee_number,
-                &operator.name.latin(),
-                &operator.name.arabic(),
-                &operator.role.as_wire_str(),
-                &operator.department,
-                &operator.position,
-                &permissions_json(operator)?,
-                &operator.is_active,
-            ],
-        )?;
+        self.insert(&OPERATOR_ROW, operator)?;
         Ok(())
     }
 
-    /// Bulk saves operators
+    /// Saves every operator in one transaction.
+    ///
+    /// The count is rows changed, which for `OnConflict::Replace` is one per operator. The hand
+    /// written version counted iterations and committed whatever had gone in before a failure;
+    /// [`crate::projection::write_all`] rolls the batch back instead, so a catalogue sync that
+    /// fails half way does not leave the till holding half a staff list.
     pub fn save_operators(&self, operators: &[OperatorRow]) -> SqliteResult<usize> {
-        let conn = self.connection();
-        let conn = conn.lock();
-
-        let tx = conn.unchecked_transaction()?;
-        let mut count = 0;
-
-        {
-            let mut stmt = conn.prepare(
-                r#"INSERT OR REPLACE INTO operators
-                   (id, code, employee_id, employee_number, name, name_ar, role, department, position, permissions_json, is_active, updated_at)
-                   VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, datetime('now'))"#,
-            )?;
-
-            for operator in operators {
-                stmt.execute(params![
-                    operator.id.as_str(),
-                    operator.code,
-                    operator.employee_id,
-                    operator.employee_number,
-                    operator.name.latin(),
-                    operator.name.arabic(),
-                    operator.role.as_wire_str(),
-                    operator.department,
-                    operator.position,
-                    permissions_json(operator)?,
-                    operator.is_active,
-                ])?;
-                count += 1;
-            }
-        }
-
-        tx.commit()?;
-        Ok(count)
+        self.insert_all(&OPERATOR_ROW, operators)
     }
 
-    /// Gets all active operators
+    /// Gets all active operators, in name order.
     pub fn get_operators(&self) -> SqliteResult<Vec<OperatorRow>> {
-        let conn = self.connection();
-        let conn = conn.lock();
-
-        let mut stmt = conn.prepare(
-            r#"SELECT id, code, employee_id, employee_number, name, name_ar, role, department, position, permissions_json, is_active
-               FROM operators
-               WHERE is_active = 1
-               ORDER BY name"#,
-        )?;
-
-        let rows = stmt.query_map([], |row: &rusqlite::Row| {
-            Ok(OperatorRow {
-                id: operator_id(row, 0)?,
-                code: row.get(1)?,
-                employee_id: row.get(2)?,
-                employee_number: row.get(3)?,
-                name: operator_name(row, 4, 5)?,
-                role: operator_role(row, 6)?,
-                department: row.get(7)?,
-                position: row.get(8)?,
-                permissions: read_permissions(row, 9)?,
-                is_active: row.get(10)?,
-            })
-        })?;
-
-        rows.collect()
-    }
-
-    /// Gets an operator by ID
-    pub fn get_operator_by_id(&self, id: &OperatorId) -> SqliteResult<Option<OperatorRow>> {
-        let conn = self.connection();
-        let conn = conn.lock();
-
-        conn.query_row(
-            r#"SELECT id, code, employee_id, employee_number, name, name_ar, role, department, position, permissions_json, is_active
-               FROM operators WHERE id = ?1"#,
-            [id.as_str()],
-            |row| {
-                Ok(OperatorRow {
-                    id: operator_id(row, 0)?,
-                    code: row.get(1)?,
-                    employee_id: row.get(2)?,
-                    employee_number: row.get(3)?,
-                    name: operator_name(row, 4, 5)?,
-                        role: operator_role(row, 6)?,
-                    department: row.get(7)?,
-                    position: row.get(8)?,
-                    permissions: read_permissions(row, 9)?,
-                    is_active: row.get(10)?,
-                })
-            },
+        self.select_all(
+            OPERATOR_ROW.reader(),
+            "FROM operators WHERE is_active = 1 ORDER BY name",
+            [],
         )
-        .optional()
     }
 
-    /// Gets an operator by employee number
+    /// Gets an operator by ID.
+    pub fn get_operator_by_id(&self, id: &OperatorId) -> SqliteResult<Option<OperatorRow>> {
+        self.select_one(
+            OPERATOR_ROW.reader(),
+            "FROM operators WHERE id = ?1",
+            [id.as_str()],
+        )
+    }
+
+    /// Gets an active operator by employee number.
     pub fn get_operator_by_employee_number(
         &self,
         employee_number: &str,
     ) -> SqliteResult<Option<OperatorRow>> {
-        let conn = self.connection();
-        let conn = conn.lock();
-
-        conn.query_row(
-            r#"SELECT id, code, employee_id, employee_number, name, name_ar, role, department, position, permissions_json, is_active
-               FROM operators WHERE employee_number = ?1 AND is_active = 1"#,
+        self.select_one(
+            OPERATOR_ROW.reader(),
+            "FROM operators WHERE employee_number = ?1 AND is_active = 1",
             [employee_number],
-            |row| {
-                Ok(OperatorRow {
-                    id: operator_id(row, 0)?,
-                    code: row.get(1)?,
-                    employee_id: row.get(2)?,
-                    employee_number: row.get(3)?,
-                    name: operator_name(row, 4, 5)?,
-                        role: operator_role(row, 6)?,
-                    department: row.get(7)?,
-                    position: row.get(8)?,
-                    permissions: read_permissions(row, 9)?,
-                    is_active: row.get(10)?,
-                })
-            },
         )
-        .optional()
     }
 
-    /// Searches operators by name or employee number
+    /// Searches active operators by either name or employee number.
     pub fn search_operators(&self, query: &str, limit: i32) -> SqliteResult<Vec<OperatorRow>> {
-        let conn = self.connection();
-        let conn = conn.lock();
-
-        let mut stmt = conn.prepare(
-            r#"SELECT id, code, employee_id, employee_number, name, name_ar, role, department, position, permissions_json, is_active
-               FROM operators
-               WHERE is_active = 1
-                 AND (name LIKE ?1 OR name_ar LIKE ?1 OR employee_number LIKE ?1)
-               ORDER BY name
-               LIMIT ?2"#,
-        )?;
-
-        let search = format!("%{}%", query);
-        let rows = stmt.query_map(params![search, limit], |row: &rusqlite::Row| {
-            Ok(OperatorRow {
-                id: operator_id(row, 0)?,
-                code: row.get(1)?,
-                employee_id: row.get(2)?,
-                employee_number: row.get(3)?,
-                name: operator_name(row, 4, 5)?,
-                role: operator_role(row, 6)?,
-                department: row.get(7)?,
-                position: row.get(8)?,
-                permissions: read_permissions(row, 9)?,
-                is_active: row.get(10)?,
-            })
-        })?;
-
-        rows.collect()
+        let search = format!("%{query}%");
+        self.select_all(
+            OPERATOR_ROW.reader(),
+            "FROM operators
+             WHERE is_active = 1
+               AND (name LIKE ?1 OR name_ar LIKE ?1 OR employee_number LIKE ?1)
+             ORDER BY name
+             LIMIT ?2",
+            params![search, limit],
+        )
     }
 
     /// Gets the total operator count
@@ -563,20 +423,18 @@ mod tests {
         assert_eq!(read.is_active, written.is_active);
     }
 
-    #[test]
-    fn each_value_lands_in_the_column_that_carries_its_name() {
-        // A round trip is symmetric: swap two columns in the declaration and it still passes,
-        // because the write and the read swap together. That is exactly the defect. This is the
-        // asymmetric half — write through the mapping, read back **by name**, in a query the
-        // declaration had no hand in.
-        //
-        // Measured, not asserted: with `department from "position"` and `position from
-        // "department"` in the declaration, the round-trip test above stays green and this one
-        // fails. Three of the four new tests here survive that mutation.
-        let db = setup_db();
-        db.insert(&OPERATOR_ROW, &an_operator_with_no_two_columns_alike())
-            .unwrap();
-
+    /// Asserts that every column of the single stored row holds the value belonging to it.
+    ///
+    /// A round trip is symmetric: swap two columns in the declaration and it still passes, because
+    /// the write and the read swap together. That is exactly the defect. This is the asymmetric
+    /// half — read back **by name**, in queries the declaration had no hand in — and there is one
+    /// caller of it per **writer**, because a writer is a hand-maintained path and two of them can
+    /// disagree.
+    ///
+    /// Measured, not asserted: with `department from "position"` and `position from "department"`
+    /// in the declaration, `every_column_of_a_fully_distinct_operator_survives_the_round_trip`
+    /// stays green and this fails.
+    fn assert_every_column_holds_its_own_value(db: &Database) {
         let conn = db.connection();
         let conn = conn.lock();
 
@@ -625,85 +483,153 @@ mod tests {
     }
 
     #[test]
-    fn a_row_whose_optional_columns_are_all_null_reads_back_as_absent_not_as_blank() {
-        // The NULL pass. Six of the eleven columns are nullable, and `Option<T>` reading a
-        // wrongly-indexed neighbour is the swap that a fully-populated fixture cannot show:
-        // `None` and `Some("")` are different values that a positional shift turns into each other.
+    fn save_operator_puts_each_value_in_the_column_that_carries_its_name() {
         let db = setup_db();
-        let written = OperatorRow {
-            employee_id: None,
-            employee_number: None,
-            department: None,
-            position: None,
-            permissions: None,
-            name: OperatorName::new("only-latin", None::<&str>).unwrap(),
-            ..an_operator_with_no_two_columns_alike()
-        };
-        db.insert(&OPERATOR_ROW, &written).unwrap();
-
-        let read = db
-            .select_one(
-                OPERATOR_ROW.reader(),
-                "FROM operators WHERE id = ?1",
-                ["id-column"],
-            )
-            .unwrap()
-            .expect("the row this test just wrote");
-
-        assert_eq!(read.employee_id, None);
-        assert_eq!(read.employee_number, None);
-        assert_eq!(read.department, None);
-        assert_eq!(read.position, None);
-        assert_eq!(read.permissions, None);
-        assert_eq!(read.name.arabic(), None);
-        // The non-null neighbours are still themselves, which is what makes the `None`s above a
-        // reading about the columns rather than about an empty table.
-        assert_eq!(read.name.latin(), "only-latin");
-        assert_eq!(read.code, "code-column");
-        assert_eq!(read.role, OperatorRole::Manager);
+        db.save_operator(&an_operator_with_no_two_columns_alike())
+            .unwrap();
+        assert_every_column_holds_its_own_value(&db);
     }
 
     #[test]
-    fn the_declared_mapping_writes_the_same_columns_the_hand_written_insert_does() {
-        // Task 04 replaces `save_operator`'s literal SQL with this mapping. The two agreeing today
-        // is what makes that a refactor.
-        //
-        // What this does **not** catch: a swap inside the declaration. Measured — swapping the
-        // `department` and `position` columns leaves this green, because the mapping's write and
-        // the mapping's read swap together and the hand-written path is untouched. It catches a
-        // column present on one side and absent on the other. `each_value_lands_in_the_column_that
-        // _carries_its_name` is the one that catches a swap, and it is the only one that does.
+    fn save_operators_puts_each_value_in_the_column_that_carries_its_name() {
+        // The second writer. It shares a mapping with the first now, but it did not before this
+        // task and nothing in the type system stops it from diverging again — a bulk path is where
+        // a hand-written column list historically grew back.
         let db = setup_db();
-        let operator = an_operator_with_no_two_columns_alike();
+        assert_eq!(
+            db.save_operators(&[an_operator_with_no_two_columns_alike()])
+                .unwrap(),
+            1
+        );
+        assert_every_column_holds_its_own_value(&db);
+    }
 
-        db.save_operator(&operator).unwrap();
-        let by_hand = db
+    #[test]
+    fn a_second_write_of_the_same_id_replaces_the_row_rather_than_failing_or_duplicating() {
+        // A conflict disposition is invisible on the first write. `OPERATOR_ROW` declares
+        // `Replace` because both hand-written inserts said `INSERT OR REPLACE`, and a catalogue
+        // sync re-sends every operator it knows — under `Fail` the second sync would error, and
+        // under no conflict clause at all a `PRIMARY KEY` violation would.
+        let db = setup_db();
+        let first = an_operator_with_no_two_columns_alike();
+        db.save_operator(&first).unwrap();
+
+        let renamed = OperatorRow {
+            name: OperatorName::new("second-write", None::<&str>).unwrap(),
+            ..first
+        };
+        db.save_operator(&renamed).unwrap();
+
+        let rows: i64 = db
+            .select_scalar("SELECT COUNT(*) FROM operators", [])
+            .unwrap();
+        assert_eq!(rows, 1);
+
+        let stored = db
             .get_operator_by_id(&OperatorId::new("id-column").unwrap())
             .unwrap()
-            .expect("the hand-written insert");
+            .expect("the replaced row");
+        assert_eq!(stored.name.latin(), "second-write");
+        // The columns the second write did not change hold the second write's values, not a merge
+        // of the two rows: `Replace` deletes and re-inserts.
+        assert_eq!(stored.name.arabic(), None);
+        assert_eq!(stored.code, "code-column");
+    }
 
-        db.execute("DELETE FROM operators", &[]).unwrap();
-        db.insert(&OPERATOR_ROW, &operator).unwrap();
-        let by_mapping = db
-            .select_one(
-                OPERATOR_ROW.reader(),
-                "FROM operators WHERE id = ?1",
-                ["id-column"],
-            )
-            .unwrap()
-            .expect("the mapping's insert");
+    /// One nullable column, blanked, and what must still be true of its neighbours afterwards.
+    ///
+    /// A table rather than six near-identical test bodies, and a named struct rather than a tuple
+    /// of two function pointers, because the three fields are what the case *is*.
+    struct AbsentColumn {
+        /// The column as the schema spells it.
+        column: &'static str,
+        /// Removes exactly this column's value from an otherwise fully-distinct operator.
+        blank: fn(&mut OperatorRow),
+        /// Asserts the absence landed on this column's field, and that a neighbour survived.
+        assert_absent: fn(&OperatorRow),
+    }
 
-        assert_eq!(by_hand.id, by_mapping.id);
-        assert_eq!(by_hand.code, by_mapping.code);
-        assert_eq!(by_hand.employee_id, by_mapping.employee_id);
-        assert_eq!(by_hand.employee_number, by_mapping.employee_number);
-        assert_eq!(by_hand.name.latin(), by_mapping.name.latin());
-        assert_eq!(by_hand.name.arabic(), by_mapping.name.arabic());
-        assert_eq!(by_hand.role, by_mapping.role);
-        assert_eq!(by_hand.department, by_mapping.department);
-        assert_eq!(by_hand.position, by_mapping.position);
-        assert_eq!(by_hand.permissions, by_mapping.permissions);
-        assert_eq!(by_hand.is_active, by_mapping.is_active);
+    #[test]
+    fn a_null_in_one_column_reaches_that_columns_field_and_no_other() {
+        // The NULL pass, one column at a time. A row with every nullable column NULL cannot tell a
+        // shift from a correct read — six `None`s look the same in any order, so the all-absent
+        // version of this test passes under a permutation of the absent columns. Each case here
+        // writes exactly one absence and asserts a neighbour did not vanish with it.
+        let db = setup_db();
+        let full = an_operator_with_no_two_columns_alike();
+
+        let cases = [
+            AbsentColumn {
+                column: "employee_id",
+                blank: |row| row.employee_id = None,
+                assert_absent: |row| {
+                    assert_eq!(row.employee_id, None);
+                    assert_eq!(
+                        row.employee_number.as_deref(),
+                        Some("employee-number-column")
+                    );
+                },
+            },
+            AbsentColumn {
+                column: "employee_number",
+                blank: |row| row.employee_number = None,
+                assert_absent: |row| {
+                    assert_eq!(row.employee_number, None);
+                    assert_eq!(row.employee_id.as_deref(), Some("employee-id-column"));
+                },
+            },
+            AbsentColumn {
+                column: "name_ar",
+                blank: |row| {
+                    row.name = OperatorName::new("name-column", None::<&str>).unwrap();
+                },
+                assert_absent: |row| {
+                    assert_eq!(row.name.arabic(), None);
+                    assert_eq!(row.name.latin(), "name-column");
+                },
+            },
+            AbsentColumn {
+                column: "department",
+                blank: |row| row.department = None,
+                assert_absent: |row| {
+                    assert_eq!(row.department, None);
+                    assert_eq!(row.position.as_deref(), Some("position-column"));
+                },
+            },
+            AbsentColumn {
+                column: "position",
+                blank: |row| row.position = None,
+                assert_absent: |row| {
+                    assert_eq!(row.position, None);
+                    assert_eq!(row.department.as_deref(), Some("department-column"));
+                },
+            },
+            AbsentColumn {
+                column: "permissions_json",
+                blank: |row| row.permissions = None,
+                assert_absent: |row| {
+                    assert_eq!(row.permissions, None);
+                    assert!(!row.is_active);
+                },
+            },
+        ];
+
+        for case in cases {
+            let mut written = full.clone();
+            (case.blank)(&mut written);
+            db.save_operator(&written).unwrap();
+
+            let stored: Option<String> = db
+                .select_scalar(&format!("SELECT {} FROM operators", case.column), [])
+                .unwrap();
+            assert_eq!(stored, None, "`{}` was not written as NULL", case.column);
+
+            let read = db
+                .get_operator_by_id(&OperatorId::new("id-column").unwrap())
+                .unwrap()
+                .expect("the row this iteration wrote");
+            (case.assert_absent)(&read);
+        }
     }
 
     #[test]
