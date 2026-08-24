@@ -41,10 +41,11 @@
 use pact_consumer::prelude::*;
 use pos_api::Enveloped;
 use pos_api::{
-    ApiErrorResponse, HeartbeatRequest, HeartbeatResponse, LoginTerminalResponse, PairingStatus,
-    PairingStatusResponse, RefreshResponse, ServerErrorCode,
+    ApiErrorResponse, ApiFailure, CapabilityStanding, HeartbeatRequest, HeartbeatResponse,
+    LoginTerminalResponse, PairingStatus, PairingStatusResponse, RefreshResponse, ServerErrorCode,
+    StatusCode,
 };
-use pos_models::HardwareEnrolment;
+use pos_models::{HardwareEnrolment, OperatorRole};
 
 /// The nested error envelope, which every refusal the till handles is carried in.
 ///
@@ -958,6 +959,167 @@ async fn the_till_return_route_exists_behind_terminal_auth() {
     .await;
 }
 
+// ============================================================================
+// The capability refusal the render layer exists for
+// ============================================================================
+
+/// The three credentials the platform's provider state mints, which the till cannot derive.
+///
+/// Both sides store `SHA-256(token)` and never the token, so there is nothing to read back out of
+/// a fixture. A wrong literal here fails as an **auth refusal**, not as a mismatch — the
+/// interaction would pin a 401 from the wrong guard while looking like it worked. Read from
+/// `provider-states.ts:73`, `:82`, `:91`, not copied from a document.
+const PACT_OPERATOR_HARDWARE_ID: &str = "pact-operator-hardware-id";
+const PACT_OPERATOR_TERMINAL_TOKEN: &str = "pact-operator-terminal-token-0001";
+const PACT_OPERATOR_TOKEN: &str = "pact-operator-session-token-0001";
+
+/// A cashier refused a refund is told, in a machine-readable way, who can approve it.
+///
+/// # What this adds to the six guard pins above
+///
+/// Those six prove the till's routes **exist and are guarded**, by reaching them with no
+/// credential at all. This one is the first interaction that gets *past* both guards: an enrolled
+/// terminal, a signed-in cashier, and a capability that cashier does not hold. It is the refusal
+/// the whole write-outcome render layer was built for — `CapabilityStanding::SupervisorHolds`
+/// exists to turn it into "fetch a supervisor" rather than into "sync failed".
+///
+/// # What is pinned, and what is deliberately not
+///
+/// - `error.code` — a **literal**. The till branches on it, and it is what separates *someone here
+///   can approve this* from *nobody at this till ever can*. Rendering the second as the first
+///   sends a cashier to fetch a colleague who is refused in turn.
+/// - `error.details.capability` — a **literal**, `POS_REFUND`. This is the pin that catches the
+///   route's declared capability moving. `return.controller.ts:96` says `POS_REFUND` today; if it
+///   became `POS_CREATE`, every cashier would silently gain the ability to refund and this
+///   interaction is what fails in the pull request that does it.
+/// - `error.details.heldBy` — **by shape only**, a non-empty array of strings.
+/// - both `message` fields — `like!`. Prose, and pinning it turns a copy edit into a failed build.
+///
+/// ## Why `heldBy`'s contents are not pinned, which is not the reason previously recorded
+///
+/// The project's own notes said "which roles" is *not expressible* consumer-side, because
+/// `MatchingRule::ArrayContains` is never named by `pact_consumer 1.4.10`. That is true about
+/// matchers and it is the wrong reason, because **a literal needs no matcher**: writing
+/// `"heldBy": ["SUPERVISOR", "MANAGER"]` with no `like!` around it pins the contents *and the
+/// order* exactly, by pact's default equality. It is expressible. It must not be written.
+///
+/// The real reason is the one that survives someone discovering that: pinning the contents would
+/// put **a second copy of the platform's role ladder on the far side of a network boundary,
+/// released separately.** `POS_OPERATOR_ROLE_CAPABILITIES` is the platform's to change. The day it
+/// legitimately grants `POS_REFUND` to a fourth role, a literal here fails *their* suite for a
+/// change they made correctly — the one thing this contract must never do.
+///
+/// Order still matters to the till: [`HeldBy::lowest`] names the least senior person who can help,
+/// and a reversed array sends a cashier past the supervisor standing next to them. That assertion
+/// belongs where the ladder lives, and already exists there —
+/// `19-till-write-credential.e2e.test.ts:840-866` pins `['SUPERVISOR', 'MANAGER']` in order,
+/// against the real app.
+///
+/// # Its sibling refusal cannot be pinned at all, and that is a fact about the routes
+///
+/// `POS_OPERATOR_CAPABILITY_DENIED` is the arm that must **not** read as this one. It cannot be
+/// reached by any request a pact can make, and the blocker is not the provider state:
+///
+/// - `refusalFor` (`require-pos-capability.ts:87-93`) returns it only when `rolesHolding` is
+///   empty. The POS route table declares exactly four capabilities in production —
+///   `POS_CREATE`, `POS_READ`, `POS_REFUND`, `POS_VOID` — and **every one is held by at least one
+///   role**. (Measured 2026-08-24 over `capability: '…'` literals under `src/modules/pos/`, tests
+///   excluded; the `POS_FLEET_DECOMMISSION` occurrence that looks like a counter-example is in
+///   `require-pos-capability.test.ts`, which constructs the unheld case in-process.)
+/// - The other construction site (`:120`) needs `!isPosOperatorRole(operator.role)` — a stored
+///   role outside the Prisma enum, which the column type refuses on write.
+///
+/// So the till's `CapabilityStanding::NoOperatorRoleHolds` arm stays: `:120` is a real production
+/// path and fail-closed handling of it is correct. It is simply a state **the contract cannot
+/// pin**, and no provider state would change that. Coverage grows one interaction per repaired
+/// surface, and this surface is not repairable from either side.
+///
+/// # No request body
+///
+/// Deliberate. `requirePosCapability` is registered ahead of `route.handler` with nothing between
+/// (`pos-route-table.ts:124-129`), so the refusal happens before any body is read — and declaring
+/// `json_body(json_pattern!({}))` deadlocks verification for 30 seconds. See the module header.
+#[tokio::test]
+async fn a_cashier_refused_a_refund_is_told_a_supervisor_can_approve_it() {
+    let pact = PactBuilder::new("e2manage-pos-terminal", "wadi-dms-api")
+        .with_output_dir("./pacts")
+        .interaction(
+            "a cashier attempting a till refund without the capability",
+            "",
+            |mut i| {
+                i.given(format!(
+                    "an attended till with a cashier signed in at {PACT_OPERATOR_HARDWARE_ID}"
+                ));
+                i.request
+                    .post()
+                    .path("/api/pos/till/returns")
+                    .header("x-terminal-token", PACT_OPERATOR_TERMINAL_TOKEN)
+                    .header("x-operator-token", PACT_OPERATOR_TOKEN);
+                i.response
+                    .status(403)
+                    .header("content-type", "application/json")
+                    .json_body(json_pattern!({
+                        "message": like!("This action needs approval from a supervisor"),
+                        "error": {
+                            "code": "POS_SUPERVISOR_APPROVAL_REQUIRED",
+                            "message": like!("This action needs approval from a supervisor"),
+                            "details": {
+                                "capability": "POS_REFUND",
+                                // Shape, not contents — see this test's doc comment. `min = 1` is
+                                // written out although it is the default: a default that happens
+                                // to be right is not an assertion a reader can see.
+                                "heldBy": each_like!("SUPERVISOR", min = 1),
+                            }
+                        }
+                    }));
+                i
+            },
+        )
+        .start_mock_server(None, None);
+
+    let url = format!("{}api/pos/till/returns", pact.url());
+    let response = reqwest::Client::new()
+        .post(&url)
+        .header("x-terminal-token", PACT_OPERATOR_TERMINAL_TOKEN)
+        .header("x-operator-token", PACT_OPERATOR_TOKEN)
+        .send()
+        .await
+        .expect("the mock server did not answer");
+
+    assert_eq!(response.status().as_u16(), 403);
+
+    let refusal: ApiErrorResponse = response
+        .json()
+        .await
+        .expect("the till's ApiErrorResponse could not parse the refusal");
+    let detail = refusal
+        .error
+        .expect("the refusal carried no `error` object");
+    assert_eq!(detail.code, ServerErrorCode::PosSupervisorApprovalRequired);
+
+    // Rebuild the failure the till would hold, and assert the decision the screen is rendered
+    // from — not the JSON. A contract test that stops at the field names has checked that the
+    // author can copy a fixture; this checks that the refusal still reaches the branch it exists
+    // to reach.
+    let failure = ApiFailure::Refused {
+        status: StatusCode::FORBIDDEN,
+        code: detail.code,
+        message: detail.message,
+        details: detail.details,
+    };
+    let standing = CapabilityStanding::of(&failure);
+    assert!(
+        standing.escalating_at_the_till_can_help(),
+        "a supervisor-approval refusal must reach the arm that offers escalation, got {standing:?}"
+    );
+
+    let CapabilityStanding::SupervisorHolds(Some(approval)) = standing else {
+        panic!("the refusal did not carry typed supervisor-approval details");
+    };
+    assert_eq!(approval.capability.as_str(), "POS_REFUND");
+    assert_eq!(approval.held_by.lowest(), OperatorRole::Supervisor);
+}
+
 /// The artifact's interaction count, derived from the artifact rather than stated in prose.
 ///
 /// # Why a count is worth a test
@@ -991,7 +1153,7 @@ async fn the_till_return_route_exists_behind_terminal_auth() {
 fn the_artifact_pins_exactly_the_interactions_this_crate_declares() {
     /// Raise this in the same commit that adds an interaction, updates the coverage table in
     /// `e2manage/doc/pos-till-server-contract`, and copies the artifact to the platform.
-    const EXPECTED: usize = 14;
+    const EXPECTED: usize = 15;
 
     let path = std::path::Path::new("./pacts/e2manage-pos-terminal-wadi-dms-api.json");
     let Ok(text) = std::fs::read_to_string(path) else {

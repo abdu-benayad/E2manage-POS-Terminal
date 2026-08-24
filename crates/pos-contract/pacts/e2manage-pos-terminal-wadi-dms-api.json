@@ -4,6 +4,78 @@
   },
   "interactions": [
     {
+      "description": "a cashier attempting a till refund without the capability",
+      "providerStates": [
+        {
+          "name": "an attended till with a cashier signed in at pact-operator-hardware-id"
+        }
+      ],
+      "request": {
+        "headers": {
+          "x-operator-token": "pact-operator-session-token-0001",
+          "x-terminal-token": "pact-operator-terminal-token-0001"
+        },
+        "method": "POST",
+        "path": "/api/pos/till/returns"
+      },
+      "response": {
+        "body": {
+          "error": {
+            "code": "POS_SUPERVISOR_APPROVAL_REQUIRED",
+            "details": {
+              "capability": "POS_REFUND",
+              "heldBy": [
+                "SUPERVISOR"
+              ]
+            },
+            "message": "This action needs approval from a supervisor"
+          },
+          "message": "This action needs approval from a supervisor"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "matchingRules": {
+          "body": {
+            "$.error.details.heldBy": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.error.details.heldBy[*].*": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.error.message": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.message": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "status": 403
+      }
+    },
+    {
       "description": "a heartbeat from an authenticated terminal reporting its metrics",
       "providerStates": [
         {
