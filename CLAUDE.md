@@ -453,7 +453,10 @@ memory.** Measured 2026-08-24 — three lanes, one commit, one day, and none of 
   adjacency (they own the neighbouring issue, so "mine" arrived without passing through any memory of
   doing it). Their own transcript put first contact **four and a half hours after the commit**, via
   someone else's message;
-- the first then **withdrew a true claim** on the strength of the false one;
+- the first then withdrew that claim on the strength of the false one — **and the withdrawal was
+  correct process on a defective sentence.** It is tempting to score it as an error because the
+  clause turned out true; that grades a decision by information unavailable when it was made, and
+  the lesson it teaches is *keep the clause when it feels right*, which is the defect itself;
 - and the second propped theirs up with *"the apply is after that lane's session start, so it could
   have come out differently"* — **15 of 15 live sessions started before it.** A null check claimed as
   a discriminator, in a paragraph whose other half was wrong, which made the whole read as verified.
