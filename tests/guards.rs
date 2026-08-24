@@ -708,15 +708,44 @@ mod guards {
         const ENTRY_VOCABULARY: [&str; 4] = ["digits", "entered", "entered_digits", "pin_digits"];
         const REDACTED_CARRIERS: [&str; 2] = ["Pin", "EnteredDigits"];
 
-        // Only a type that can *hold* keyed-in digits counts. `digits: u8` is a length — the
-        // number of digits a policy requires — and `PinPolicyError` and `DetailsBreach` both
-        // carry one. Flagging those would not be strictness, it would be a rule that cannot tell
-        // a count from a buffer, and the exemption it would need is the kind that never expires.
-        // A scalar cannot carry a PIN; a text or byte sequence can.
+        /// Whether a declared type could hold keyed-in PIN digits, as opposed to a count of them.
+        ///
+        /// `digits: u8` is a *length* — `PinPolicyError` and `DetailsBreach` each carry one — and
+        /// flagging those would be a rule that cannot tell a count from a buffer, needing an
+        /// exemption that never expires.
+        ///
+        /// **The boundary is `u8`-sized, not "scalar", and the difference is a real hole.** An
+        /// earlier version of this comment said *a scalar cannot carry a PIN*. That is false as a
+        /// general predicate: the shortest PIN this domain admits is four digits
+        /// (`PinLength::SHORTEST`), whose largest value is 9999 — which fits a `u16` and every
+        /// wider integer. Only the 8-bit widths genuinely cannot, and that is precisely why the
+        /// two `u8` sites are safe. An integer PIN buffer is a bad choice somebody nonetheless
+        /// makes, and it must not fall through a rule that reads like a type check while behaving
+        /// like a whitelist.
+        ///
+        /// Found by lane 21 reviewing the narrowing, not by this guard — a whitelist's misses are
+        /// invisible to the whitelist.
         fn can_hold_digits(declared: &str) -> bool {
-            ["String", "str", "Vec<u8>", "[u8", "Vec<Digit>", "Box<str>"]
+            const SEQUENCES: [&str; 6] =
+                ["String", "str", "Vec<u8>", "[u8", "Vec<Digit>", "Box<str>"];
+            // Checked before the widths below, so `Vec<u8>` and `[u8; 4]` are carriers rather
+            // than being read as the `u8` they contain.
+            if SEQUENCES.iter().any(|carrier| declared.contains(carrier)) {
+                return true;
+            }
+
+            const TOO_NARROW_FOR_A_PIN: [&str; 3] = ["u8", "i8", "bool"];
+            if TOO_NARROW_FOR_A_PIN
                 .iter()
-                .any(|carrier| declared.contains(carrier))
+                .any(|narrow| contains_word(declared, narrow))
+            {
+                return false;
+            }
+
+            const WIDE_ENOUGH: [&str; 10] = [
+                "u16", "u32", "u64", "u128", "usize", "i16", "i32", "i64", "i128", "isize",
+            ];
+            WIDE_ENOUGH.iter().any(|wide| contains_word(declared, wide))
         }
 
         let buffer_offences: Vec<String> = type_declarations()
