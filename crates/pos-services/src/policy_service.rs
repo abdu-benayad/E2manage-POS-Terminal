@@ -935,6 +935,72 @@ mod tests {
         );
     }
 
+    /// `check_enum` refuses what it cannot evaluate, like its three siblings.
+    ///
+    /// # Why this is a separate test and not a line in one of the others
+    ///
+    /// It is the fourth enforcement primitive and it had **zero references in the tree** — no
+    /// caller, and, until this, no test. The other three were each asserted while this issue was
+    /// being built, so "every `check_*` fails open" was reported closed on evidence covering three
+    /// of four. That is the same shape as `get_min_pin_length` being correct by coincidence in task
+    /// 09: a family checked through the members that happened to be reachable.
+    ///
+    /// Four assertions, because refusing everything and permitting everything each satisfy half of
+    /// them: the two not-evaluable reasons, a match that permits, and a mismatch that blocks.
+    #[tokio::test]
+    async fn the_fourth_enforcement_primitive_refuses_what_it_cannot_evaluate_too() {
+        let never_loaded = create_test_service();
+        assert_eq!(
+            never_loaded.check_enum("PIN_COMPLEXITY", "NUMERIC").await,
+            PolicyResult::NotEvaluable {
+                code: "PIN_COMPLEXITY".to_string(),
+                reason: NotEvaluableReason::PoliciesNeverLoaded,
+            },
+            "a till with no policies has no basis for an enum verdict either"
+        );
+
+        let mistyped = create_test_service();
+        mistyped
+            .update_policies(one_policy(
+                "MIN_PIN_LENGTH",
+                PolicyType::Range,
+                serde_json::json!({"min": 4, "max": 8, "default": 4}),
+            ))
+            .await;
+        assert_eq!(
+            mistyped.check_enum("MIN_PIN_LENGTH", "NUMERIC").await,
+            PolicyResult::NotEvaluable {
+                code: "MIN_PIN_LENGTH".to_string(),
+                reason: NotEvaluableReason::CheckDoesNotFitTheDeclaredType,
+            },
+            "an enum question asked of a range policy is the caller's fault, not the platform's"
+        );
+
+        let configured = create_test_service();
+        configured
+            .update_policies(one_policy(
+                "PIN_COMPLEXITY",
+                PolicyType::Enum,
+                serde_json::json!("NUMERIC"),
+            ))
+            .await;
+
+        // The positive control: a service that refused everything would satisfy both assertions
+        // above and read as a pass.
+        assert_eq!(
+            configured.check_enum("PIN_COMPLEXITY", "NUMERIC").await,
+            PolicyResult::Allow
+        );
+        // And the negative: one that permitted everything would satisfy the positive.
+        assert!(
+            configured
+                .check_enum("PIN_COMPLEXITY", "ALPHANUMERIC")
+                .await
+                .is_blocked(),
+            "a value the policy does not name must be refused under Block enforcement"
+        );
+    }
+
     /// A boolean question asked of a range policy is refused, not silently misread.
     ///
     /// This was a well-typed call nothing rejected: the caller chose the interpreter by choosing
