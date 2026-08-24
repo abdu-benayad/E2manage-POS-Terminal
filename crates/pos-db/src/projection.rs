@@ -494,6 +494,32 @@ pub const DECLARED_SHAPES: &[DeclaredShape] = &[
         },
     },
     DeclaredShape {
+        name: "FEATURE_ROW",
+        table: || Some(crate::features::FEATURE_ROW.table()),
+        projected: || {
+            crate::features::FEATURE_ROW
+                .reader()
+                .column_names()
+                .collect()
+        },
+        inserted: || crate::features::FEATURE_ROW.insert_column_names().collect(),
+    },
+    DeclaredShape {
+        name: "FEATURE_SCREEN_ROW",
+        table: || Some(crate::features::FEATURE_SCREEN_ROW.table()),
+        projected: || {
+            crate::features::FEATURE_SCREEN_ROW
+                .reader()
+                .column_names()
+                .collect()
+        },
+        inserted: || {
+            crate::features::FEATURE_SCREEN_ROW
+                .insert_column_names()
+                .collect()
+        },
+    },
+    DeclaredShape {
         name: "CATEGORY_ROW",
         table: || Some(crate::products::CATEGORY_ROW.table()),
         projected: || {
