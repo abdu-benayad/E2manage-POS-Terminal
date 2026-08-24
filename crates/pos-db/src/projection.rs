@@ -520,6 +520,12 @@ pub fn write<T>(conn: &Connection, mapping: &RowMapping<T>, value: &T) -> Sqlite
 /// gone in.
 ///
 /// The count is rows *changed*, summed from SQLite, not values offered.
+///
+/// Both failure paths roll back — a `bind` that refuses a value, before any SQL runs, and an
+/// `execute` that SQLite rejects — because both leave via `?` with the transaction unconsumed.
+/// Only the second is covered by a test. No shape in this crate has a codec that can be made to
+/// fail on demand, and a test named for the binding path that actually provokes a conflict would
+/// assert something it does not exercise, which is worse than the gap. Stated rather than faked.
 pub fn write_all<T>(
     conn: &Connection,
     mapping: &RowMapping<T>,
@@ -1721,5 +1727,77 @@ mod tests {
             1,
             "the pair column is the only place the two counts diverge"
         );
+    }
+
+    // ------------------------------------------------------------------ the bulk write rolls back
+
+    #[test]
+    fn a_bulk_write_that_fails_part_way_leaves_the_table_as_it_found_it() {
+        // This pins a **behaviour fix**, not a refactoring artifact, and it is here because a fix
+        // that arrives inside a refactor and is described as a refactor is invisible. The
+        // hand-written bulk paths prepared once, counted iterations, and committed whatever had
+        // already gone in — so a catalogue sync failing half way left the till holding half a
+        // staff list, and the next person to read `write_all` would have no reason to think the
+        // transaction was anything but ceremony.
+        let db = database();
+        db.insert(
+            &RENAMED,
+            &Renamed {
+                key: "already-here".to_string(),
+                caption: None,
+            },
+        )
+        .unwrap();
+
+        // `RENAMED` declares `OnConflict::Fail`, so the second of these two violates the primary
+        // key. The first has already been executed when it does.
+        let batch = [
+            Renamed {
+                key: "batched".to_string(),
+                caption: Some("first".to_string()),
+            },
+            Renamed {
+                key: "batched".to_string(),
+                caption: Some("second".to_string()),
+            },
+        ];
+        assert!(
+            db.insert_all(&RENAMED, &batch).is_err(),
+            "the conflicting second value was accepted"
+        );
+
+        let ids: Vec<String> = db
+            .select_all(RENAMED.reader(), "FROM sample", [])
+            .unwrap()
+            .into_iter()
+            .map(|row| row.key)
+            .collect();
+        assert_eq!(
+            ids,
+            ["already-here"],
+            "the batch's successful prefix survived, or the rollback took the pre-existing row"
+        );
+    }
+
+    #[test]
+    fn a_bulk_write_that_succeeds_commits_every_value() {
+        // The control for the test above. Without it, "the table is unchanged" is also what a
+        // `write_all` that never writes anything at all would produce — the same reading for a
+        // working rollback and a broken writer.
+        let db = database();
+        let batch = [
+            Sample {
+                id: "one".to_string(),
+                label: Some("first".to_string()),
+            },
+            Sample {
+                id: "two".to_string(),
+                label: None,
+            },
+        ];
+        assert_eq!(db.insert_all(&SAMPLE_BY_MACRO, &batch).unwrap(), 2);
+
+        let stored = db.select_all(SAMPLE.reader(), "FROM sample", []).unwrap();
+        assert_eq!(stored.len(), 2);
     }
 }
