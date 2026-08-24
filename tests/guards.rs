@@ -143,6 +143,161 @@ mod guards {
     }
 
     // ========================================================================
+    // The whole-file layer
+    // ========================================================================
+
+    /// One scanned file, whole, with comments and string literals blanked in place.
+    ///
+    /// # Why there is a second reading layer at all
+    ///
+    /// [`scanned_lines`] hands out one line at a time, so a guard built on it can only express a
+    /// predicate that fits on one line — and `rustfmt` does not respect that boundary. The shape
+    /// that forced this is a positional read carrying a chained call, which rustfmt splits as
+    ///
+    /// ```text
+    /// self.row
+    ///     .get(index)
+    /// ```
+    ///
+    /// where line one has no `.get` and line two has no `row`. A line scan cannot see it from
+    /// either side, and reports a clean tree for a reason unrelated to the tree being clean.
+    ///
+    /// # Blanked, not deleted
+    ///
+    /// Comments and string literals are overwritten with spaces and newlines are kept, so every
+    /// line break of the original survives at its own place. That is what lets a hit report a
+    /// `file:line` a human can open. Byte offsets into `code` are *not* offsets into the file —
+    /// a multi-byte char inside a blanked region becomes one space — so `code` may be used to
+    /// locate a line and never to slice the original.
+    struct SourceFile {
+        path: String,
+        code: String,
+    }
+
+    /// Every Rust source under the scan roots, read whole and blanked.
+    ///
+    /// Shares [`rust_sources`] with [`scanned_lines`] deliberately: two readers disagreeing about
+    /// which files are the tree is the defect this file exists to make impossible elsewhere.
+    fn scanned_files() -> Vec<SourceFile> {
+        rust_sources()
+            .iter()
+            .map(|path| {
+                let text = fs::read_to_string(path)
+                    .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+                SourceFile {
+                    path: relative(path),
+                    code: blank_comments_and_strings(&text),
+                }
+            })
+            .collect()
+    }
+
+    /// The 1-based line holding byte `offset` of a blanked file.
+    fn line_at(code: &str, offset: usize) -> usize {
+        code[..offset.min(code.len())].matches('\n').count() + 1
+    }
+
+    /// Blanks comments and string literals, leaving every newline and every other byte alone.
+    ///
+    /// Three constructs are removed, and the order of the tests below is the whole correctness
+    /// argument: whichever opener the cursor reaches *first* wins, so `"http://x"` is a string
+    /// (the quote comes first) and `// says "` is a comment (the slashes come first). Getting that
+    /// backwards is how a scanner blanks the rest of a file from one apostrophe.
+    ///
+    /// - `//` to end of line, which is also what [`strip_comment`] does per line.
+    /// - `/* … */`, **nesting**, because Rust nests them and a depth-free scan stops at the first
+    ///   `*/` and hands the tail of the outer comment back as live code.
+    /// - `"…"`, `r"…"`, `r#"…"#`, so a route literal or a SQL string is not read as source.
+    fn blank_comments_and_strings(source: &str) -> String {
+        let bytes: Vec<char> = source.chars().collect();
+        let mut out = bytes.clone();
+        let mut i = 0;
+        while i < bytes.len() {
+            let rest: String = bytes[i..(i + 3).min(bytes.len())].iter().collect();
+            if rest.starts_with("//") {
+                while i < bytes.len() && bytes[i] != '\n' {
+                    out[i] = ' ';
+                    i += 1;
+                }
+                continue;
+            }
+            if rest.starts_with("/*") {
+                let mut depth = 0usize;
+                while i < bytes.len() {
+                    let here: String = bytes[i..(i + 2).min(bytes.len())].iter().collect();
+                    let step = if here == "/*" {
+                        depth += 1;
+                        2
+                    } else if here == "*/" {
+                        depth -= 1;
+                        2
+                    } else {
+                        1
+                    };
+                    for slot in out.iter_mut().take((i + step).min(bytes.len())).skip(i) {
+                        if *slot != '\n' {
+                            *slot = ' ';
+                        }
+                    }
+                    i += step;
+                    if depth == 0 {
+                        break;
+                    }
+                }
+                continue;
+            }
+            // Raw strings: r"…", r#"…"#, r##"…"##
+            if bytes[i] == 'r' {
+                let mut hashes = 0;
+                let mut j = i + 1;
+                while j < bytes.len() && bytes[j] == '#' {
+                    hashes += 1;
+                    j += 1;
+                }
+                if j < bytes.len() && bytes[j] == '"' {
+                    let terminator: String = std::iter::once('"')
+                        .chain(std::iter::repeat_n('#', hashes))
+                        .collect();
+                    let tail: String = bytes[j + 1..].iter().collect();
+                    let end = tail.find(&terminator).map_or(bytes.len(), |at| {
+                        j + 1 + tail[..at].chars().count() + terminator.chars().count()
+                    });
+                    for slot in out.iter_mut().take(end).skip(i) {
+                        if *slot != '\n' {
+                            *slot = ' ';
+                        }
+                    }
+                    i = end;
+                    continue;
+                }
+            }
+            if bytes[i] == '"' {
+                let mut j = i + 1;
+                while j < bytes.len() {
+                    if bytes[j] == '\\' {
+                        j += 2;
+                        continue;
+                    }
+                    if bytes[j] == '"' {
+                        j += 1;
+                        break;
+                    }
+                    j += 1;
+                }
+                for slot in out.iter_mut().take(j.min(bytes.len())).skip(i) {
+                    if *slot != '\n' {
+                        *slot = ' ';
+                    }
+                }
+                i = j;
+                continue;
+            }
+            i += 1;
+        }
+        out.into_iter().collect()
+    }
+
+    // ========================================================================
     // Recognising a declaration
     // ========================================================================
 
@@ -491,6 +646,111 @@ mod guards {
         assert!(
             finds("companyId"),
             "no scanned line contains the word `companyId`. Measured 2026-08-23 there is exactly one in the shipped tree — the `\"companyId\"` key in `test_login_response_deserialization` (`crates/pos-api/src/auth.rs`), kept deliberately when its `tenantId` sibling was deleted. If that fixture is gone, the camelCase arm of the tenant-id guard now has no witness: give it another one rather than deleting this assertion"
+        );
+
+        // ------------------------------------------------------------------------------------
+        // The whole-file layer
+        // ------------------------------------------------------------------------------------
+        //
+        // The newest reader here, and the only one that can express a predicate spanning a
+        // newline. Three separate things have to hold, and a green on any two of them is
+        // consistent with the layer being useless:
+        //
+        //   1. it reads the same tree the line layer reads,
+        //   2. it blanks what it promises to blank — otherwise every scan built on it matches
+        //      prose about the pattern instead of the pattern,
+        //   3. it recovers a construct the line layer structurally cannot see, which is the only
+        //      reason to have paid for it.
+        //
+        // (3) is the one that would be skipped. A reader that reads every file and blanks every
+        // comment and still cannot cross a newline passes (1) and (2) and buys nothing.
+
+        let files = scanned_files();
+        assert_eq!(
+            files.len(),
+            sources.len(),
+            "the whole-file reader returned {} files where the line reader walked {}; the two \
+             layers disagree about what the tree is, and a guard built on either is scanning a \
+             different codebase than the one beside it",
+            files.len(),
+            sources.len()
+        );
+
+        let cursor_module = "crates/pos-db/src/projection.rs";
+        let cursor = files
+            .iter()
+            .find(|file| file.path == cursor_module)
+            .unwrap_or_else(|| panic!("{cursor_module} is not in the scanned set"));
+
+        // (2), and it needs a positive control rather than an absence: assert the raw file holds
+        // the text, then that the blanked one does not. A reader that returned the empty string
+        // would satisfy the second half alone.
+        let raw = fs::read_to_string(repo_root().join(cursor_module)).expect("the cursor reads");
+        const IN_A_LINE_COMMENT: &str = "DELIBERATE and load-bearing";
+        assert!(
+            raw.contains(IN_A_LINE_COMMENT),
+            "the witness text for `//` blanking is gone from {cursor_module}; pick another phrase \
+             from a comment there rather than dropping the control"
+        );
+        assert!(
+            !cursor.code.contains(IN_A_LINE_COMMENT),
+            "the whole-file reader is not blanking `//` comments — every scan built on it will \
+             match documentation of a banned shape as though it were the shape"
+        );
+
+        // The same control for the block-comment arm, which the line layer has never had and
+        // therefore has never needed. One block comment exists in the shipped tree.
+        const BLOCK_COMMENT_HOST: &str = "crates/pos-services/src/sync_service.rs";
+        const IN_A_BLOCK_COMMENT: &str = "proceed with sync";
+        let block_host_raw =
+            fs::read_to_string(repo_root().join(BLOCK_COMMENT_HOST)).expect("the host reads");
+        assert!(
+            block_host_raw.contains(IN_A_BLOCK_COMMENT),
+            "the tree's only `/* … */` comment is gone, so the block-comment arm of the reader now \
+             has no witness. Give it another one — a scan that tolerates a construct it never \
+             sees is indistinguishable from one that is blind to it"
+        );
+        let block_host = files
+            .iter()
+            .find(|file| file.path == BLOCK_COMMENT_HOST)
+            .unwrap_or_else(|| panic!("{BLOCK_COMMENT_HOST} is not in the scanned set"));
+        assert!(
+            !block_host.code.contains(IN_A_BLOCK_COMMENT),
+            "the whole-file reader is not blanking `/* … */` comments"
+        );
+
+        // (3). `RowCursor::take` in `projection.rs` carries `#[rustfmt::skip]` so that
+        // `self.row` and `.get(index)` stay on two lines; task 02 planted it because that is the
+        // shape rustfmt produces for a positional read with a chained call, and the form under
+        // which every earlier measurement of this repo's positional reads came out wrong.
+        //
+        // The control is a comparison, not a hit: the same predicate is applied to the file whole
+        // and to its lines one at a time. A line can never contain a newline, so the split read is
+        // invisible to the second and the totals must differ. Join those two lines and this fails
+        // — which is the point, and is what the note above `take` promises.
+        fn reads_a_column(code: &str) -> usize {
+            let mut found = 0;
+            let mut from = 0;
+            while let Some(offset) = code[from..].find(".get") {
+                let at = from + offset;
+                if code[..at].trim_end().ends_with("row") {
+                    found += 1;
+                }
+                from = at + ".get".len();
+            }
+            found
+        }
+
+        let whole = reads_a_column(&cursor.code);
+        let line_at_a_time: usize = cursor.code.lines().map(reads_a_column).sum();
+        assert!(
+            whole > line_at_a_time,
+            "the whole-file reader found {whole} `row … .get` reads in {cursor_module} and a \
+             line-at-a-time pass over the same text found {line_at_a_time}. They should differ: \
+             `RowCursor::take` splits one across two lines under `#[rustfmt::skip]` precisely so \
+             this comparison has something to be about. Equal totals mean either the reader has \
+             stopped crossing newlines, or somebody joined those two lines and removed the only \
+             witness in the tree for the thing this layer exists to do"
         );
     }
 
@@ -2240,70 +2500,6 @@ mod guards {
     /// Length preservation is what lets the caller report a real line number from the blanked
     /// text. Both classes must go: this repo's prose quotes the very combinators banned below, and
     /// SQL literals contain the parentheses the balancer counts.
-    fn blank_comments_and_strings(source: &str) -> String {
-        let bytes: Vec<char> = source.chars().collect();
-        let mut out = bytes.clone();
-        let mut i = 0;
-        while i < bytes.len() {
-            let rest: String = bytes[i..(i + 3).min(bytes.len())].iter().collect();
-            if rest.starts_with("//") {
-                while i < bytes.len() && bytes[i] != '\n' {
-                    out[i] = ' ';
-                    i += 1;
-                }
-                continue;
-            }
-            // Raw strings: r"…", r#"…"#, r##"…"##
-            if bytes[i] == 'r' {
-                let mut hashes = 0;
-                let mut j = i + 1;
-                while j < bytes.len() && bytes[j] == '#' {
-                    hashes += 1;
-                    j += 1;
-                }
-                if j < bytes.len() && bytes[j] == '"' {
-                    let terminator: String = std::iter::once('"')
-                        .chain(std::iter::repeat_n('#', hashes))
-                        .collect();
-                    let tail: String = bytes[j + 1..].iter().collect();
-                    let end = tail.find(&terminator).map_or(bytes.len(), |at| {
-                        j + 1 + tail[..at].chars().count() + terminator.chars().count()
-                    });
-                    for slot in out.iter_mut().take(end).skip(i) {
-                        if *slot != '\n' {
-                            *slot = ' ';
-                        }
-                    }
-                    i = end;
-                    continue;
-                }
-            }
-            if bytes[i] == '"' {
-                let mut j = i + 1;
-                while j < bytes.len() {
-                    if bytes[j] == '\\' {
-                        j += 2;
-                        continue;
-                    }
-                    if bytes[j] == '"' {
-                        j += 1;
-                        break;
-                    }
-                    j += 1;
-                }
-                for slot in out.iter_mut().take(j.min(bytes.len())).skip(i) {
-                    if *slot != '\n' {
-                        *slot = ' ';
-                    }
-                }
-                i = j;
-                continue;
-            }
-            i += 1;
-        }
-        out.into_iter().collect()
-    }
-
     /// The text immediately following a balanced `query_row( … )`, or `None` if it never closes.
     fn tail_after_balanced_call(code: &str, open_paren: usize) -> Option<&str> {
         let mut depth = 0usize;
@@ -2374,19 +2570,13 @@ mod guards {
     ];
 
     fn query_row_sites_under(relative_dir: &str) -> Vec<ReadSite> {
-        let dir = repo_root().join(relative_dir);
         let mut sites = Vec::new();
-        for path in rust_sources() {
-            if !path.starts_with(&dir) {
+        for file in scanned_files() {
+            if !file.path.starts_with(relative_dir) {
                 continue;
             }
-            let raw = std::fs::read_to_string(&path).expect("a scanned source file reads");
-            let code = blank_comments_and_strings(&raw);
-            let shown = path
-                .strip_prefix(repo_root())
-                .unwrap_or(&path)
-                .display()
-                .to_string();
+            let code = file.code;
+            let shown = file.path;
             for call in READ_CALLS {
                 let mut from = 0;
                 while let Some(at) = code[from..].find(call) {
@@ -2406,7 +2596,7 @@ mod guards {
                             if let Some(tail) = tail_after_balanced_call(&code, absolute) {
                                 sites.push(ReadSite {
                                     path: shown.clone(),
-                                    line: code[..start].matches('\n').count() + 1,
+                                    line: line_at(&code, start),
                                     discards: discards_its_error(tail),
                                 });
                             }
