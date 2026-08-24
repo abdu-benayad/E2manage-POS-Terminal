@@ -9,10 +9,13 @@
 
 pub mod enquiry;
 pub mod notice;
+pub mod phase;
 pub mod strings;
 
 pub use enquiry::{
     AuthAnswer, AuthEnquiry, Discardable, DispatchedEnquiry, EnquiryId, EnquiryIds, PairingCode,
+    PendingEnquiry,
 };
 pub use notice::{PadOffer, Recheck, RefusalNotice, SignedInAtTheTill, UndecidedNotice};
+pub use phase::{advance, AuthPhase, OperatorCard, PinEntryStanding, PAIRING_POLL_INTERVAL};
 pub use strings::Sentence;

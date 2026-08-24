@@ -151,12 +151,28 @@ pub const CONTRACT_BREACH: Sentence = Sentence::new(
     "The platform answered in a form this till could not read. Report this to support.",
 );
 
+/// The start-up probe could not answer, and the till cannot say why.
+///
+/// # This names a limitation rather than a cause, on purpose
+///
+/// `AuthService::load_saved_session`, `OperatorSignIn::restore` and `PairingService`'s methods all
+/// return `anyhow::Error`, which carries no discriminant. A store failure and an unreachable
+/// platform arrive here indistinguishable, so this sentence claims neither. Picking one would be
+/// inventing a cause, which is exactly what `UndeterminedCause` exists to stop.
+///
+/// Replace this the moment those services return typed errors: then the real cause is available
+/// and `UndecidedNotice::for_cause` says something true and specific instead.
+pub const STARTUP_PROBE_FAILED: Sentence = Sentence::new(
+    "تعذّر على هذه النقطة إكمال فحوصات بدء التشغيل.",
+    "This till could not complete its start-up checks.",
+);
+
 /// Every sentence in this module, for tests that must enumerate rather than reach.
 ///
 /// **This is the witness for step 14's both-directions sweep.** A sentence absent from this array
 /// is invisible to that sweep, so a test asserts the array's length against the number of
 /// distinct sentences declared here.
-pub const EVERY_SENTENCE: [Sentence; 14] = [
+pub const EVERY_SENTENCE: [Sentence; 15] = [
     WRONG_PIN,
     LOCKED,
     OPERATOR_UNKNOWN,
@@ -171,4 +187,5 @@ pub const EVERY_SENTENCE: [Sentence; 14] = [
     ENROLMENT_SUSPENDED,
     TERMINAL_NOT_PROVISIONED,
     CONTRACT_BREACH,
+    STARTUP_PROBE_FAILED,
 ];

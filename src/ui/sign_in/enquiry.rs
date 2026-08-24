@@ -199,6 +199,42 @@ impl AuthEnquiry {
     }
 }
 
+/// An enquiry the fold has asked for, before an id has been stamped on it.
+///
+/// The fold produces these; the driver turns each into a [`DispatchedEnquiry`] by minting an id.
+/// Ids are stamped at dispatch rather than in the fold because an id records that an enquiry
+/// actually left, and only the driver knows that.
+#[derive(Debug)]
+pub struct PendingEnquiry {
+    /// How long to wait before running it.
+    pub run_after: Duration,
+    /// What is being asked.
+    pub asking: AuthEnquiry,
+}
+
+impl PendingEnquiry {
+    /// Run it as soon as the driver can.
+    ///
+    /// Spelled out rather than defaulted: see [`DispatchedEnquiry`] for why an omitted delay is
+    /// the failure this type is shaped against.
+    pub const fn now(asking: AuthEnquiry) -> Self {
+        Self {
+            run_after: Duration::ZERO,
+            asking,
+        }
+    }
+
+    /// Run it after a wait.
+    pub const fn after(run_after: Duration, asking: AuthEnquiry) -> Self {
+        Self { run_after, asking }
+    }
+
+    /// Stamps this for dispatch.
+    pub fn dispatch(self, ids: &mut EnquiryIds) -> DispatchedEnquiry {
+        DispatchedEnquiry::new(ids, self.run_after, self.asking)
+    }
+}
+
 /// An enquiry that has been handed to the driver.
 ///
 /// # Why the delay is a field and not a fourth type

@@ -220,6 +220,22 @@ impl UndecidedNotice {
         }
     }
 
+    /// The start-up probe failed and the cause is not knowable at this layer.
+    ///
+    /// A separate constructor rather than a variant of [`Self::for_cause`], because there is no
+    /// [`UndeterminedCause`] to pass: the services this probe calls return `anyhow::Error`, which
+    /// carries no discriminant. Naming a cause here would be inventing one — see
+    /// [`strings::STARTUP_PROBE_FAILED`].
+    ///
+    /// `WorthRetrying`, because the commonest reasons a start-up probe fails on a till are a
+    /// database still opening and a network not yet up, both of which pass.
+    pub const fn for_startup_probe_failure() -> Self {
+        Self {
+            sentence: strings::STARTUP_PROBE_FAILED,
+            recheck: Recheck::WorthRetrying,
+        }
+    }
+
     /// The sentence to show.
     pub const fn sentence(self) -> Sentence {
         self.sentence
