@@ -20,7 +20,7 @@
 //! machine where a catch-all is the correct construct, and the asymmetry with `advance` is the
 //! reason [`super::enquiry::Discardable`] exists.
 
-use pos_models::Digit;
+use pos_models::{Digit, OperatorId};
 
 use super::enquiry::{AuthEnquiry, DispatchedEnquiry, EnquiryIds, PendingEnquiry};
 use super::notice::Recheck;
@@ -31,8 +31,14 @@ use super::phase::{AuthPhase, PinEntryStanding};
 /// Deliberately small. Every variant corresponds to a control that some phase actually draws, and
 /// nothing here names a *screen* — an intent says what was done, never where the screen should go
 /// next, which is [`apply`]'s decision and nobody else's.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Intent {
+    /// A card on the operator list was activated.
+    ///
+    /// Carries the id rather than the card: the card is a render-ready projection the roster owns,
+    /// and an intent that carried one would let a screen hand back a card the phase never issued.
+    ChooseOperator(OperatorId),
+
     /// A digit was pressed on the PIN keypad.
     ///
     /// Carries a [`Digit`], not a `char` and not a `u8`: the keypad's own event carries the
@@ -133,6 +139,9 @@ pub fn apply(
                 }
                 // A retry means nothing while entering: nothing has failed.
                 Intent::Retry => {}
+                // Nor does choosing an operator: the list is not on screen, and the operator is
+                // already fixed by the phase this entry belongs to.
+                Intent::ChooseOperator(_) => {}
             }
 
             (
@@ -246,6 +255,28 @@ pub fn apply(
         ),
 
         // ------------------------------------------------------------------
+        // Choosing an operator, which cannot yet be honoured
+        // ------------------------------------------------------------------
+        //
+        // This arm returns the phase unchanged, and that is a defect with an owner rather than a
+        // decision. `AuthPhase::PinEntry` requires a `PinPolicy`; `OperatorSelect` carries none,
+        // `TerminalSession` has no field for one, and `AuthService::login_terminal` never
+        // assembles one — measured 2026-08-24, every call to `TerminalConfig::pin_policy` in this
+        // repository is inside `pos-api`'s own test module. So there is no policy anywhere in the
+        // running system to build the next phase from.
+        //
+        // Written as its own arm rather than left to the catch-all below so that it is visible,
+        // testable, and a one-line change when the policy arrives:
+        // `till/issue/pin-policy-does-not-survive-a-restart`.
+        //
+        // The alternative — inventing a default policy here to make the screen advance — would
+        // put a fabricated attempts budget behind a real lockout, which is the one failure the
+        // carried-not-fetched design exists to prevent.
+        (phase @ AuthPhase::OperatorSelect { .. }, Intent::ChooseOperator(_)) => {
+            (phase, Vec::new())
+        }
+
+        // ------------------------------------------------------------------
         // Everything a phase did not draw a control for
         // ------------------------------------------------------------------
         //
@@ -352,7 +383,7 @@ mod tests {
         let mut ids = EnquiryIds::new();
         let (phase, sent) = apply(
             entering(&[1, 2]),
-            Intent::PressDigit(Digit::new(3).unwrap()),
+            Intent::PressDigit(Digit::new(3).expect("a single decimal digit")),
             &mut ids,
         );
 
@@ -518,19 +549,22 @@ mod tests {
         let mut ids = EnquiryIds::new();
 
         for intent in [
-            Intent::PressDigit(Digit::new(1).unwrap()),
+            Intent::PressDigit(Digit::new(1).expect("a single decimal digit")),
             Intent::Backspace,
             Intent::ClearEntry,
             Intent::SubmitPin,
         ] {
+            // The label is taken before `apply` consumes the intent: `Intent` carries an
+            // `OperatorId` now and is no longer `Copy`.
+            let label = format!("{intent:?}");
             let (phase, sent) = apply(AuthPhase::Splash, intent, &mut ids);
             assert!(
                 matches!(phase, AuthPhase::Splash),
-                "{intent:?} moved the splash screen"
+                "{label} moved the splash screen"
             );
             assert!(
                 sent.is_empty(),
-                "{intent:?} sent something from the splash screen"
+                "{label} sent something from the splash screen"
             );
         }
 
@@ -538,6 +572,41 @@ mod tests {
         // assertions above are about reachability rather than about `apply` doing nothing at all.
         let (phase, _) = apply(entering(&[1]), Intent::Backspace, &mut ids);
         assert_eq!(entered_len(&phase), 0, "the fold is not inert");
+    }
+
+    /// **This test asserts a defect, deliberately.** Choosing an operator cannot advance the
+    /// screen, because `AuthPhase::PinEntry` needs a `PinPolicy` and nothing in the running system
+    /// has one: every call to `TerminalConfig::pin_policy` is inside `pos-api`'s own test module,
+    /// `TerminalSession` has no field for a policy, and `login_terminal` never assembles one.
+    ///
+    /// When `till/issue/pin-policy-does-not-survive-a-restart` lands, this test must go red. It is
+    /// written this way so that the fix cannot quietly leave the dead control behind — a screen
+    /// that draws a card nobody can activate is worse than one that draws no cards, because the
+    /// cashier concludes the till is broken rather than unfinished.
+    #[test]
+    fn sign_in_choosing_an_operator_cannot_yet_advance_the_screen() {
+        let mut ids = EnquiryIds::new();
+        let card = card();
+        let chosen = card.id().clone();
+
+        let (phase, sent) = apply(
+            AuthPhase::OperatorSelect {
+                session: session(),
+                operators: vec![card],
+            },
+            Intent::ChooseOperator(chosen),
+            &mut ids,
+        );
+
+        assert!(
+            matches!(phase, AuthPhase::OperatorSelect { .. }),
+            "if this now reaches PIN entry, the policy landed — delete this test and wire the \
+             transition, do not weaken the assertion"
+        );
+        assert!(
+            sent.is_empty(),
+            "a transition that cannot happen must not send an enquiry either"
+        );
     }
 
     /// A pairing screen's retry asks for a fresh code rather than polling the dead one.

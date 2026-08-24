@@ -23,7 +23,9 @@ use pos_models::HardwareEnrolment;
 
 use crate::ui::sign_in::{AuthPhase, Intent, Sentence};
 
+mod operators;
 mod pairing;
+mod pin_entry;
 
 /// Which script the screen is reading in.
 ///
@@ -78,11 +80,22 @@ pub fn render(ui: &mut egui::Ui, phase: &AuthPhase, reading: Reading) -> Vec<Int
                 ..
             } => pairing::render(ui, code, *expires_at, *enrolment, reading),
 
-            // Step 13's remaining phases. Distinct arms rather than one placeholder, so the
-            // compiler keeps forcing each to be considered.
-            AuthPhase::OperatorSelect { .. }
-            | AuthPhase::PinEntry { .. }
-            | AuthPhase::SignedIn(_) => {
+            AuthPhase::OperatorSelect { operators, .. } => {
+                operators::render(ui, operators, reading)
+            }
+
+            AuthPhase::PinEntry {
+                operator,
+                policy,
+                standing,
+                ..
+            } => pin_entry::render(ui, operator, *policy, standing, reading),
+
+            // The screen is done and the till is signed in. Nothing to draw: whatever comes after
+            // sign-in is a different screen and not this issue's. A spinner rather than a blank
+            // panel, because the frame between this and the next screen should not look like a
+            // crash.
+            AuthPhase::SignedIn(_) => {
                 render_splash(ui);
                 Vec::new()
             }

@@ -206,12 +206,43 @@ pub const NO_PAIRING_CODE: Sentence = Sentence::new(
     "Could not get a pairing code.",
 );
 
+// ============================================================================
+// Choosing an operator, and entering a PIN
+// ============================================================================
+
+/// The operator list's heading.
+pub const CHOOSE_YOUR_NAME: Sentence = Sentence::new("اختر اسمك", "Choose your name");
+
+/// No operators have ever synced to this till.
+///
+/// Deliberately not phrased as a fault. Sign-in works offline *once* operators have synced, so a
+/// till with an empty roster is early rather than broken, and telling a shopkeeper otherwise sends
+/// them looking for a problem that does not exist.
+pub const NO_OPERATORS_YET: Sentence = Sentence::new(
+    "لم تتم مزامنة أي مستخدمين بعد. صِل نقطة البيع بالشبكة مرة واحدة لجلب القائمة.",
+    "No operators have synced yet. Connect this till once to fetch the list.",
+);
+
+/// The PIN screen's instruction.
+pub const ENTER_YOUR_PIN: Sentence = Sentence::new("أدخل رمزك السري", "Enter your PIN");
+
+/// The deliberate submit. The PIN keypad has no enter key of its own, so this is the only door.
+pub const SIGN_IN: Sentence = Sentence::new("تسجيل الدخول", "Sign in");
+
+/// Shown while a verification is in flight. There is no way out of this state and the words must
+/// not imply one.
+pub const CHECKING: Sentence = Sentence::new("جارٍ التحقق…", "Checking…");
+
+/// Precedes the number of attempts left. Only ever rendered from an `AttemptsRemaining`, which no
+/// outcome but a wrong PIN can produce.
+pub const ATTEMPTS_REMAINING: Sentence = Sentence::new("محاولات متبقية", "attempts remaining");
+
 /// Every sentence in this module, for tests that must enumerate rather than reach.
 ///
 /// **This is the witness for step 14's both-directions sweep.** A sentence absent from this array
 /// is invisible to that sweep, so a test asserts the array's length against the number of
 /// distinct sentences declared here.
-pub const EVERY_SENTENCE: [Sentence; 21] = [
+pub const EVERY_SENTENCE: [Sentence; 27] = [
     WRONG_PIN,
     LOCKED,
     OPERATOR_UNKNOWN,
@@ -233,4 +264,10 @@ pub const EVERY_SENTENCE: [Sentence; 21] = [
     CODE_EXPIRES_AT,
     AWAITING_APPROVAL,
     NO_PAIRING_CODE,
+    CHOOSE_YOUR_NAME,
+    NO_OPERATORS_YET,
+    ENTER_YOUR_PIN,
+    SIGN_IN,
+    CHECKING,
+    ATTEMPTS_REMAINING,
 ];
