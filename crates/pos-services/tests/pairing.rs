@@ -300,3 +300,115 @@ async fn a_stored_secret_never_becomes_an_enrolment_answer() {
 
     nothing_asked_for_a_secret_back(&server, 2).await;
 }
+
+// ============================================================================
+// A READ THAT FAILS IS NOT A ROW THAT IS ABSENT
+// ============================================================================
+//
+// `is_registered` and `get_hardware_id` each read one column of row 1 and flatten the result into
+// a default — `.unwrap_or(0)` and `.unwrap_or_default()`. Neither can distinguish
+// `QueryReturnedNoRows`, the legitimate fresh-install case those defaults exist to serve, from any
+// other error. The tests below drive the *other* error and record what the till then does.
+//
+// # What these establish, and what they do not
+//
+// They establish that the consequence is real **given the triggering state**: the till answers
+// "not registered" while holding a valid secret, and then deletes that secret. They do **not**
+// establish that a production write path produces the triggering state — see the negative recorded
+// below `a_blob_in_a_text_column`. That distinction is the whole severity question, so it is
+// written here rather than left for a reader to assume in either direction.
+//
+// # Why a BLOB
+//
+// SQLite's TEXT affinity converts numbers to text but leaves a BLOB a BLOB, so `hardware_id TEXT
+// NOT NULL` accepts one and `row.get::<_, String>` then fails with `InvalidColumnType`. It is a
+// *mechanism* for producing a non-`QueryReturnedNoRows` error on this exact call, chosen because
+// it is precise and local — not a claim that a BLOB is how this happens in the field.
+
+/// Makes the next read of `column` fail with something that is not `QueryReturnedNoRows`.
+fn a_blob_in_a_text_column(db: &Database, column: &str) {
+    let conn = db.connection();
+    let conn = conn.lock();
+    conn.execute(
+        &format!("UPDATE terminal_registration SET {column} = X'00' WHERE id = 1"),
+        [],
+    )
+    .expect("the singleton registration row updates");
+}
+
+fn stored_secret(db: &Database) -> Option<String> {
+    let conn = db.connection();
+    let conn = conn.lock();
+    conn.query_row(
+        "SELECT secret FROM terminal_registration WHERE id = 1",
+        [],
+        |row| row.get::<_, Option<String>>(0),
+    )
+    .expect("the singleton registration row is readable")
+}
+
+/// A read that fails makes the till report itself unregistered while the row is intact.
+///
+/// The control is the assertion *before* the corruption: without it, a test that only checks the
+/// `false` cannot tell a swallowed error from a till that was never registered.
+#[test]
+fn an_unreadable_registration_flag_reads_as_not_registered() {
+    let (service, db) = service("http://127.0.0.1:1");
+    holding_a_secret(&db);
+
+    assert!(
+        service.is_registered().expect("the flag is readable"),
+        "control: the fixture registered this till, so the pre-corruption answer must be true"
+    );
+
+    a_blob_in_a_text_column(&db, "is_registered");
+
+    assert!(
+        !service
+            .is_registered()
+            .expect("the call does not surface the failure"),
+        "a failed read of the flag is reported as `not registered`"
+    );
+    assert!(
+        stored_secret(&db).is_some(),
+        "and the row is still intact — the till is wrong about itself, not empty"
+    );
+}
+
+/// The destructive step: an unreadable hardware id makes the till delete its own credentials.
+///
+/// This is the whole issue in one test. `get_hardware_id` reads `hardware_id`, gets `""` from the
+/// swallowed error, treats that as "no hardware id yet", generates a fresh one, and writes it with
+/// `INSERT OR REPLACE` — which is not an upsert of the named columns but a delete-and-insert, so
+/// every column the statement does not name is reset.
+#[test]
+fn an_unreadable_hardware_id_makes_the_till_destroy_its_own_secret() {
+    let (service, db) = service("http://127.0.0.1:1");
+    holding_a_secret(&db);
+
+    assert_eq!(
+        stored_secret(&db).as_deref(),
+        Some("a-real-looking-secret"),
+        "control: the secret is present before the unreadable read"
+    );
+
+    a_blob_in_a_text_column(&db, "hardware_id");
+
+    let regenerated = service
+        .get_hardware_id()
+        .expect("the call does not surface the failure");
+
+    assert_ne!(
+        regenerated, HARDWARE_ID,
+        "the till invented a new hardware id rather than reading the one it had"
+    );
+    assert_eq!(
+        stored_secret(&db),
+        None,
+        "and `INSERT OR REPLACE` took the terminal secret with it"
+    );
+    assert!(
+        !service.is_registered().expect("the flag is readable again"),
+        "the till is now unregistered, and the recovery path for that was deliberately removed"
+    );
+}
