@@ -44,6 +44,7 @@ pub mod transactions;
 pub mod z_reports;
 
 // Re-export main types
+pub use active_cart::ActiveCart;
 pub use connection::Database;
 pub use draft_sync_queue::{
     DraftQueueSyncStatus, DraftSyncOperation, DraftSyncQueueItem, MAX_DRAFT_SYNC_RETRIES,

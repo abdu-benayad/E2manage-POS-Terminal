@@ -29,7 +29,7 @@
 //! ```
 
 use parking_lot::RwLock;
-use pos_db::Database;
+use pos_db::{ActiveCart, Database};
 use pos_models::cart::{Cart, CartItem};
 use pos_models::product::Product;
 use pos_models::OperatorId;
@@ -124,8 +124,11 @@ impl CartService {
             let cart = self.cart.read();
             match serde_json::to_string(&*cart) {
                 Ok(json) => {
-                    let op_id = self.operator_id.read();
-                    if let Err(e) = db.save_active_cart(op_id.as_ref(), &json) {
+                    let stored = ActiveCart {
+                        operator_id: self.operator_id.read().clone(),
+                        cart_json: json,
+                    };
+                    if let Err(e) = db.save_active_cart(&stored) {
                         warn!("Failed to persist cart: {}", e);
                     }
                 }
@@ -153,13 +156,13 @@ impl CartService {
     pub fn restore(&self) -> bool {
         if let Some(db) = &self.db {
             match db.get_active_cart() {
-                Ok(Some((op_id, json))) => {
-                    match serde_json::from_str::<Cart>(&json) {
+                Ok(Some(stored)) => {
+                    match serde_json::from_str::<Cart>(&stored.cart_json) {
                         Ok(cart) => {
                             if !cart.is_empty() {
                                 *self.cart.write() = cart;
                                 // Restore operator ID if available
-                                if let Some(op) = op_id {
+                                if let Some(op) = stored.operator_id {
                                     *self.operator_id.write() = Some(op);
                                 }
                                 info!(

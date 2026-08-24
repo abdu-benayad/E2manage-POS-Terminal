@@ -254,8 +254,10 @@ impl<T> RowReader<T> {
 pub struct RowMapping<T> {
     reader: RowReader<T>,
     /// Columns the store writes itself, as `(column, SQL expression)`. Present in the `INSERT`,
-    /// absent from the projection, never bound to a parameter. This is `updated_at =
-    /// datetime('now')` and nothing else so far.
+    /// absent from the projection, never bound to a parameter. Two kinds so far: a value the
+    /// store computes (`updated_at = datetime('now')`), and a value the *schema* fixes
+    /// (`active_cart.id = 1`, where `CHECK (id = 1)` makes the table a singleton). Both are
+    /// columns no caller gets a say in, which is the property this list encodes.
     store_managed: &'static [(&'static str, &'static str)],
     table: &'static str,
     conflict: OnConflict,
@@ -453,6 +455,42 @@ pub const DECLARED_SHAPES: &[DeclaredShape] = &[
         },
         inserted: || {
             crate::transactions::OFFLINE_TRANSACTION_ROW
+                .insert_column_names()
+                .collect()
+        },
+    },
+    DeclaredShape {
+        name: "SHIFT_ROW",
+        table: || Some(crate::shifts::SHIFT_ROW.table()),
+        projected: || crate::shifts::SHIFT_ROW.reader().column_names().collect(),
+        inserted: || crate::shifts::SHIFT_ROW.insert_column_names().collect(),
+    },
+    DeclaredShape {
+        name: "SYNC_STATE_ROW",
+        table: || Some(crate::sync_state::SYNC_STATE_ROW.table()),
+        projected: || {
+            crate::sync_state::SYNC_STATE_ROW
+                .reader()
+                .column_names()
+                .collect()
+        },
+        inserted: || {
+            crate::sync_state::SYNC_STATE_ROW
+                .insert_column_names()
+                .collect()
+        },
+    },
+    DeclaredShape {
+        name: "ACTIVE_CART_ROW",
+        table: || Some(crate::active_cart::ACTIVE_CART_ROW.table()),
+        projected: || {
+            crate::active_cart::ACTIVE_CART_ROW
+                .reader()
+                .column_names()
+                .collect()
+        },
+        inserted: || {
+            crate::active_cart::ACTIVE_CART_ROW
                 .insert_column_names()
                 .collect()
         },
