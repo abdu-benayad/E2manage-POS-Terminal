@@ -161,10 +161,17 @@ impl PairingService {
     // PAIRING WORKFLOW
     // ========================================================================
 
-    /// Requests a new pairing code from the server
+    /// Requests a new pairing code from the server.
     ///
-    /// If the terminal is already registered (409 error), attempts to recover
-    /// the registration credentials from the server.
+    /// **Hardware the platform already knows is not a special case here.** It answers 200 with the
+    /// same `{pairingCode, expiresAt, hardwareId}` body a first enrolment gets, flags the request
+    /// as a re-pair on its own side, and an administrator authorises it. The till displays the code
+    /// and polls, exactly as it does for a first enrolment.
+    ///
+    /// The till used to detect that case by substring-matching a prose error message and then ask
+    /// the platform to hand its own secret back. Both halves are gone. Self-service recovery cannot
+    /// be made safe, only removed: **a till that has lost its secret is indistinguishable from an
+    /// attacker claiming that hardware id** — whatever the device could prove is the thing it lost.
     pub async fn request_pairing_code(&self) -> Result<PairingState> {
         let hardware_id = self.get_hardware_id()?;
 
@@ -177,80 +184,18 @@ impl PairingService {
 
         info!("Requesting pairing code for hardware ID: {}", hardware_id);
 
-        let response = self
+        let resp = self
             .api
             .request_pairing(&hardware_id, Some(device_info))
-            .await;
+            .await?;
 
-        match response {
-            Ok(resp) => {
-                info!("Received pairing code: {}", resp.pairing_code);
-                Ok(PairingState {
-                    pairing_code: resp.pairing_code,
-                    expires_at: resp.expires_at,
-                    status: PairingStatus::Pending,
-                    hardware_id,
-                })
-            }
-            Err(e) => {
-                let error_msg = e.to_string();
-                // Check if this is a 409 (already registered) error
-                if error_msg.contains("409") && error_msg.contains("already registered") {
-                    info!("Terminal already registered, attempting recovery...");
-                    return self.try_recover_registration(&hardware_id).await;
-                }
-                Err(e)
-            }
-        }
-    }
+        info!("Received pairing code: {}", resp.pairing_code);
 
-    /// Attempts to recover registration credentials when terminal is already registered
-    async fn try_recover_registration(&self, hardware_id: &str) -> Result<PairingState> {
-        info!(
-            "Attempting to recover registration for hardware ID: {}",
-            hardware_id
-        );
-
-        let terminal_info = self.api.recover_registration(hardware_id).await?;
-
-        info!(
-            "Registration recovered! Terminal ID: {}, Code: {}",
-            terminal_info.terminal_id, terminal_info.terminal_code
-        );
-
-        // Save the recovered registration to local database
-        self.save_registration(&terminal_info)?;
-
-        // Login with the recovered credentials to get a session token
-        if !terminal_info.secret.is_empty() {
-            info!("Logging in terminal after recovery");
-            match self
-                .api
-                .login_terminal(
-                    &terminal_info.terminal_code,
-                    hardware_id,
-                    &terminal_info.secret,
-                )
-                .await
-            {
-                Ok(login_response) => {
-                    info!("Terminal logged in successfully after recovery");
-                    if let Err(e) = self.save_terminal_config(hardware_id, &login_response) {
-                        warn!("Failed to save terminal config to DB: {}", e);
-                    }
-                }
-                Err(e) => {
-                    warn!("Failed to login terminal after recovery: {}", e);
-                }
-            }
-        }
-
-        // Return a completed pairing state
         Ok(PairingState {
-            pairing_code: "RECOVERED".to_string(),
-            expires_at: chrono::Utc::now(),
-            status: PairingStatus::Completed,
-            hardware_id: hardware_id.to_string(),
+            pairing_code: resp.pairing_code,
+            expires_at: resp.expires_at,
+            status: PairingStatus::Pending,
+            hardware_id,
         })
     }
 

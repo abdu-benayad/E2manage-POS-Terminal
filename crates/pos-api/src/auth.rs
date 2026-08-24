@@ -634,28 +634,20 @@ impl ApiClient {
         Ok(response.into_inner())
     }
 
-    /// Recovers terminal registration when local data was lost
-    ///
-    /// Called when the terminal receives a 409 (already registered) error.
-    /// The backend returns the terminal credentials if they are still available.
-    ///
-    /// # Arguments
-    ///
-    /// * `hardware_id` - The hardware ID of the terminal
-    ///
-    /// # Returns
-    ///
-    /// Terminal credentials for re-registration
-    pub async fn recover_registration(&self, hardware_id: &str) -> Result<PairedTerminalInfo> {
-        let request = RequestPairingRequest {
-            hardware_id: hardware_id.to_string(),
-            device_info: None,
-        };
-
-        self.post::<_, Enveloped<_>>("/api/pos/terminals/pairing/recover", &request)
-            .await
-            .map(Enveloped::into_inner)
-    }
+    // `recover_registration` was here until this issue, calling
+    // `POST /api/pos/terminals/pairing/recover`. It took a `hardwareId` and returned that
+    // terminal's RAW SECRET, with no authentication and no rate limit. A `hardwareId` is
+    // client-chosen, validated only for length, unique across every tenant, and was written to
+    // the platform's application log — so the secret was retrievable by anyone who could guess a
+    // device name. The till was not the victim of that hole; it was the caller.
+    //
+    // The platform deleted the route in `566e5c62` and asserts its absence in
+    // `presentation/__tests__/pairing-recover-is-gone.test.ts`. Do not reintroduce it here.
+    //
+    // There is no replacement and none is possible: a till that has lost its secret is
+    // indistinguishable from an attacker claiming that hardware id. `request_pairing` is now the
+    // only way back — the platform flags the request as a re-pair and an administrator authorises
+    // it, so nothing hands a credential to an unauthenticated caller.
 }
 
 #[cfg(test)]
