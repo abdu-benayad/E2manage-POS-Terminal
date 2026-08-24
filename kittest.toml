@@ -1,0 +1,53 @@
+# egui_kittest snapshot comparison config (read by the `image-snapshots` feature).
+#
+# Why this file exists — the "lavapipe drift" that failed 9 snapshots every session:
+#
+# Snapshots render through wgpu. egui_kittest 0.34 already prefers a CPU adapter,
+# so the renderer is Mesa's lavapipe (software Vulkan) here — forcing it with
+# VK_ICD_FILENAMES / WGPU_BACKEND changes nothing; it is already selected. But
+# lavapipe's glyph rasterization shifts by a few antialiased edge pixels between
+# Mesa *versions*. The committed reference PNGs were generated on one Mesa version;
+# a machine (or CI) on another version diffs by 1-6 pixels on text edges — pure
+# renderer noise, no layout change. At the egui_kittest default
+# (`failed_pixel_count_threshold = 0`) a single such pixel is a hard failure, which
+# is why the references appeared to need regenerating in every session. Regenerating
+# only moves the drift to the next Mesa version; it is not a fix.
+#
+# These snapshots exist to catch *geometric* RTL regressions (a slot that stops
+# mirroring, a status dot on the wrong edge, alignment that fails to flip). Measured
+# floor of such a regression on this suite is 663 pixels, with most at 4000-6500 (a
+# failed mirror makes the RTL render equal the LTR one); several pairs even differ in
+# image size, which fails regardless of any threshold. Observed cross-version noise
+# tops out at 6 pixels. The tolerance below sits an order of magnitude above the
+# noise and an order of magnitude below the smallest real regression, so version
+# drift is absorbed while every genuine geometric break still fails.
+#
+# `threshold` (per-pixel perceptual sensitivity) stays at kittest's default 0.6, and only
+# the *count* is relaxed, and only on Linux, where the software rasterizer runs.
+#
+# Two things this file used to claim about that default, both measured false on 2026-08-12
+# (`src/text/mark_acuity_probe.rs`; it asserts what follows, so this is not prose alone):
+#
+#   1. *"0.6 is strict, so each counted pixel must still be perceptibly wrong."* dify computes
+#      its gate as `35215 * t * t`, so 0.6 admits a squared YIQ delta of 12677 out of 35215 —
+#      36 % of the maximum, against dify's own CLI default of 0.1. It is lax, not strict. It is
+#      also *inert* on real diffs from this suite: 0.6, 0.1 and 0.0 return byte-identical counts
+#      on all 28 references the Arabic mark fix changed. Whatever discriminating happens here,
+#      this number is not doing it.
+#
+#   2. *"only the count is relaxed."* The count is not the first filter — it is the last one.
+#      `egui_kittest` calls `dify::diff::get_results(previous, new, threshold, true, …)`, and
+#      that fourth argument is `detect_anti_aliased_pixels`: dify classifies such a pixel
+#      `AntiAliased` and **does not count it**. It is hardcoded in kittest and unreachable from
+#      this file. On those 28 references it discards a median 83 % of the changed pixels — 26 of
+#      the 28 exceed 50 *raw* changed pixels while only 6 exceed it as counted.
+#
+# So read every number above — the 6 px of drift, the 663 px floor — as *post-AA-discard* counts.
+# That is the right calibration for a geometric break, which moves whole filled regions. It is the
+# wrong instrument for anything made entirely of antialiased edge: a glyph mark displaced a few
+# pixels is 2–4 counted pixels at 1×, i.e. under the drift floor, and no value of the two knobs in
+# this file can separate it. Such a defect needs an assertion, not a reference image — which is
+# where the mark-attachment guard lives (`src/text/paint.rs`), and why.
+
+[linux]
+failed_pixel_count_threshold = 50
