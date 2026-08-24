@@ -570,7 +570,11 @@ impl Database {
 /// # What it expands to
 ///
 /// Twenty readers stop being greppable and stop being visible to `symbol` when they move inside a
-/// macro. This is the only mitigation, so it is written out rather than described:
+/// macro. This comment is the only mitigation, so `OPERATOR_ROW` is written out **in full** — no
+/// elision, not even in the middle. An abbreviated expansion would misrepresent *adjacency*: a
+/// reader who trusts `code` to be followed by `name` has a wrong picture of the generated code,
+/// not merely an incomplete one, and a wrong picture is worse than no picture for a mitigation
+/// whose entire job is to stand in for reading the real thing.
 ///
 /// ```ignore
 /// pub const OPERATOR_ROW: RowMapping<OperatorRow> = {
@@ -578,19 +582,53 @@ impl Database {
 ///         let mut cursor = RowCursor::new(row);
 ///         let id = cursor.take_via(&column::OPERATOR_ID)?;
 ///         let code = cursor.take()?;
+///         let employee_id = cursor.take()?;
+///         let employee_number = cursor.take()?;
 ///         let name = cursor.take_pair_via(&column::OPERATOR_NAME)?;   // consumes TWO columns
-///         // …one `let` per entry, in declaration order…
-///         Ok(OperatorRow { id, code, name, /* …every field… */ })
+///         let role = cursor.take_via(&column::OPERATOR_ROLE)?;
+///         let department = cursor.take()?;
+///         let position = cursor.take()?;
+///         let permissions = cursor.take_via(&column::PERMISSIONS)?;
+///         let is_active = cursor.take()?;
+///         Ok(OperatorRow {
+///             id, code, employee_id, employee_number, name,
+///             role, department, position, permissions, is_active,
+///         })
 ///     }
 ///     fn bind(value: &OperatorRow) -> rusqlite::Result<Vec<Value>> {
 ///         let mut out = Vec::new();
 ///         out.extend([column::OPERATOR_ID.write(&value.id)?]);
 ///         out.extend([to_value(&value.code)?]);
-///         { let (a, b) = column::OPERATOR_NAME.write(&value.name)?; out.extend([a, b]); }
+///         out.extend([to_value(&value.employee_id)?]);
+///         out.extend([to_value(&value.employee_number)?]);
+///         {
+///             let (first, second) = column::OPERATOR_NAME.write(&value.name)?;
+///             out.extend([first, second]);
+///         }
+///         out.extend([column::OPERATOR_ROLE.write(&value.role)?]);
+///         out.extend([to_value(&value.department)?]);
+///         out.extend([to_value(&value.position)?]);
+///         out.extend([column::PERMISSIONS.write(&value.permissions)?]);
+///         out.extend([to_value(&value.is_active)?]);
 ///         Ok(out)
 ///     }
 ///     RowMapping::new(
-///         RowReader::new(&[("id", "id"), ("code", "code"), ("name", "name"), ("name_ar", "name_ar"), /* … */], read),
+///         RowReader::new(
+///             &[
+///                 ("id", "id"),
+///                 ("code", "code"),
+///                 ("employee_id", "employee_id"),
+///                 ("employee_number", "employee_number"),
+///                 ("name", "name"),
+///                 ("name_ar", "name_ar"),
+///                 ("role", "role"),
+///                 ("department", "department"),
+///                 ("position", "position"),
+///                 ("permissions_json", "permissions_json"),
+///                 ("is_active", "is_active"),
+///             ],
+///             read,
+///         ),
 ///         &[("updated_at", "datetime('now')")],
 ///         "operators",
 ///         OnConflict::Replace,
@@ -598,6 +636,14 @@ impl Database {
 ///     )
 /// };
 /// ```
+///
+/// Every path the macro emits is written `$crate::…`, so a declaring module imports none of them;
+/// they are spelled short above to keep the shape readable.
+///
+/// **Ten `let`s, eleven entries.** Not one `let` per entry — this file uses "entry" for a *column*
+/// (see [`RowReader`]'s `entries`), and `name` is one `let` over two of them. One `let` per
+/// declared item is the true statement; the two counts diverge by exactly the pair's extra column,
+/// which is what `RowReader::width()` reports and what `RowCursor` advances past.
 ///
 /// Every arm contributes an **array** rather than a value, which is why `bind` extends instead of
 /// pushing: a pair column contributes two, and an entry that could only ever contribute one would
@@ -1510,5 +1556,82 @@ mod tests {
         db.insert(&SAMPLE_BY_MACRO, &replaceable).unwrap();
         db.insert(&SAMPLE_BY_MACRO, &replaceable)
             .expect("`OnConflict::Replace` refused a second write");
+    }
+
+    // ------------------------------------------------------------------ the doc comment itself
+
+    /// The lines of `row_mapping!`'s worked expansion, with the `///` stripped.
+    ///
+    /// `include_str!` on the file this test lives in. The doc block is prose to `rustc` and
+    /// invisible to every other check in this crate, which is exactly the problem: it is the only
+    /// mitigation for twenty readers that `grep` and `symbol` cannot see, and a mitigation nothing
+    /// verifies is a comment.
+    fn the_worked_expansion() -> Vec<String> {
+        const SOURCE: &str = include_str!("projection.rs");
+        let opening = "/// pub const OPERATOR_ROW: RowMapping<OperatorRow> = {";
+        let start = SOURCE
+            .find(opening)
+            .expect("the worked expansion has been renamed or removed");
+        let block = &SOURCE[start..];
+        let end = block
+            .find("/// ```")
+            .expect("the worked expansion's code fence is gone");
+        block[..end]
+            .lines()
+            .map(|line| {
+                line.trim_start()
+                    .trim_start_matches("///")
+                    .trim()
+                    .to_string()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_worked_expansion_lists_the_columns_the_operator_mapping_actually_projects() {
+        // Measured against a real subagent finding: the block used to show `code` followed
+        // directly by `name`, deleting `employee_id` and `employee_number` from the middle with
+        // no marker. Adjacency was wrong, not merely incomplete — and a reader trusting it got a
+        // wrong picture of the generated code, which is worse than no picture.
+        let documented: Vec<String> = the_worked_expansion()
+            .iter()
+            .filter_map(|line| {
+                let inner = line.strip_prefix("(\"")?;
+                let (name, rest) = inner.split_once('"')?;
+                // Only the projection tuples, whose two halves are the same string. The managed
+                // array's `("updated_at", "datetime('now')")` is not one and must not be counted.
+                rest.contains(&format!("\"{name}\""))
+                    .then(|| name.to_string())
+            })
+            .collect();
+
+        let actual: Vec<String> = crate::operators::OPERATOR_ROW
+            .reader()
+            .column_names()
+            .map(str::to_string)
+            .collect();
+        assert_eq!(
+            documented, actual,
+            "the worked expansion and `OPERATOR_ROW` project different columns"
+        );
+    }
+
+    #[test]
+    fn the_worked_expansion_binds_one_local_per_declared_field_not_one_per_column() {
+        // The other half of the same finding: the block claimed "one `let` per entry", and this
+        // file uses "entry" for a column. The pair field is one `let` over two of them, so the
+        // two counts differ by exactly one here — which is the fact the claim erased.
+        let lets = the_worked_expansion()
+            .iter()
+            .filter(|line| line.starts_with("let ") && line.contains("cursor."))
+            .count();
+        let entries = crate::operators::OPERATOR_ROW.reader().width();
+        assert_eq!(lets, 10, "one `let` per declared field");
+        assert_eq!(entries, 11, "one entry per column");
+        assert_eq!(
+            entries - lets,
+            1,
+            "the pair column is the only place the two counts diverge"
+        );
     }
 }
