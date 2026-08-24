@@ -19,23 +19,173 @@ use rusqlite::params;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 
-/// Terminal registration information stored locally
-#[derive(Debug, Clone)]
-pub struct TerminalRegistration {
-    /// Hardware ID of this terminal
-    pub hardware_id: String,
-    /// Terminal ID assigned by server
-    pub terminal_id: Option<String>,
-    /// Terminal code (e.g., "TERM-001")
-    pub terminal_code: Option<String>,
-    /// Secret for authentication
-    pub secret: Option<String>,
-    /// Company name for display
-    pub company_name: Option<String>,
-    /// Whether the terminal is registered
-    pub is_registered: bool,
-    /// When the terminal was registered
-    pub registered_at: Option<String>,
+/// What the terminal registration row says about this till's enrolment.
+///
+/// # Why this is a sum and not a struct with a flag
+///
+/// It was a struct carrying `is_registered: bool` beside `secret: Option<String>`,
+/// `terminal_id: Option<String>` and `terminal_code: Option<String>`. That makes
+/// `TerminalRegistration { is_registered: true, secret: None }` **representable**, and it is
+/// nonsense: the only writer of `is_registered = 1` is [`PairingService::save_registration`],
+/// which sets the credential and both identifiers in the same statement. A shape that can express
+/// a state its own writers cannot produce is a shape that invites a reader to handle it, and the
+/// handling is always a guess.
+///
+/// The flag was worse than redundant — it was **constant**. `get_registration` returned `Some`
+/// only for a row with `is_registered = 1`, so `registration.is_registered` was `true` on every
+/// value that ever existed. A field whose value is fixed by the only path that constructs it
+/// is not data; it is a comment that the compiler cannot check.
+///
+/// # What each variant is allowed to carry, and the one that is a deliberate omission
+///
+/// The unenrolled row is **not** empty during pairing: `save_registration` is reached before the
+/// server has confirmed anything, so `terminal_id`, `terminal_code` and `secret` can all sit on a
+/// row whose `is_registered` is still `0` — the case
+/// `get_registration_is_unenrolled_while_the_row_is_not_registered` exists for. The old return
+/// type suppressed that by answering `None` and discarding the row wholesale. [`Self::Unenrolled`]
+/// carries the hardware id and nothing else, so an unconfirmed identity is not *filtered out* on
+/// the way to the caller — it is **unrepresentable** in what the caller receives.
+///
+/// `registered_at` stays optional on [`Self::Enrolled`] on purpose. It is neither a credential nor
+/// an identifier, and a till that cannot say *when* it enrolled is still enrolled; requiring it
+/// would let a missing display timestamp stop the till reading its own registration. This is the
+/// same reflex [`PairingService::clear_registration`] warns about with `hardware_id` — a list that
+/// looks incomplete is not an invitation to complete it.
+///
+/// `license_key` is not on either variant, and that is an open question rather than a decision —
+/// see the note on [`PairingService::get_platform_license`].
+///
+/// # The assembly test has no socket to plug into yet, and that is a finding, not a pass
+///
+/// The rule is that wiring a type into its caller must need no `.unwrap()`, no forced conversion
+/// and no adapter shim. **[`PairingService::get_registration`] has no production caller** — every
+/// call to it is in a `#[cfg(test)]` module in this file (verified by a repo-wide search that
+/// included `crates/pos-updater` and `crates/pos-contract`, which are excluded from the workspace
+/// and therefore invisible to every `cargo --workspace` command). The view layer that would have
+/// held the other end went with the previous UI; its replacement is the `egui-auth-screen` issue.
+///
+/// So this type met the compiler and not a consumer. What was actually exercised is the two-arm
+/// `match` in the tests, which is the shape a caller will write and is not the same evidence.
+/// Whoever builds the auth screen is running the real assembly test, and a socket that turns out
+/// to be wrong there is a signal about this type rather than a reason to write a shim.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TerminalRegistration {
+    /// This till holds no completed enrolment.
+    ///
+    /// `hardware_id` is `None` when the till has not generated one yet. Absent row, SQL `NULL`
+    /// and the empty string the schema seeds all fold to `None` here, matching the three-way
+    /// reading [`PairingService::get_hardware_id`] already makes — the store spells "unset" three
+    /// ways and the domain has one.
+    Unenrolled {
+        /// The device identity, if this till has generated one.
+        hardware_id: Option<String>,
+    },
+    /// The platform has enrolled this till and issued it a credential.
+    Enrolled {
+        /// The device identity this till enrolled under.
+        hardware_id: String,
+        /// Terminal ID assigned by the server.
+        terminal_id: String,
+        /// Terminal code (e.g., "TERM-001").
+        terminal_code: String,
+        /// Secret for authentication.
+        secret: String,
+        /// Company name, for display. Genuinely optional: the pairing response declares it
+        /// `Option<String>` (`PairedTerminalInfo::company_name`).
+        company_name: Option<String>,
+        /// When the enrolment was recorded, if it was recorded.
+        registered_at: Option<String>,
+    },
+}
+
+/// The registration row as SQLite hands it over, before anything is asserted about it.
+///
+/// Separated from [`TerminalRegistration`] because the two answer different questions. This one
+/// says what is *stored* — every column nullable, because every column except `hardware_id` is
+/// nullable in the schema and `hardware_id` is seeded empty. [`TerminalRegistration`] says what is
+/// *true of the enrolment*, which is a claim the row has to earn.
+///
+/// It exists so the `query_row` closure stays a transport step: that closure can only fail with a
+/// [`rusqlite::Error`], so a domain rule expressed inside it would have to be spelled as a type
+/// error or a panic. The rule lives in [`Self::into_registration`] instead, where it can name the
+/// column that is wrong.
+struct RegistrationRow {
+    hardware_id: Option<String>,
+    terminal_id: Option<String>,
+    terminal_code: Option<String>,
+    secret: Option<String>,
+    company_name: Option<String>,
+    is_registered: bool,
+    registered_at: Option<String>,
+}
+
+/// SQLite spells "this column holds nothing" as `NULL` and this table also spells it as the empty
+/// string — the schema seeds `hardware_id` to `''` and a pairing response can carry
+/// `secret: ""` (`PairedTerminalInfo::secret` is `String`, and `check_pairing_status` warns about
+/// an empty one *after* `save_registration` has already stored it).
+///
+/// So a check that only rejects `NULL` rejects the case that cannot happen and accepts the case
+/// that does. Both fold to `None` here, matching the `!id.is_empty()` reading
+/// [`PairingService::get_hardware_id`] already applies to this same table.
+fn stored(value: Option<String>) -> Option<String> {
+    value.filter(|v| !v.is_empty())
+}
+
+impl RegistrationRow {
+    /// Decides which enrolment this row describes, or refuses to describe one.
+    ///
+    /// The refusal is the point. A row marked enrolled but missing a credential is not a till in
+    /// a slightly degraded state that a caller can paper over — it is a row whose two halves
+    /// contradict each other, and every value a reader could invent for the missing half is a
+    /// guess about a credential.
+    fn into_registration(self) -> Result<TerminalRegistration> {
+        let hardware_id = stored(self.hardware_id);
+
+        if !self.is_registered {
+            return Ok(TerminalRegistration::Unenrolled { hardware_id });
+        }
+
+        match (
+            hardware_id,
+            stored(self.terminal_id),
+            stored(self.terminal_code),
+            stored(self.secret),
+        ) {
+            (Some(hardware_id), Some(terminal_id), Some(terminal_code), Some(secret)) => {
+                Ok(TerminalRegistration::Enrolled {
+                    hardware_id,
+                    terminal_id,
+                    terminal_code,
+                    secret,
+                    company_name: stored(self.company_name),
+                    registered_at: stored(self.registered_at),
+                })
+            }
+            (hardware_id, terminal_id, terminal_code, secret) => {
+                let missing = [
+                    ("hardware_id", hardware_id.is_none()),
+                    ("terminal_id", terminal_id.is_none()),
+                    ("terminal_code", terminal_code.is_none()),
+                    ("secret", secret.is_none()),
+                ]
+                .into_iter()
+                .filter(|(_, absent)| *absent)
+                .map(|(column, _)| column)
+                .collect::<Vec<_>>();
+
+                anyhow::bail!(
+                    "the terminal_registration row is marked enrolled but {} empty or NULL; an \
+                     enrolled terminal holds the credential and identifiers the platform issued \
+                     it, so nothing can be reported from this row without inventing one of them. \
+                     Re-pair the terminal to replace the row",
+                    match missing.as_slice() {
+                        [one] => format!("{one} is"),
+                        many => format!("{} are", many.join(", ")),
+                    }
+                )
+            }
+        }
+    }
 }
 
 /// Current pairing state
@@ -105,8 +255,26 @@ impl PairingService {
         }
     }
 
-    /// Gets the current terminal registration info
-    pub fn get_registration(&self) -> Result<Option<TerminalRegistration>> {
+    /// What this till's registration row says about its enrolment.
+    ///
+    /// # There is no `Option` any more, because the absence had a name
+    ///
+    /// This returned `Result<Option<TerminalRegistration>>`, and `None` meant three different
+    /// things: no row, a row with `is_registered = 0`, and a row the caller was not allowed to
+    /// see. Two of those are the same domain fact — this till is not enrolled — and
+    /// [`TerminalRegistration::Unenrolled`] states it, carrying the hardware id that the discarded
+    /// row held. The `Result` still carries the third outcome, a store that will not answer,
+    /// which is not a statement about enrolment (`b10592a`, same argument as
+    /// [`Self::is_registered`]).
+    ///
+    /// # The row is read by position
+    ///
+    /// A column added, removed or reordered in the `SELECT` list shifts every index after it, and
+    /// five of the seven are TEXT, so a swap among them type-checks and simply attributes one
+    /// terminal's details to another. `get_registration_reads_every_column_into_its_own_field`
+    /// pins the mapping with a distinct value per column. `positional-row-access-in-pos-db` is
+    /// migrating this shape workspace-wide and reaches this file at its task 13.
+    pub fn get_registration(&self) -> Result<TerminalRegistration> {
         let conn = self.db.connection();
         let conn = conn.lock();
 
@@ -119,23 +287,29 @@ impl PairingService {
             "#,
             [],
             |row| {
-                Ok(TerminalRegistration {
+                Ok(RegistrationRow {
                     hardware_id: row.get(0)?,
                     terminal_id: row.get(1)?,
                     terminal_code: row.get(2)?,
                     secret: row.get(3)?,
                     company_name: row.get(4)?,
-                    is_registered: row.get::<_, i32>(5)? == 1,
+                    is_registered: row.get::<_, Option<i32>>(5)? == Some(1),
                     registered_at: row.get(6)?,
                 })
             },
         );
 
         match result {
-            Ok(reg) if reg.is_registered => Ok(Some(reg)),
-            Ok(_) => Ok(None),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(e.into()),
+            Ok(row) => row.into_registration(),
+            // The schema seeds row 1, so an absent row means something removed it. That is still
+            // not an enrolment, and it is not an identity either.
+            Err(rusqlite::Error::QueryReturnedNoRows) => {
+                Ok(TerminalRegistration::Unenrolled { hardware_id: None })
+            }
+            Err(e) => Err(e).context(
+                "could not read the terminal registration row; this is the store failing to \
+                 answer, not a till that is unenrolled",
+            ),
         }
     }
 
@@ -708,6 +882,19 @@ impl PairingService {
     /// [`Self::get_credentials`] has carried the same scope on the same table for far longer. The
     /// right shape was three hundred lines away from the wrong one, which makes this a missing
     /// constraint rather than a knowledge gap.
+    ///
+    /// # Open: the licence key is not a field of [`TerminalRegistration::Enrolled`], and it is not
+    /// obvious that it should be
+    ///
+    /// Making the sum type a sum type raised the question and did not settle it, so it is recorded
+    /// here rather than answered by whichever shape was convenient. The key is written by
+    /// `register_with_platform`, a flow that succeeds or fails **independently** of pairing: an
+    /// enrolled till can hold no key, and — until [`Self::clear_registration`] was fixed — a key
+    /// could outlive the enrolment that fetched it. So it is not a property of the enrolment the
+    /// way the secret is, and putting it on the enrolled variant would assert a coupling the two
+    /// flows do not have. The candidate shapes are a separate type for the platform-registry
+    /// standing, or an `Option` on the variant that admits the decoupling in its own type. Neither
+    /// is decided; both are bigger than this read.
     pub fn get_platform_license(&self) -> Result<Option<String>> {
         let conn = self.db.connection();
         let conn = conn.lock();
@@ -798,7 +985,7 @@ mod tests {
     /// edit that tidies these fixtures into shared or omitted values disarms the test without
     /// failing it.
     #[test]
-    fn test_get_registration_reads_every_column_into_its_own_field() {
+    fn get_registration_reads_every_column_into_its_own_field() {
         let service = create_test_service();
 
         {
@@ -821,31 +1008,29 @@ mod tests {
             .unwrap();
         }
 
-        let registration = service.get_registration().unwrap().unwrap();
-
-        assert_eq!(registration.hardware_id, "hardware-id-1");
-        assert_eq!(registration.terminal_id, Some("terminal-id-1".to_string()));
         assert_eq!(
-            registration.terminal_code,
-            Some("terminal-code-1".to_string())
-        );
-        assert_eq!(registration.secret, Some("secret-1".to_string()));
-        assert_eq!(
-            registration.company_name,
-            Some("company-name-1".to_string())
-        );
-        assert!(registration.is_registered);
-        assert_eq!(
-            registration.registered_at,
-            Some("2026-08-23T12:00:00Z".to_string())
+            service.get_registration().unwrap(),
+            TerminalRegistration::Enrolled {
+                hardware_id: "hardware-id-1".to_string(),
+                terminal_id: "terminal-id-1".to_string(),
+                terminal_code: "terminal-code-1".to_string(),
+                secret: "secret-1".to_string(),
+                company_name: Some("company-name-1".to_string()),
+                registered_at: Some("2026-08-23T12:00:00Z".to_string()),
+            }
         );
     }
 
-    /// A row that exists but is not registered is not a registration. The credentials are present
-    /// on that row during pairing, so returning it would hand callers a terminal identity the
+    /// A row that exists but is not registered is not an enrolment. The credentials are present
+    /// on that row during pairing, so reporting them would hand callers a terminal identity the
     /// server has not confirmed.
+    ///
+    /// The assertion is on the **whole value**, not on "it is the `Unenrolled` variant". A
+    /// variant check would pass just as well if `Unenrolled` grew a `secret` field and this row's
+    /// secret arrived in it — which is the exact leak the old `Option` return was filtering by
+    /// hand. Equality is what makes the omission structural.
     #[test]
-    fn test_get_registration_is_none_while_unregistered() {
+    fn get_registration_is_unenrolled_while_the_row_is_not_registered() {
         let service = create_test_service();
 
         {
@@ -866,7 +1051,87 @@ mod tests {
             .unwrap();
         }
 
-        assert!(service.get_registration().unwrap().is_none());
+        assert_eq!(
+            service.get_registration().unwrap(),
+            TerminalRegistration::Unenrolled {
+                hardware_id: Some("hardware-id-1".to_string()),
+            }
+        );
+    }
+
+    /// A freshly migrated till has a row, and that row has no identity yet.
+    ///
+    /// The schema seeds `hardware_id` to the empty string, so this is the state every till passes
+    /// through. `Some("")` would be an identity this till does not have.
+    #[test]
+    fn get_registration_reports_no_identity_before_one_is_generated() {
+        let service = create_test_service();
+
+        assert_eq!(
+            service.get_registration().unwrap(),
+            TerminalRegistration::Unenrolled { hardware_id: None }
+        );
+    }
+
+    /// A row marked enrolled with no secret is refused, and the refusal names the column.
+    ///
+    /// # This state is reachable, which is why the check is on the empty string and not on `NULL`
+    ///
+    /// `PairedTerminalInfo::secret` is a `String`, and `check_pairing_status` calls
+    /// `save_registration` — which writes `is_registered = 1` — *before* it looks at whether the
+    /// secret is empty, warning "Pairing completed but no secret received" one branch later. So
+    /// the server can complete a pairing with a blank secret and leave exactly this row.
+    ///
+    /// `NULL`, by contrast, is not reachable: `save_registration` is the only writer of
+    /// `is_registered = 1` and it always binds all four columns. A check that rejected only
+    /// `NULL` would be rejecting the state that cannot occur and accepting the one that does.
+    ///
+    /// The two arms below are one test on purpose: the second is the control. Without it, this
+    /// passes just as happily against a `get_registration` that refuses *every* row, which would
+    /// read as a strict type rather than as a broken read.
+    #[test]
+    fn an_enrolled_row_with_a_blank_secret_is_refused_rather_than_reported_as_enrolled() {
+        let service = create_test_service();
+
+        let write_secret = |secret: &str| {
+            let conn = service.db.connection();
+            let conn = conn.lock();
+            conn.execute(
+                r#"
+                UPDATE terminal_registration
+                SET hardware_id = 'hardware-id-1',
+                    terminal_id = 'terminal-id-1',
+                    terminal_code = 'terminal-code-1',
+                    secret = ?1,
+                    is_registered = 1
+                WHERE id = 1
+                "#,
+                params![secret],
+            )
+            .unwrap();
+        };
+
+        write_secret("");
+        let refused = service
+            .get_registration()
+            .expect_err("a row marked enrolled with no secret is not an enrolment");
+        let message = format!("{refused:#}");
+        assert!(
+            message.contains("secret"),
+            "the refusal has to name the column that is wrong, got: {message}"
+        );
+        assert!(
+            !message.contains("terminal_id"),
+            "only the absent columns belong in the message, got: {message}"
+        );
+
+        // Control: the same row with a secret is an enrolment, so the refusal above is about the
+        // blank secret and not about this read refusing everything.
+        write_secret("secret-1");
+        assert!(matches!(
+            service.get_registration().unwrap(),
+            TerminalRegistration::Enrolled { .. }
+        ));
     }
 
     #[test]
