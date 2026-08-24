@@ -334,6 +334,12 @@ Test files are in `tests/`:
 - **Decimal math**: `rust_decimal::Decimal` for all currency — never use `f64` for money
 - **Tracing**: `tracing::{info, debug, warn, error}` macros; file rotation via `tracing-appender`
 - **Event broadcast**: `tokio::sync::broadcast::channel(16)` for inter-service events
+- **Row access**: a row is read and written through a declared `row_mapping!` / `row_reader!`, or
+  through `scalar`/`optional_scalar`/`scalars` for a one-column query — **never by column number**.
+  `crates/pos-db/src/column.rs` is the one place a domain value crosses the storage boundary in
+  either direction. `tests/guards.rs::every_row_is_read_through_its_mapping` fails the build on an
+  indexed read; `project/till/doc/guard-tests` has the two exemptions and why the rule permits no
+  index at all, not even `0`.
 
 ## Critical Rules
 
