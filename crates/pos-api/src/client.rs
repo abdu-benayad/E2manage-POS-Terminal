@@ -373,6 +373,24 @@ impl ApiClient {
     ///
     /// Deserialized response body
     pub(crate) async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
+        Ok(self.get_or_failure(path).await?)
+    }
+
+    /// A GET whose failure keeps its type.
+    ///
+    /// The read half of [`Self::post_or_failure`], and it exists for the same reason: a caller
+    /// that **branches** on the refusal needs the enum, not a string. `get_transaction_by_receipt`
+    /// is the first — "the platform has no such receipt" and "the platform would not tell you" are
+    /// different answers to the cashier holding the paper, and [`Self::get`] makes them the same
+    /// `anyhow::Error`.
+    ///
+    /// There is deliberately no ETag sibling. [`Self::get_with_etag`] serves the catalogue sync,
+    /// whose every caller reports the failure rather than branching on it; adding a door nothing
+    /// walks through is how the `_envelope` helper family drifted.
+    pub(crate) async fn get_or_failure<T: DeserializeOwned>(
+        &self,
+        path: &str,
+    ) -> std::result::Result<T, ApiFailure> {
         let url = format!("{}{}", self.base_url, path);
         debug!("GET {}", url);
 
@@ -384,7 +402,7 @@ impl ApiClient {
             .await
             .map_err(|e| self.handle_request_error(e))?;
 
-        Ok(self.handle_response(response).await?)
+        self.handle_response(response).await
     }
 
     /// Makes a GET request with ETag support for caching

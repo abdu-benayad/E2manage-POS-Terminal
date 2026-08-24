@@ -417,6 +417,16 @@ pub enum ApiFailure {
     Unreadable(#[source] serde_json::Error),
 }
 
+/// A call to the platform whose failure keeps its type.
+///
+/// The alias exists so a signature can say `ApiResult<T>` rather than
+/// `std::result::Result<T, ApiFailure>` in modules that already have `anyhow::Result` in scope —
+/// which is most of them, and where a bare `Result<T>` therefore silently means the widened one.
+/// Naming the typed door is the point: the six till write methods return this, and the ~30 other
+/// public signatures on the client still return `anyhow::Result`, so the difference has to be
+/// legible at a glance.
+pub type ApiResult<T> = std::result::Result<T, ApiFailure>;
+
 impl ApiFailure {
     /// Records that the server could not be reached.
     ///

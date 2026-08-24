@@ -9,11 +9,11 @@
 //! against the router rather than checking the ones already reported. The URL correction is task
 //! `05b`; this module holds the shape.
 
-use anyhow::Result;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use crate::client::{ApiClient, Enveloped};
+use crate::failure::ApiResult;
 use pos_models::OperatorId;
 
 /// Opening a shift.
@@ -67,15 +67,17 @@ impl ApiClient {
     ///
     /// Corrected, and still unreachable: `authMiddleware` + `POS_CREATE` (`shift.controller.ts:68`),
     /// not on the CSRF exemption list.
-    pub async fn start_shift(&self, request: &StartShiftRequest) -> Result<StartShiftResponse> {
-        let response: Enveloped<_> = self.post("/api/pos/shifts/start", request).await?;
+    pub async fn start_shift(&self, request: &StartShiftRequest) -> ApiResult<StartShiftResponse> {
+        let response: Enveloped<_> = self
+            .post_or_failure("/api/pos/shifts/start", request)
+            .await?;
         Ok(response.into_inner())
     }
 
     /// Closes a shift. `POST /api/pos/shifts/{shiftId}/end`
-    pub async fn end_shift(&self, shift_id: &str, request: &EndShiftRequest) -> Result<()> {
+    pub async fn end_shift(&self, shift_id: &str, request: &EndShiftRequest) -> ApiResult<()> {
         let path = format!("/api/pos/shifts/{}/end", urlencoding::encode(shift_id));
-        let _: Enveloped<serde::de::IgnoredAny> = self.post(&path, request).await?;
+        let _: Enveloped<serde::de::IgnoredAny> = self.post_or_failure(&path, request).await?;
         Ok(())
     }
 }

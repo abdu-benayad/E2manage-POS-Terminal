@@ -46,7 +46,7 @@ use chrono::{DateTime, Utc};
 use std::str::FromStr;
 
 use crate::parse::ParseError;
-use pos_api::{ApiClient, CreateReturnRequest, ReturnItemRequest};
+use pos_api::{ApiClient, ApiFailure, CreateReturnRequest, ReturnItemRequest, ServerErrorCode};
 use pos_db::decimal_from_sqlite;
 use pos_db::transactions::OfflineTransactionRow;
 use pos_db::Database;
@@ -525,13 +525,11 @@ impl ReturnService {
         // (`transaction.controller.ts:322`). This used to read a bare `{ transaction: … }` with
         // the raw `get`, so it was wrong twice over: the envelope was never unwrapped, and the
         // payload was looked for under a key the platform does not send.
-        // A receipt the platform does not have arrives here as `Err`, not as `Ok(None)`, because
-        // `handle_response` flattens every non-2xx into one opaque `anyhow`. The `else { Ok(None) }`
-        // branch this replaced was already dead for the same reason *plus* a second one: the old
-        // `{ transaction: Option<…> }` DTO could not deserialise the real payload at all, so the
-        // `None` arm was unreachable on every path. Distinguishing "not found" from "lookup
-        // failed" needs `ApiFailure`, which `auth-outcome-and-offline-lockout` wires in; inventing
-        // a discriminator here would mean matching on an error string.
+        // "The platform has no such receipt" and "the platform would not answer" are different
+        // things to tell the person holding the paper, and until `get_or_failure` existed they
+        // were the same `anyhow::Error`: every non-2xx arrived as `Err`, so the `Ok(None)` arm
+        // was unreachable on every path. It is reachable now, and it is reached by reading
+        // `ServerErrorCode`, never by matching digits in a message.
         match self.api.get_transaction_by_receipt(receipt_number).await {
             Ok(dto) => {
                 {
@@ -620,6 +618,19 @@ impl ReturnService {
 
                     Ok(Some(txn))
                 }
+            }
+            // The platform answered, and the answer is that it holds no such receipt. That is a
+            // fact about the receipt, not a failure of the lookup, so it is `Ok(None)` and the
+            // caller falls through to the local queue exactly as it does when offline.
+            Err(ApiFailure::Refused {
+                code: ServerErrorCode::NotFound,
+                ..
+            }) => {
+                debug!(
+                    "Platform holds no transaction for receipt {}",
+                    receipt_number
+                );
+                Ok(None)
             }
             Err(e) => {
                 error!("Server lookup failed for {}: {}", receipt_number, e);

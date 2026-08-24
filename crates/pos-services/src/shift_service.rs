@@ -3,14 +3,13 @@
 //! Handles shift management operations including starting, ending, and cash reconciliation.
 //! Supports offline operation with sync queue.
 
-use anyhow::Result;
 use parking_lot::RwLock;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::{info, warn};
 
-use pos_api::{ApiClient, DenominationDto, EndShiftRequest, StartShiftRequest};
+use pos_api::{ApiClient, ApiResult, DenominationDto, EndShiftRequest, StartShiftRequest};
 use pos_db::shifts::{ShiftRow, ShiftStatus};
 use pos_db::Database;
 use pos_models::{OperatorId, RecordedOperatorName};
@@ -629,7 +628,7 @@ impl ShiftService {
         opening_cash: Decimal,
         currency: &str,
         started_at: &str,
-    ) -> Result<String> {
+    ) -> ApiResult<String> {
         let request = StartShiftRequest {
             shift_number: shift_number.to_string(),
             operator_id: operator_id.clone(),
@@ -651,7 +650,7 @@ impl ShiftService {
         expected_cash: Decimal,
         variance: Decimal,
         note: Option<&str>,
-    ) -> Result<()> {
+    ) -> ApiResult<()> {
         // Scoped so the `parking_lot` read guard is released before the `.await` below.
         // Holding it across the await can deadlock: the future may be resumed on another
         // thread while a writer is waiting, and `parking_lot` guards are not send-safe here.

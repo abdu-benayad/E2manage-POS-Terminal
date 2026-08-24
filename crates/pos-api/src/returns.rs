@@ -4,11 +4,11 @@
 //! the till today. The DTOs were declared inside the function body that used them, so nothing
 //! outside `return_service` could see the shape the till depends on.
 
-use anyhow::Result;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use crate::client::{ApiClient, Enveloped};
+use crate::failure::ApiResult;
 use pos_models::OperatorId;
 
 /// A refund against an earlier transaction.
@@ -45,8 +45,8 @@ impl ApiClient {
     pub async fn create_return(
         &self,
         request: &CreateReturnRequest,
-    ) -> Result<CreateReturnResponse> {
-        let response: Enveloped<_> = self.post("/api/pos/returns", request).await?;
+    ) -> ApiResult<CreateReturnResponse> {
+        let response: Enveloped<_> = self.post_or_failure("/api/pos/returns", request).await?;
         Ok(response.into_inner())
     }
 }

@@ -11,8 +11,8 @@ use std::sync::Arc;
 use tracing::{info, warn};
 
 use pos_api::{
-    ApiClient, CreateTransactionRequest, CreateTransactionResponse, PaymentDto, TransactionItemDto,
-    VoidTransactionRequest,
+    ApiClient, ApiResult, CreateTransactionRequest, CreateTransactionResponse, PaymentDto,
+    TransactionItemDto, VoidTransactionRequest,
 };
 use pos_db::transactions::{OfflineTransactionRow, SyncStatus};
 use pos_db::{Database, SyncResource};
@@ -306,8 +306,13 @@ impl TransactionService {
         })
     }
 
-    /// Syncs a transaction to the backend API
-    async fn sync_to_backend(&self, txn: &Transaction) -> Result<CreateTransactionResponse> {
+    /// Syncs a transaction to the backend API.
+    ///
+    /// Returns [`ApiResult`], not `anyhow::Result`: a sale the platform *refused* and a sale it
+    /// never heard about are different events, and the queue that replays this transaction must
+    /// only replay the second. Widening here would put the two back into one string at the exact
+    /// point the decision is made.
+    async fn sync_to_backend(&self, txn: &Transaction) -> ApiResult<CreateTransactionResponse> {
         let request = CreateTransactionRequest {
             transaction_number: txn.transaction_number.clone(),
             transaction_type: txn.transaction_type.clone(),

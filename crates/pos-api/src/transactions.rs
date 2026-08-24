@@ -6,11 +6,11 @@
 //! `the-till-holds-no-credential-the-pos-write-routes-accept`. The shapes are repaired regardless,
 //! because an unaudited call site reads as correct to the next person.
 
-use anyhow::Result;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use crate::client::{ApiClient, Enveloped};
+use crate::failure::ApiResult;
 use pos_models::{OperatorId, RecordedOperatorName};
 
 /// A transaction as the till submits it to `POST /api/pos/transactions`.
@@ -150,11 +150,18 @@ pub struct TransactionDetailPaymentDto {
 
 impl ApiClient {
     /// Records a completed transaction. `POST /api/pos/transactions`
+    ///
+    /// Returns [`ApiResult`] rather than `anyhow::Result`: this route can refuse for reasons the
+    /// caller must tell apart — a capability the operator does not hold, a product the catalogue
+    /// does not know, a currency the company has not configured — and a flattened error makes all
+    /// of them "sync failed".
     pub async fn create_transaction(
         &self,
         request: &CreateTransactionRequest,
-    ) -> Result<CreateTransactionResponse> {
-        let response: Enveloped<_> = self.post("/api/pos/transactions", request).await?;
+    ) -> ApiResult<CreateTransactionResponse> {
+        let response: Enveloped<_> = self
+            .post_or_failure("/api/pos/transactions", request)
+            .await?;
         Ok(response.into_inner())
     }
 
@@ -163,26 +170,30 @@ impl ApiClient {
         &self,
         transaction_id: &str,
         request: &VoidTransactionRequest,
-    ) -> Result<CreateTransactionResponse> {
+    ) -> ApiResult<CreateTransactionResponse> {
         let path = format!(
             "/api/pos/transactions/{}/void",
             urlencoding::encode(transaction_id)
         );
-        let response: Enveloped<_> = self.post(&path, request).await?;
+        let response: Enveloped<_> = self.post_or_failure(&path, request).await?;
         Ok(response.into_inner())
     }
 
     /// Looks a transaction up by its printed receipt number.
     /// `GET /api/pos/transactions/by-receipt/{receiptNumber}`
+    ///
+    /// The one read of the six, and the reason [`ApiClient::get_or_failure`] had to exist: a
+    /// receipt the platform does not have and a lookup it would not answer are different things to
+    /// tell the person holding the paper, and `get` made them one `anyhow::Error`.
     pub async fn get_transaction_by_receipt(
         &self,
         receipt_number: &str,
-    ) -> Result<TransactionDetailDto> {
+    ) -> ApiResult<TransactionDetailDto> {
         let path = format!(
             "/api/pos/transactions/by-receipt/{}",
             urlencoding::encode(receipt_number)
         );
-        let response: Enveloped<_> = self.get(&path).await?;
+        let response: Enveloped<_> = self.get_or_failure(&path).await?;
         Ok(response.into_inner())
     }
 }
