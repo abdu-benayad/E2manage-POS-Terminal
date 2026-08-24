@@ -483,8 +483,28 @@ produce identical output.** The pact guard exempts one library-emitted matcher s
 the check that finds drift cannot detect its own blindness; only an assertion about what it must
 still be seeing can. Same structure arrived independently from `pos-db`: *"the table is unchanged"*
 is also what a bulk write that never writes anything produces, so the rollback test needs a
-succeeds-and-commits control beside it. **Every expected-empty result needs a positive control, and
-the tolerated case is the best one available.**
+succeeds-and-commits control beside it. A third arrived the same day from a column-list extractor:
+if the structure it reads is rewritten, it extracts an empty list and passes forever. **Every
+expected-empty result needs a positive control, and the tolerated case is the best one available.**
+
+**Three controls, and the third is the one that gets skipped.** The walker must still find things;
+the detector must **fire** on a constructed positive; the detector must **not fire** on a constructed
+negative. Without the third, a detector broken *open* passes the first two and then flags every site
+— which reads as a finding rather than a fault, and gets acted on.
+
+**And a guard written against a structure that is about to be rewritten is a survey certifying the
+survey.** It will pass through the rewrite and mean something different afterwards, without going
+red. Sequence the guard after the change, or write it against the post-change shape.
+
+**A separate rot, worth its own name: an argument can be correct when made and obsolete an hour later
+because someone fixed the thing it rested on.** Not staleness — the facts did not move, the *ground*
+did. Measured 2026-08-24: a lane argued a registration type needed a third `Undetermined` state,
+because a two-state type fed by `.unwrap_or_default()` gets constructed as `NotEnrolled` on a
+transient error. True when argued; false ninety minutes later, once the reads propagated and
+`Result` carried that state instead. **The failure mode is that nobody re-derives an argument — they
+cite it**, and a design doc is where an obsolete-but-once-correct argument survives longest, because
+sitting in a document reads as having been decided. Retire it *in the document*, with the reason, so
+whoever finds the original message has something that beats it.
 
 **And when a check has to choose an error direction, choose the false positive.** Three
 independently-written checkers for the same vacuous-matcher question, run against one artifact:
