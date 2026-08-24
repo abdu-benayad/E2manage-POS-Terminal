@@ -656,6 +656,85 @@ mod tests {
         assert!(PolicyValue::from_declared(&PolicyType::Range, &ok).is_understood());
     }
 
+    /// Both not-understood arms are reachable, and well-formed input reaches neither.
+    ///
+    /// # Why this exists beside the tests that already cover each arm
+    ///
+    /// Those assert what a *particular* input does. This asserts a property of the whole
+    /// conversion, and it is the one that rots silently: if a later change made `from_declared`
+    /// stop producing `UnknownType` — folding it into `Malformed`, say, or accepting anything —
+    /// every individual arm test could be updated to match and this would still be the thing
+    /// nobody noticed had gone.
+    ///
+    /// **An exemption and a blind check produce identical output.** A tolerated class that is
+    /// never populated looks exactly like a tolerated class that is working, so the tolerance has
+    /// to be asserted non-empty or it is not evidence of anything.
+    ///
+    /// Three controls, and the third is the one usually skipped:
+    ///
+    /// 1. the sweep must find things at all — `understood > 0`;
+    /// 2. each detector must **fire** — `unknown > 0` and `malformed > 0`;
+    /// 3. each detector must **not** fire on a constructed negative — no well-formed row lands in
+    ///    a not-understood arm. Without it, a conversion broken open puts everything in
+    ///    `Malformed`, satisfies (2), and reads as a finding rather than as a fault.
+    #[test]
+    fn each_not_understood_arm_is_reachable_and_well_formed_input_reaches_neither() {
+        let well_formed = [
+            (PolicyType::Boolean, "true"),
+            (PolicyType::Enum, r#""STRICT""#),
+            (PolicyType::Regex, r#""^[0-9]{4}$""#),
+            (PolicyType::Range, r#"{"min":30,"max":300,"default":60}"#),
+            (PolicyType::List, r#"{"allowed":["CASH"]}"#),
+        ];
+        let contradictory = [
+            (PolicyType::Range, r#""not a range""#),
+            (PolicyType::List, r#"["CASH"]"#),
+            (PolicyType::Boolean, r#""yes""#),
+        ];
+        let unfamiliar = [(PolicyType::Unknown, r#"{"whatever":1}"#)];
+
+        let read = |(declared, raw): &(PolicyType, &str)| {
+            let value: Value = serde_json::from_str(raw).expect("valid JSON");
+            PolicyValue::from_declared(declared, &value)
+        };
+
+        // (1) and (3): the sweep finds things, and none of them is a not-understood arm.
+        let understood = well_formed.iter().map(read).collect::<Vec<_>>();
+        assert!(!understood.is_empty());
+        for (value, (declared, raw)) in understood.iter().zip(well_formed.iter()) {
+            assert!(
+                value.is_understood(),
+                "{raw} is a well-formed {declared:?} policy and must not land in a \
+                 not-understood arm: {value:?}"
+            );
+        }
+
+        // (2): each detector fires, counted rather than spot-checked.
+        let malformed = contradictory
+            .iter()
+            .map(read)
+            .filter(|v| matches!(v, PolicyValue::Malformed { .. }))
+            .count();
+        let unknown = unfamiliar
+            .iter()
+            .map(read)
+            .filter(|v| matches!(v, PolicyValue::UnknownType { .. }))
+            .count();
+
+        assert_eq!(
+            malformed,
+            contradictory.len(),
+            "every contradictory value must be Malformed; a tolerated arm nothing reaches is \
+             indistinguishable from one that never fires"
+        );
+        assert_eq!(
+            unknown,
+            unfamiliar.len(),
+            "an unrecognised declared type must reach UnknownType, not Malformed — they are \
+             different facts about the platform"
+        );
+    }
+
     #[test]
     fn bounds_are_inclusive_at_both_ends() {
         let bounds =
