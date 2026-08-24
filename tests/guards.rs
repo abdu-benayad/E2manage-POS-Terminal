@@ -298,11 +298,179 @@ mod guards {
     }
 
     // ========================================================================
+    // Reading a row by number
+    // ========================================================================
+
+    /// One read of a column by its **position** rather than its name.
+    struct IndexedRead {
+        path: String,
+        /// 1-based, and the line the *receiver* is on — `row`, not `.get`. rustfmt puts those on
+        /// different lines, and the receiver is where a reader looks.
+        line: usize,
+        /// The matched source, newlines included. Carried so a failure can print the shape it
+        /// found rather than only a coordinate, and so a test can ask what form a hit took.
+        text: String,
+    }
+
+    /// The offset of the first non-whitespace byte at or after `from`.
+    fn skip_space(code: &str, from: usize) -> usize {
+        code[from..]
+            .find(|c: char| !c.is_whitespace())
+            .map_or(code.len(), |at| from + at)
+    }
+
+    /// The offset just past a balanced `::<…>`, or `from` if one does not start there.
+    ///
+    /// **Depth-counted, and that is the whole point of hand-writing this.** The measurement that
+    /// preceded this guard used `::<[^>]*>`, which cannot match `::<_, Option<i32>>` — the
+    /// character class ends at the inner `>` — and it therefore reported a tree 13 reads cleaner
+    /// than the tree was, three of them shipped. A predicate is a claim about the target's shape
+    /// and is wrong exactly where the target is shaped unexpectedly.
+    ///
+    /// Bails at `(` or `;` so a `<` used as less-than can never run the scan off into the next
+    /// statement.
+    fn skip_turbofish(code: &str, from: usize) -> usize {
+        let rest = &code[from..];
+        if !rest.starts_with("::<") {
+            return from;
+        }
+        let mut depth = 0usize;
+        for (offset, ch) in rest.char_indices() {
+            match ch {
+                '<' => depth += 1,
+                '>' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return from + offset + 1;
+                    }
+                }
+                '(' | ';' => return from,
+                _ => {}
+            }
+        }
+        from
+    }
+
+    /// The offset just past an integer literal at `from`, or `None` if there is not one.
+    ///
+    /// Digits and nothing else, so `row.get(index)` and `row.get("name")` are not indexed reads.
+    /// Both are deliberate in this tree: the cursor reads by a variable, and
+    /// `crates/pos-db/tests/mappings.rs` reads `PRAGMA table_info` by column name.
+    fn integer_literal(code: &str, from: usize) -> Option<usize> {
+        let end = code[from..]
+            .find(|c: char| !c.is_ascii_digit())
+            .map_or(code.len(), |at| from + at);
+        (end > from).then_some(end)
+    }
+
+    /// `row . get [::<…>] ( <int> )`, from the byte just past the `row` token.
+    ///
+    /// `get_ref` is tried before `get` because [`starts_with_word`] refuses `get` in front of
+    /// `get_ref`'s underscore — the order is load-bearing, not stylistic.
+    fn method_read_from(code: &str, after_row: usize) -> Option<usize> {
+        let dot = skip_space(code, after_row);
+        if !code[dot..].starts_with('.') {
+            return None;
+        }
+        let at = skip_space(code, dot + 1);
+        let name = ["get_ref", "get"]
+            .into_iter()
+            .find(|name| starts_with_word(&code[at..], name))?;
+        let at = skip_turbofish(code, at + name.len());
+        let at = skip_space(code, at);
+        if !code[at..].starts_with('(') {
+            return None;
+        }
+        let at = skip_space(code, at + 1);
+        let at = skip_space(code, integer_literal(code, at)?);
+        code[at..].starts_with(')').then_some(at + 1)
+    }
+
+    /// `…( row , <int> )`, where the row is handed to a helper that does the indexing.
+    ///
+    /// **Not keyed on a list of helper names.** `column.rs`'s readers were such a list until task
+    /// 13 made them private, and a name list's misses have no name, no expiry, and the same green
+    /// — the failure mode is *not matching*, which no mutation drawn from the list can reveal.
+    /// Anything that takes this row and a literal column number is reading it by position
+    /// whatever it is called; `ColumnCodec::read(row, 0)` is the live population.
+    fn argument_read_from(code: &str, row_start: usize, after_row: usize) -> Option<usize> {
+        // `&row` and `&mut row` are the ordinary spellings — every reader in `column.rs` takes
+        // `&Row<'_>` — so requiring a bare `(` immediately before the token was too strict, and
+        // silently: the arm matched `read(row, 0)` and missed `read(&row, 0)`, which is the same
+        // read written the way a caller with an owned row has to write it. Measured as a
+        // surviving mutation, not reasoned about.
+        let mut before = code[..row_start].trim_end();
+        loop {
+            before = before.trim_end();
+            before = match before.strip_suffix('&') {
+                Some(rest) => rest,
+                None => match before.strip_suffix("mut") {
+                    Some(rest) if !rest.ends_with(is_word_char) => rest,
+                    _ => break,
+                },
+            };
+        }
+        if !before.ends_with(['(', ',']) {
+            return None;
+        }
+        let at = skip_space(code, after_row);
+        if !code[at..].starts_with(',') {
+            return None;
+        }
+        let at = skip_space(code, at + 1);
+        let at = skip_space(code, integer_literal(code, at)?);
+        code[at..].starts_with(')').then_some(at + 1)
+    }
+
+    /// Every read-by-position in one blanked file.
+    ///
+    /// Anchored on the `row` receiver, which is the constraint that keeps `parts.get(2)` out —
+    /// a slice read at `log_service.rs`, and a real false positive during this issue's review
+    /// rather than a hypothetical one.
+    fn indexed_reads_in(file: &SourceFile) -> Vec<IndexedRead> {
+        let code = &file.code;
+        let mut found = Vec::new();
+        let mut from = 0;
+        while let Some(offset) = code[from..].find("row") {
+            let at = from + offset;
+            let after = at + "row".len();
+            from = after;
+
+            let opens = at == 0 || !is_word_byte(code.as_bytes()[at - 1]);
+            let closes = !code.as_bytes().get(after).is_some_and(|b| is_word_byte(*b));
+            if !opens || !closes {
+                continue;
+            }
+
+            if let Some(end) =
+                method_read_from(code, after).or_else(|| argument_read_from(code, at, after))
+            {
+                found.push(IndexedRead {
+                    path: file.path.clone(),
+                    line: line_at(code, at),
+                    text: code[at..end].to_string(),
+                });
+            }
+        }
+        found
+    }
+
+    /// Every read-by-position under the scan roots.
+    fn indexed_reads() -> Vec<IndexedRead> {
+        scanned_files().iter().flat_map(indexed_reads_in).collect()
+    }
+
+    // ========================================================================
     // Recognising a declaration
     // ========================================================================
 
     fn is_word_byte(byte: u8) -> bool {
         byte.is_ascii_alphanumeric() || byte == b'_'
+    }
+
+    /// [`is_word_byte`] over a `char`, for the places that walk a `&str` backwards.
+    fn is_word_char(c: char) -> bool {
+        c.is_ascii_alphanumeric() || c == '_'
     }
 
     /// `text` begins with `word` and does not continue it — so `String` matches `String` and
@@ -751,6 +919,103 @@ mod guards {
              this comparison has something to be about. Equal totals mean either the reader has \
              stopped crossing newlines, or somebody joined those two lines and removed the only \
              witness in the tree for the thing this layer exists to do"
+        );
+    }
+
+    /// The read-by-position scan sees every shape this tree has, and only those.
+    ///
+    /// The ban itself is task 15c's. This pins the *instrument*, because the instrument is the
+    /// part that has been wrong every time: every count of positional reads taken in this
+    /// repository before this predicate existed was low, and each was low in a way its author
+    /// could not see from its output.
+    ///
+    /// Four of the five assertions below are about what the scan must **not** report. That ratio
+    /// is deliberate — a scan that over-reports gets investigated on its first run, and a scan
+    /// that under-reports gets quoted.
+    #[test]
+    fn the_read_by_position_scan_sees_the_forms_this_tree_has_and_no_others() {
+        let reads = indexed_reads();
+        assert!(
+            reads.len() > 20,
+            "the scan found {} reads by position in the whole tree; it is broken, and a ban built \
+             on it would pass on nothing",
+            reads.len()
+        );
+
+        // The form that matters, and the only one no line-based scan can see. rustfmt splits a
+        // positional read carrying a chained call, and that is how every one in this tree arose.
+        let split: Vec<&IndexedRead> = reads.iter().filter(|r| r.text.contains('\n')).collect();
+        assert!(
+            !split.is_empty(),
+            "the scan found no read split across two lines. There is exactly one in the shipped \
+             tree — `row\\n    .get::<_, String>(0)` in the v13 migration test that proves \
+             `SELECT pin_hash FROM operators` now errors (`crates/pos-db/src/migrations.rs`). If \
+             that read is gone or has been joined onto one line, the repair is **another \
+             deliberately-split read**, not a weaker assertion here: without one, this predicate's \
+             newline tolerance is asserted and never demonstrated, and the whole reason it is \
+             hand-rolled rather than line-based goes untested"
+        );
+        assert!(
+            split
+                .iter()
+                .any(|r| r.path == "crates/pos-db/src/migrations.rs"),
+            "the split read is no longer in `migrations.rs` but in {:?}; check it is still the \
+             `pin_hash` guard read before accepting the new home",
+            split.iter().map(|r| &r.path).collect::<Vec<_>>()
+        );
+
+        // The second arm: a row handed to something else that does the indexing. Its live
+        // population is `ColumnCodec::read(row, 0)`, and asserting it non-empty is what stops the
+        // arm from being an exemption-shaped blindness — a matcher for a population that has gone
+        // away reports clean in the same words as one whose population is clean.
+        let by_argument: Vec<&IndexedRead> =
+            reads.iter().filter(|r| !r.text.contains(".get")).collect();
+        assert!(
+            !by_argument.is_empty(),
+            "the scan found no `f(row, <int>)` read. `ColumnCodec::read(row, 0)` in \
+             `crates/pos-db/src/column.rs` is the population; if it is gone, this arm now matches \
+             nothing and cannot tell you so"
+        );
+
+        // `parts.get(2)` at `log_service.rs` is a slice read. A receiverless predicate sweeps it
+        // in — measured, during this issue's review — so the `row` receiver is required, and this
+        // file is the standing proof plus the host every mutation of this guard is inserted into.
+        assert!(
+            !reads.iter().any(|r| r.path.ends_with("log_service.rs")),
+            "the scan reported a read in `log_service.rs`, which contains none: {:?}. Its \
+             `parts.get(2)` is a `Vec` read, and matching it means the receiver check is gone",
+            reads
+                .iter()
+                .filter(|r| r.path.ends_with("log_service.rs"))
+                .map(|r| (&r.line, &r.text))
+                .collect::<Vec<_>>()
+        );
+
+        // Named reads are deliberate and must survive. `crates/pos-db/tests/mappings.rs` reads
+        // `PRAGMA table_info` by column name — a wrong name there resolves to nothing and fails,
+        // which is the property that test is about.
+        assert!(
+            !reads.iter().any(|r| r.text.contains('"')),
+            "the scan reported a read whose argument is a string: {:?}. `row.get(\"name\")` is a \
+             named read and is not what this guard bans",
+            reads
+                .iter()
+                .filter(|r| r.text.contains('"'))
+                .map(|r| (&r.path, &r.line))
+                .collect::<Vec<_>>()
+        );
+
+        // And a read by variable is the cursor doing its job, not a defect. `RowCursor::take`
+        // holds the only index in the codebase that is *supposed* to be an index.
+        assert!(
+            !reads.iter().any(|r| r.text.contains("index")),
+            "the scan reported `row.get(index)`, an identifier rather than a literal: {:?}. That \
+             is `RowCursor::take`, the one place indexing is the point",
+            reads
+                .iter()
+                .filter(|r| r.text.contains("index"))
+                .map(|r| (&r.path, &r.line))
+                .collect::<Vec<_>>()
         );
     }
 
