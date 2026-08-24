@@ -232,9 +232,22 @@ something the till can land alone.
   Measured 2026-08-24: **0 of 14** committed rule paths are absent from their own declared body, so
   the paths cannot drift from the body through this API. The live route is instead **a declared body
   that is wrong about the response shape** — believe `heldBy` sits at `$.error.heldBy`, declare it
-  there, and the matcher attaches to a path the real response does not have. Whether that *also*
-  trips missing-key detection is **unmeasured**, and the rule above about `eachKey` disabling
-  missing-key detection at a node is the reason not to assume it does.
+  there, and the matcher attaches to a path the real response does not have.
+
+  **That route is caught, measured 2026-08-24.** Renaming `sessionToken` → `sessionTokan` in a
+  declared body *and moving its rule with it* — exactly what a `json_pattern!` typo produces — fails
+  the verifier: `$.data -> Actual map is missing the following keys: sessionTokan`. So the two
+  instruments are complementary and neither subsumes the other: **a path-vs-body checker sees
+  rule-vs-*declared* drift; the verifier sees declared-vs-*actual* drift.** The silent case needs the
+  rule to point somewhere the declared body does not — which the builder cannot produce, leaving
+  hand-edits and the `(description, providerState)` merge as the routes in.
+
+  **That protection is conditional, and the condition is checkable.** This artifact is pact spec
+  `3.0.0` and **all 36 of its matchers are plain `type`** (30 on responses, 6 on requests — the two
+  counts name different populations, not a disagreement), with **zero** `eachKey`/`eachValue` nodes.
+  Control: injecting a `regex` matcher makes the scan report it, so the reading discriminates.
+  Adding an each-key matcher switches missing-key detection off **at that node** — the rule directly
+  below — so this protection is re-checked, never assumed.
 - **A pact detects a field *moving*, never one *appearing*.** It cannot police data
   exposure. Expressing absence needs a V4 `eachKey` whitelist, and defining an
   each-key matcher at a node disables missing-key detection at that same node —
