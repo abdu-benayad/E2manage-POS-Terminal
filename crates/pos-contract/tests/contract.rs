@@ -770,22 +770,6 @@ async fn a_token_refresh_returns_a_session_the_till_can_read() {
     );
 }
 
-/// The artifact's interaction count, derived from the artifact rather than stated in prose.
-///
-/// # Why a count is worth a test
-///
-/// Every figure about this contract that was written down instead of computed has gone stale.
-/// The issue that added the last two interactions opened by asserting the pact pinned "four"
-/// when it pinned five, and by putting the till's surface at "36 paths" when it is 41 — that one
-/// came from a grep that counted a doc-comment placeholder and could not see a path assembled
-/// base-URL-first. A number quoted from a document is a claim rotting quietly; a number recomputed
-/// from the artifact is a fact.
-///
-/// So this asserts the two things a person forgets in opposite directions: that adding an
-/// interaction here without recording it leaves the coverage table wrong, and that the artifact on
-/// disk is the one this crate just wrote rather than a stale copy.
-///
-
 // ============================================================================
 // The six till write routes
 // ============================================================================
@@ -974,6 +958,21 @@ async fn the_till_return_route_exists_behind_terminal_auth() {
     .await;
 }
 
+/// The artifact's interaction count, derived from the artifact rather than stated in prose.
+///
+/// # Why a count is worth a test
+///
+/// Every figure about this contract that was written down instead of computed has gone stale.
+/// The issue that added the last two interactions opened by asserting the pact pinned "four"
+/// when it pinned five, and by putting the till's surface at "36 paths" when it is 41 — that one
+/// came from a grep that counted a doc-comment placeholder and could not see a path assembled
+/// base-URL-first. A number quoted from a document is a claim rotting quietly; a number recomputed
+/// from the artifact is a fact.
+///
+/// So this asserts the two things a person forgets in opposite directions: that adding an
+/// interaction here without recording it leaves the coverage table wrong, and that the artifact on
+/// disk is the one this crate just wrote rather than a stale copy.
+///
 /// **`EXPECTED` is meant to be edited.** Raising it is the moment you update
 /// `e2manage/doc/pos-till-server-contract`'s coverage table and copy the artifact into the
 /// platform. That is the whole point: the edit is the reminder.
