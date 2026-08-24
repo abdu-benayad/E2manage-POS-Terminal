@@ -28,10 +28,9 @@
 //! }
 //! ```
 
-use pos_api::{
-    ApiClient, EnforcementMode, GetResult, SecurityCategory, SecurityPoliciesResponse,
-    SecurityPolicy,
-};
+use crate::policy_value::PolicyValue;
+use pos_api::{ApiClient, EnforcementMode, GetResult, SecurityCategory, SecurityPoliciesResponse};
+use rust_decimal::prelude::ToPrimitive;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -97,11 +96,24 @@ impl std::error::Error for PolicyError {}
 
 pub type PolicyServiceResult<T> = Result<T, PolicyError>;
 
-/// Range policy value
+/// A policy as the till holds it, once its value has been read against its declared type.
+///
+/// # Why the cache does not hold the wire shape
+///
+/// [`pos_api::SecurityPolicy`] pairs an untyped `policy_value` with a `policy_type` that says how
+/// to read it, and nothing read the declaration — so the interpreter was chosen by whichever
+/// `check_*` the caller called. Reading happens **once**, here, at the moment the policy arrives.
+/// After this point there is no untyped value left for a later reader to guess at.
 #[derive(Debug, Clone)]
-pub struct RangeValue {
-    pub min: f64,
-    pub max: f64,
+pub struct CachedPolicy {
+    /// The policy's code, e.g. `MIN_PIN_LENGTH`.
+    pub code: String,
+    /// Which area of the system it governs.
+    pub category: SecurityCategory,
+    /// What the platform asks the till to do when the policy is not satisfied.
+    pub enforcement_mode: EnforcementMode,
+    /// The value, read against the type the platform declared for it.
+    pub value: PolicyValue,
 }
 
 /// Policy Service
@@ -110,7 +122,7 @@ pub struct RangeValue {
 pub struct PolicyService {
     api: Arc<ApiClient>,
     /// Cached policies indexed by code
-    policies: RwLock<HashMap<String, SecurityPolicy>>,
+    policies: RwLock<HashMap<String, CachedPolicy>>,
     /// Current version hash for caching
     version_hash: RwLock<Option<String>>,
     /// Last successful refresh timestamp
@@ -169,11 +181,31 @@ impl PolicyService {
         policies.clear();
 
         for policy in response.policies {
+            // The one place the platform's declared type is consulted. A value that does not
+            // match its declaration becomes `PolicyValue::Malformed` here rather than a
+            // permissive default at the point of use, and it never fails the refresh — a till
+            // that drops a whole response because one policy was unreadable is a till holding no
+            // policies, which permits everything.
+            let value = PolicyValue::from_declared(&policy.policy_type, &policy.policy_value);
+            if !value.is_understood() {
+                warn!(
+                    "Policy {} declared {:?} and its value does not match; it will not be enforced",
+                    policy.code, policy.policy_type
+                );
+            }
             debug!(
                 "Caching policy: {} ({:?})",
                 policy.code, policy.enforcement_mode
             );
-            policies.insert(policy.code.clone(), policy);
+            policies.insert(
+                policy.code.clone(),
+                CachedPolicy {
+                    code: policy.code,
+                    category: policy.category,
+                    enforcement_mode: policy.enforcement_mode,
+                    value,
+                },
+            );
         }
 
         info!("Cached {} security policies", policies.len());
@@ -194,10 +226,7 @@ impl PolicyService {
     }
 
     /// Gets all policies in a category
-    pub async fn get_policies_by_category(
-        &self,
-        category: SecurityCategory,
-    ) -> Vec<SecurityPolicy> {
+    pub async fn get_policies_by_category(&self, category: SecurityCategory) -> Vec<CachedPolicy> {
         self.policies
             .read()
             .await
@@ -208,7 +237,7 @@ impl PolicyService {
     }
 
     /// Gets a specific policy by code
-    pub async fn get_policy(&self, code: &str) -> Option<SecurityPolicy> {
+    pub async fn get_policy(&self, code: &str) -> Option<CachedPolicy> {
         self.policies.read().await.get(code).cloned()
     }
 
@@ -244,7 +273,13 @@ impl PolicyService {
                     return PolicyResult::Allow;
                 }
 
-                let required = policy.policy_value.as_bool().unwrap_or(true);
+                // Behaviour preserved: a value that is not a bool defaults to "required",
+                // exactly as `as_bool().unwrap_or(true)` did. Task 05 replaces this with an
+                // answer that says the policy could not be evaluated.
+                let required = match &policy.value {
+                    PolicyValue::Boolean(required) => *required,
+                    _ => true,
+                };
 
                 if required {
                     // Policy requires this feature to be enabled
@@ -279,24 +314,31 @@ impl PolicyService {
                     return PolicyResult::Allow;
                 }
 
-                let range = self.parse_range(&policy.policy_value);
+                let range = match &policy.value {
+                    PolicyValue::Range(bounds) => Some(bounds.clone()),
+                    _ => None,
+                };
 
                 match range {
                     Some(r) => {
-                        if value < r.min {
+                        if value < r.min().to_f64().unwrap_or(f64::MIN) {
                             self.apply_enforcement(
                                 &policy.enforcement_mode,
                                 &format!(
                                     "Value {} is below minimum {} for policy {}",
-                                    value, r.min, code
+                                    value,
+                                    r.min(),
+                                    code
                                 ),
                             )
-                        } else if value > r.max {
+                        } else if value > r.max().to_f64().unwrap_or(f64::MAX) {
                             self.apply_enforcement(
                                 &policy.enforcement_mode,
                                 &format!(
                                     "Value {} exceeds maximum {} for policy {}",
-                                    value, r.max, code
+                                    value,
+                                    r.max(),
+                                    code
                                 ),
                             )
                         } else {
@@ -332,7 +374,13 @@ impl PolicyService {
                     return PolicyResult::Allow;
                 }
 
-                let allowed_values = self.parse_list(&policy.policy_value);
+                // Behaviour preserved: anything that is not a readable list yields an empty
+                // one, which the branch below reads as "allow all". Task 05 is where those stop
+                // being the same value.
+                let allowed_values = match &policy.value {
+                    PolicyValue::List(values) => values.clone(),
+                    _ => Vec::new(),
+                };
 
                 if allowed_values.is_empty() {
                     // Empty list means allow all
@@ -372,7 +420,10 @@ impl PolicyService {
                     return PolicyResult::Allow;
                 }
 
-                let expected = policy.policy_value.as_str().unwrap_or("");
+                let expected = match &policy.value {
+                    PolicyValue::Enum(expected) => expected.as_str(),
+                    _ => "",
+                };
 
                 if expected.is_empty() || value == expected {
                     PolicyResult::Allow
@@ -387,26 +438,6 @@ impl PolicyService {
                 }
             }
         }
-    }
-
-    /// Parses a range policy value
-    fn parse_range(&self, value: &serde_json::Value) -> Option<RangeValue> {
-        let obj = value.as_object()?;
-        let min = obj.get("min")?.as_f64()?;
-        let max = obj.get("max")?.as_f64()?;
-        Some(RangeValue { min, max })
-    }
-
-    /// Parses a list policy value
-    fn parse_list(&self, value: &serde_json::Value) -> Vec<String> {
-        value
-            .as_array()
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                    .collect()
-            })
-            .unwrap_or_default()
     }
 
     /// Applies the enforcement mode to create the appropriate result
@@ -437,33 +468,41 @@ impl PolicyService {
     pub async fn get_min_pin_length(&self) -> Option<u32> {
         let policies = self.policies.read().await;
         let policy = policies.get("MIN_PIN_LENGTH")?;
-        let range = self.parse_range(&policy.policy_value)?;
-        Some(range.min as u32)
+        let PolicyValue::Range(range) = &policy.value else {
+            return None;
+        };
+        range.min().to_u32()
     }
 
     /// Gets the session timeout in minutes
     pub async fn get_session_timeout_minutes(&self) -> Option<u32> {
         let policies = self.policies.read().await;
         let policy = policies.get("SESSION_TIMEOUT_MINUTES")?;
-        let range = self.parse_range(&policy.policy_value)?;
+        let PolicyValue::Range(range) = &policy.value else {
+            return None;
+        };
         // Return min as default, or could return a default value from range
-        Some(range.min as u32)
+        range.min().to_u32()
     }
 
     /// Gets the maximum offline transaction amount
     pub async fn get_offline_max_amount(&self) -> Option<f64> {
         let policies = self.policies.read().await;
         let policy = policies.get("OFFLINE_MAX_AMOUNT")?;
-        let range = self.parse_range(&policy.policy_value)?;
-        Some(range.max)
+        let PolicyValue::Range(range) = &policy.value else {
+            return None;
+        };
+        range.max().to_f64()
     }
 
     /// Gets the heartbeat interval in seconds
     pub async fn get_heartbeat_interval_seconds(&self) -> Option<u32> {
         let policies = self.policies.read().await;
         let policy = policies.get("HEARTBEAT_INTERVAL_SECONDS")?;
-        let range = self.parse_range(&policy.policy_value)?;
-        Some(range.min as u32)
+        let PolicyValue::Range(range) = &policy.value else {
+            return None;
+        };
+        range.min().to_u32()
     }
 
     /// Checks if PCI compliance mode is enabled
@@ -471,7 +510,7 @@ impl PolicyService {
         let policies = self.policies.read().await;
         policies
             .get("PCI_COMPLIANCE_MODE")
-            .and_then(|p| p.policy_value.as_bool())
+            .map(|p| matches!(&p.value, PolicyValue::Boolean(true)))
             .unwrap_or(false)
     }
 
@@ -480,7 +519,10 @@ impl PolicyService {
         let policies = self.policies.read().await;
         policies
             .get("ALLOWED_PAYMENT_METHODS")
-            .map(|p| self.parse_list(&p.policy_value))
+            .map(|p| match &p.value {
+                PolicyValue::List(values) => values.clone(),
+                _ => Vec::new(),
+            })
             .unwrap_or_default()
     }
 
@@ -488,15 +530,17 @@ impl PolicyService {
     pub async fn get_receipt_retention_days(&self) -> Option<u32> {
         let policies = self.policies.read().await;
         let policy = policies.get("RECEIPT_RETENTION_DAYS")?;
-        let range = self.parse_range(&policy.policy_value)?;
-        Some(range.min as u32)
+        let PolicyValue::Range(range) = &policy.value else {
+            return None;
+        };
+        range.min().to_u32()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pos_api::ApiClient;
+    use pos_api::{ApiClient, PolicyType, SecurityPolicy};
 
     fn create_test_service() -> PolicyService {
         let api = Arc::new(ApiClient::new("https://api.example.com"));
@@ -545,36 +589,54 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_parse_range() {
+    /// The cache holds values already read against their declaration.
+    ///
+    /// Replaces four tests that exercised `parse_range`/`parse_list` directly; those parsers are
+    /// gone and `policy_value`'s own suite covers their behaviour more precisely.
+    ///
+    /// **One of them is worth not restoring.** `test_parse_list_empty` asserted that
+    /// `"not a list"` produced an empty `Vec` — which `check_list` then read as *allow all*. The
+    /// suite pinned the compression as correct behaviour, so the defect was green for as long as
+    /// it existed. `policy_value::tests::a_deliberate_empty_list_is_not_the_same_value_as_an_unreadable_one`
+    /// asserts the opposite.
+    #[tokio::test]
+    async fn a_refresh_caches_values_read_against_their_declared_type() {
         let service = create_test_service();
-        let value = serde_json::json!({"min": 4, "max": 8});
-        let range = service.parse_range(&value).unwrap();
-        assert_eq!(range.min, 4.0);
-        assert_eq!(range.max, 8.0);
-    }
 
-    #[test]
-    fn test_parse_range_invalid() {
-        let service = create_test_service();
-        let value = serde_json::json!("not a range");
-        assert!(service.parse_range(&value).is_none());
-    }
+        service
+            .update_policies(SecurityPoliciesResponse {
+                version: "v1".to_string(),
+                policies: vec![
+                    SecurityPolicy {
+                        code: "MIN_PIN_LENGTH".to_string(),
+                        category: SecurityCategory::Authentication,
+                        policy_type: PolicyType::Range,
+                        policy_value: serde_json::json!({"min": 4, "max": 8}),
+                        enforcement_mode: EnforcementMode::Block,
+                    },
+                    SecurityPolicy {
+                        code: "BROKEN".to_string(),
+                        category: SecurityCategory::Authentication,
+                        policy_type: PolicyType::Range,
+                        policy_value: serde_json::json!("not a range"),
+                        enforcement_mode: EnforcementMode::Block,
+                    },
+                ],
+            })
+            .await;
 
-    #[test]
-    fn test_parse_list() {
-        let service = create_test_service();
-        let value = serde_json::json!(["CASH", "CARD", "QR"]);
-        let list = service.parse_list(&value);
-        assert_eq!(list, vec!["CASH", "CARD", "QR"]);
-    }
+        let good = service.get_policy("MIN_PIN_LENGTH").await.expect("cached");
+        assert!(matches!(good.value, PolicyValue::Range(_)));
 
-    #[test]
-    fn test_parse_list_empty() {
-        let service = create_test_service();
-        let value = serde_json::json!("not a list");
-        let list = service.parse_list(&value);
-        assert!(list.is_empty());
+        // The unreadable policy is cached as unreadable, not dropped and not fatal. A refresh
+        // that discarded the whole response over one bad policy would leave the till holding
+        // none — and a till with no policies permits everything.
+        let bad = service
+            .get_policy("BROKEN")
+            .await
+            .expect("cached, not dropped");
+        assert!(matches!(bad.value, PolicyValue::Malformed { .. }));
+        assert_eq!(service.policy_count().await, 2);
     }
 
     #[test]
