@@ -5,6 +5,13 @@ The package currently ships no binary; the egui view layer is tracked by the
 `egui-auth-screen` issue.
 Connects to E2Manage ERP backend via REST APIs, stores data locally in SQLite, supports Arabic/RTL.
 
+**[`architecture/LESSONS.md`](architecture/LESSONS.md) is required reading before you
+verify anything, run a git command in this checkout, or touch the pact.** This file carries
+the rules; the lessons carry what each one cost and why the weaker version of it does not
+work. Five themes: several sessions one checkout, what a green does not mean, the two build
+modes, the platform contract, and how a wrong claim gets made here. Scan the index, then read
+the group doc for the theme you are working in.
+
 ---
 
 ## Commands
@@ -144,8 +151,9 @@ till reads from the E2Manage API. The platform replays it against its real app a
 a real database, so a change there that moves a shape this till depends on fails
 *that* repository's suite, in the pull request making the change.
 
-It pins **four interactions** out of the 36 `/api/pos/*` paths the till calls: the
-nested error envelope, two terminal-auth refusals, and the pairing-request 200.
+It pins **seven interactions** out of the 36 `/api/pos/*` paths the till calls: the
+nested error envelope, two terminal-auth refusals, the pairing-request 200, the
+pairing-status miss, and the login / heartbeat / token-refresh trio.
 Coverage is small on purpose — a surface where the two sides already disagree
 cannot be pinned without failing the platform's suite for a change it made
 correctly. Coverage grows one interaction per repaired surface.
