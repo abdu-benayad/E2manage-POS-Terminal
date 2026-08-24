@@ -2,13 +2,36 @@
 //!
 //! Handles schema versioning and migrations for the local SQLite database.
 
-use rusqlite::{Connection, Result as SqliteResult};
+use rusqlite::{params, Connection, Result as SqliteResult};
 use tracing::{debug, info};
 
 use super::schema::{
     CURRENT_SCHEMA_VERSION, SCHEMA_V1, SCHEMA_V13, SCHEMA_V14, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4,
     SCHEMA_V5, SCHEMA_V6, SCHEMA_V7, SCHEMA_V8, SCHEMA_V9,
 };
+use crate::projection::scalar;
+
+/// Whether `table` already has a column called `column`.
+///
+/// Seven migrations asked this by hand, and **they did not agree with each other about what a
+/// failure means**: three defaulted to `false` (column absent — re-add it), three to `0` (the
+/// same), and `apply_v2` to `true` (column present — skip it). Same query, same shape, opposite
+/// conclusions, and nothing in the file said which was intended.
+///
+/// None of them was. `COUNT(*)` over `pragma_table_info` returns exactly one row — zero for a
+/// table that does not exist — so `QueryReturnedNoRows` cannot occur and the default could only
+/// ever absorb a real failure. Absorbing it means a migration silently skipping an `ALTER TABLE`
+/// or silently re-running one, in the step that decides whether the schema is what the rest of
+/// this crate assumes. The error propagates now; a migration that cannot read the schema should
+/// stop, not guess.
+fn has_column(conn: &Connection, table: &str, column: &str) -> SqliteResult<bool> {
+    let present: i64 = scalar(
+        conn,
+        "SELECT COUNT(*) FROM pragma_table_info(?1) WHERE name = ?2",
+        params![table, column],
+    )?;
+    Ok(present > 0)
+}
 
 /// Runs all pending migrations on the database
 pub fn run_migrations(conn: &Connection) -> SqliteResult<()> {
@@ -22,14 +45,11 @@ pub fn run_migrations(conn: &Connection) -> SqliteResult<()> {
         [],
     )?;
 
-    // Get current version
-    let current_version: i32 = conn
-        .query_row(
-            "SELECT COALESCE(MAX(version), 0) FROM schema_version",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap_or(0);
+    // Get current version. `COALESCE(MAX(...), 0)` over the table created immediately above
+    // always returns one row, so the `.unwrap_or(0)` this replaces could only have absorbed a
+    // real failure — and answering 0 for it means re-applying every migration from v1 against a
+    // database that may already hold data.
+    let current_version: i32 = get_schema_version(conn)?;
 
     debug!("Current schema version: {}", current_version);
 
@@ -139,25 +159,14 @@ fn apply_v2(conn: &Connection) -> SqliteResult<()> {
     ];
 
     for (col_name, col_def) in columns_to_add {
-        // Check if column exists
-        let column_exists: bool = conn
-            .query_row(
+        if !has_column(conn, "offline_transactions", col_name)? {
+            conn.execute(
                 &format!(
-                    "SELECT COUNT(*) FROM pragma_table_info('offline_transactions') WHERE name = '{}'",
-                    col_name
+                    "ALTER TABLE offline_transactions ADD COLUMN {} {}",
+                    col_name, col_def
                 ),
                 [],
-                |row| row.get::<_, i64>(0),
-            )
-            .map(|count| count > 0)
-            .unwrap_or(true); // Assume exists if error
-
-        if !column_exists {
-            let sql = format!(
-                "ALTER TABLE offline_transactions ADD COLUMN {} {}",
-                col_name, col_def
-            );
-            let _ = conn.execute(&sql, []); // Ignore error if column exists
+            )?;
         }
     }
 
@@ -234,16 +243,7 @@ fn apply_v6(conn: &Connection) -> SqliteResult<()> {
 /// Applies version 7 schema (Price version tracking for offline transactions)
 fn apply_v7(conn: &Connection) -> SqliteResult<()> {
     // Check if column already exists (for safety)
-    let column_exists: bool = conn
-        .query_row(
-            "SELECT COUNT(*) FROM pragma_table_info('offline_transactions') WHERE name = 'catalog_etag'",
-            [],
-            |row| row.get::<_, i64>(0),
-        )
-        .map(|count| count > 0)
-        .unwrap_or(false);
-
-    if !column_exists {
+    if !has_column(conn, "offline_transactions", "catalog_etag")? {
         // Execute the schema SQL
         conn.execute_batch(SCHEMA_V7)?;
     }
@@ -261,16 +261,7 @@ fn apply_v7(conn: &Connection) -> SqliteResult<()> {
 /// Applies version 8 schema (Platform license key for platform registry)
 fn apply_v8(conn: &Connection) -> SqliteResult<()> {
     // Check if column already exists (for safety)
-    let column_exists: bool = conn
-        .query_row(
-            "SELECT COUNT(*) FROM pragma_table_info('terminal_registration') WHERE name = 'license_key'",
-            [],
-            |row| row.get::<_, i64>(0),
-        )
-        .map(|count| count > 0)
-        .unwrap_or(false);
-
-    if !column_exists {
+    if !has_column(conn, "terminal_registration", "license_key")? {
         // Execute the schema SQL
         conn.execute_batch(SCHEMA_V8)?;
     }
@@ -313,15 +304,7 @@ fn apply_v10(conn: &Connection) -> SqliteResult<()> {
 
     for (col_name, col_type) in columns_to_add {
         // Check if column exists
-        let col_exists: i32 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM pragma_table_info('operators') WHERE name = ?",
-                [col_name],
-                |row| row.get(0),
-            )
-            .unwrap_or(0);
-
-        if col_exists == 0 {
+        if !has_column(conn, "operators", col_name)? {
             conn.execute(
                 &format!("ALTER TABLE operators ADD COLUMN {} {}", col_name, col_type),
                 [],
@@ -358,15 +341,7 @@ fn apply_v11(conn: &Connection) -> SqliteResult<()> {
     ];
 
     for (col_name, col_def) in columns_to_add {
-        let col_exists: i32 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM pragma_table_info('terminal_config') WHERE name = ?",
-                [col_name],
-                |row| row.get(0),
-            )
-            .unwrap_or(0);
-
-        if col_exists == 0 {
+        if !has_column(conn, "terminal_config", col_name)? {
             conn.execute(
                 &format!(
                     "ALTER TABLE terminal_config ADD COLUMN {} {}",
@@ -399,15 +374,7 @@ fn apply_v11(conn: &Connection) -> SqliteResult<()> {
 /// a database created fresh from `SCHEMA_V1` never had the column (it left the `CREATE TABLE` in
 /// the same change), and re-running a migration must not be an error.
 fn apply_v13(conn: &Connection) -> SqliteResult<()> {
-    let column_exists: i32 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM pragma_table_info('operators') WHERE name = 'pin_hash'",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap_or(0);
-
-    if column_exists > 0 {
+    if has_column(conn, "operators", "pin_hash")? {
         conn.execute_batch(SCHEMA_V13)?;
     }
 
@@ -448,15 +415,7 @@ fn apply_v12(conn: &Connection) -> SqliteResult<()> {
     ];
 
     for (col_name, col_def) in columns_to_add {
-        let col_exists: i32 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM pragma_table_info('products') WHERE name = ?",
-                [col_name],
-                |row| row.get(0),
-            )
-            .unwrap_or(0);
-
-        if col_exists == 0 {
+        if !has_column(conn, "products", col_name)? {
             conn.execute(
                 &format!("ALTER TABLE products ADD COLUMN {} {}", col_name, col_def),
                 [],
@@ -482,10 +441,10 @@ fn apply_v12(conn: &Connection) -> SqliteResult<()> {
 
 /// Returns the current schema version
 pub fn get_schema_version(conn: &Connection) -> SqliteResult<i32> {
-    conn.query_row(
+    scalar(
+        conn,
         "SELECT COALESCE(MAX(version), 0) FROM schema_version",
         [],
-        |row| row.get(0),
     )
 }
 

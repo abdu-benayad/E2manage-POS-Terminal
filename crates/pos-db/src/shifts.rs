@@ -260,19 +260,17 @@ impl Database {
 
     /// Generates the next shift number for today
     pub fn generate_shift_number(&self, terminal_code: &str) -> SqliteResult<String> {
-        let conn = self.connection();
-        let conn = conn.lock();
-
         let today = Utc::now().format("%Y%m%d").to_string();
         let prefix = format!("{}-{}-", terminal_code, today);
 
-        let count: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM shifts WHERE shift_number LIKE ?1",
-                [format!("{}%", prefix)],
-                |row| row.get(0),
-            )
-            .unwrap_or(0);
+        // Was `.unwrap_or(0)`. `COUNT(*)` returns exactly one row, so that default could only ever
+        // absorb a real failure and reissue `-001` — and unlike `z_reports.report_number`,
+        // `shifts.shift_number` is not a key, so the duplicate would be accepted in silence and
+        // two shifts would reconcile against one number.
+        let count: i64 = self.select_scalar(
+            "SELECT COUNT(*) FROM shifts WHERE shift_number LIKE ?1",
+            [format!("{}%", prefix)],
+        )?;
 
         Ok(format!("{}{:03}", prefix, count + 1))
     }

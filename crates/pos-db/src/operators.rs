@@ -150,14 +150,7 @@ impl Database {
 
     /// Gets the total operator count
     pub fn get_operator_count(&self) -> SqliteResult<i64> {
-        let conn = self.connection();
-        let conn = conn.lock();
-
-        conn.query_row(
-            "SELECT COUNT(*) FROM operators WHERE is_active = 1",
-            [],
-            |row| row.get(0),
-        )
+        self.select_scalar("SELECT COUNT(*) FROM operators WHERE is_active = 1", [])
     }
 
     /// Deactivates all operators (for full sync)

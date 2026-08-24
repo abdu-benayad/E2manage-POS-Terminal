@@ -35,6 +35,7 @@ use crate::operator_sign_in::OperatorSignIn;
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
 use pos_api::{ApiClient, ApiFailure, OperatorSessionRefusal, UploadOfflineTransactionRequest};
+use pos_db::projection::scalar;
 use pos_db::transactions::{OfflineTransactionRow, SyncStatus};
 use pos_db::Database;
 use pos_models::transaction::Transaction;
@@ -571,27 +572,27 @@ impl OfflineService {
         // real failure — reporting an empty, healthy-looking queue for a store that could not
         // answer. On this screen that is the worst possible lie: the operator reads "nothing
         // pending" and concludes the till has synced.
-        let total: i64 = conn
-            .query_row("SELECT COUNT(*) FROM offline_transactions", [], |row| {
-                row.get(0)
-            })
+        // The free `scalar` over the guard these three already hold, **not**
+        // `Database::select_scalar`. That method takes the connection lock itself, and
+        // `parking_lot::Mutex` is not reentrant: calling it from here would hang the queue-stats
+        // screen with no error and no panic.
+        let total: i64 = scalar(&conn, "SELECT COUNT(*) FROM offline_transactions", [])
             .map_err(|e| anyhow!("Failed to count queued transactions: {}", e))?;
 
-        let synced: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM offline_transactions WHERE sync_status = 'SYNCED'",
-                [],
-                |row| row.get(0),
-            )
-            .map_err(|e| anyhow!("Failed to count synced transactions: {}", e))?;
+        let synced: i64 = scalar(
+            &conn,
+            "SELECT COUNT(*) FROM offline_transactions WHERE sync_status = 'SYNCED'",
+            [],
+        )
+        .map_err(|e| anyhow!("Failed to count synced transactions: {}", e))?;
 
-        let failed: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM offline_transactions WHERE sync_status = 'FAILED' AND retry_count >= ?1",
-                [MAX_RETRY_COUNT],
-                |row| row.get(0),
-            )
-            .map_err(|e| anyhow!("Failed to count permanently failed transactions: {}", e))?;
+        let failed: i64 = scalar(
+            &conn,
+            "SELECT COUNT(*) FROM offline_transactions \
+             WHERE sync_status = 'FAILED' AND retry_count >= ?1",
+            [MAX_RETRY_COUNT],
+        )
+        .map_err(|e| anyhow!("Failed to count permanently failed transactions: {}", e))?;
 
         Ok(QueueStats {
             total: total as u32,

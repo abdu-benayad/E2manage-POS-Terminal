@@ -293,51 +293,34 @@ fn no_aggregate_row() -> rusqlite::Error {
 impl Database {
     /// Counts Z-Reports for a specific date and terminal
     pub fn count_z_reports_for_date(&self, terminal_id: &str, date: &str) -> SqliteResult<i64> {
-        let conn = self.connection();
-        let conn = conn.lock();
-
-        conn.query_row(
+        self.select_scalar(
             "SELECT COUNT(*) FROM z_reports WHERE terminal_id = ?1 AND report_date = ?2",
             params![terminal_id, date],
-            |row| row.get(0),
         )
     }
 
     /// Counts open (active) shifts for a terminal
     pub fn count_open_shifts(&self, terminal_id: &str) -> SqliteResult<i64> {
-        let conn = self.connection();
-        let conn = conn.lock();
-
-        conn.query_row(
+        self.select_scalar(
             "SELECT COUNT(*) FROM shifts WHERE terminal_id = ?1 AND status = 'ACTIVE'",
             [terminal_id],
-            |row| row.get(0),
         )
     }
 
     /// Counts pending sync transactions
     pub fn count_pending_sync(&self) -> SqliteResult<i64> {
-        let conn = self.connection();
-        let conn = conn.lock();
-
-        conn.query_row(
+        self.select_scalar(
             "SELECT COUNT(*) FROM offline_transactions WHERE sync_status IN ('PENDING', 'FAILED')",
             [],
-            |row| row.get(0),
         )
     }
 
     /// Counts shifts for a specific date
     pub fn count_shifts_for_date(&self, terminal_id: &str, date: &str) -> SqliteResult<i64> {
-        let conn = self.connection();
-        let conn = conn.lock();
-
-        conn.query_row(
-            r#"SELECT COUNT(*) FROM shifts
-               WHERE terminal_id = ?1
-               AND date(started_at) = date(?2)"#,
+        self.select_scalar(
+            "SELECT COUNT(*) FROM shifts \
+             WHERE terminal_id = ?1 AND date(started_at) = date(?2)",
             params![terminal_id, date],
-            |row| row.get(0),
         )
     }
 
@@ -427,18 +410,16 @@ impl Database {
         terminal_id: &str,
         date_part: &str,
     ) -> SqliteResult<i64> {
-        let conn = self.connection();
-        let conn = conn.lock();
-
         let prefix = format!("Z-{}-{}-", terminal_id, date_part);
 
-        let count: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM z_reports WHERE report_number LIKE ?1",
-                [format!("{}%", prefix)],
-                |row| row.get(0),
-            )
-            .unwrap_or(0);
+        // Was `.unwrap_or(0)`. `COUNT(*)` always returns exactly one row, so the default could
+        // never mean "no rows matched" — it could only absorb a real failure and hand back
+        // sequence 1, which under this table's `TEXT PRIMARY KEY` collides with the day's first
+        // report. Task 10 made that collision loud; propagating makes it not happen.
+        let count: i64 = self.select_scalar(
+            "SELECT COUNT(*) FROM z_reports WHERE report_number LIKE ?1",
+            [format!("{}%", prefix)],
+        )?;
 
         Ok(count + 1)
     }

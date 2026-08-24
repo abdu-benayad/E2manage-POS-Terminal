@@ -240,13 +240,10 @@ impl Database {
 
     /// Counts shared drafts for a warehouse
     pub fn count_shared_drafts(&self, warehouse_id: &str) -> SqliteResult<i64> {
-        let conn = self.connection();
-        let conn = conn.lock();
-
-        conn.query_row(
-            "SELECT COUNT(*) FROM shared_drafts WHERE warehouse_id = ?1 AND sync_status != 'PENDING_DELETE'",
+        self.select_scalar(
+            "SELECT COUNT(*) FROM shared_drafts \
+             WHERE warehouse_id = ?1 AND sync_status != 'PENDING_DELETE'",
             [warehouse_id],
-            |row| row.get(0),
         )
     }
 

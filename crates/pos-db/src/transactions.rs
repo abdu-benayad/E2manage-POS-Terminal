@@ -193,13 +193,9 @@ impl Database {
     }
 
     pub fn get_pending_transaction_count(&self) -> SqliteResult<i64> {
-        let conn = self.connection();
-        let conn = conn.lock();
-
-        conn.query_row(
+        self.select_scalar(
             "SELECT COUNT(*) FROM offline_transactions WHERE sync_status IN ('PENDING', 'FAILED')",
             [],
-            |row| row.get(0),
         )
     }
 
@@ -295,13 +291,9 @@ impl Database {
 
     /// Gets count of conflict transactions
     pub fn get_conflict_count(&self) -> SqliteResult<i64> {
-        let conn = self.connection();
-        let conn = conn.lock();
-
-        conn.query_row(
+        self.select_scalar(
             "SELECT COUNT(*) FROM offline_transactions WHERE sync_status = 'CONFLICT'",
             [],
-            |row| row.get(0),
         )
     }
 

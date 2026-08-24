@@ -13,6 +13,7 @@ use pos_api::{
     ApiClient, DeviceInfo, HardwareInfo, OsInfo, PairedTerminalInfo, PairingStatus,
     RegisterDeviceRequest,
 };
+use pos_db::projection::optional_scalar;
 use pos_db::Database;
 use pos_models::HardwareEnrolment;
 use rusqlite::params;
@@ -670,15 +671,11 @@ impl PairingService {
         let conn = self.db.connection();
         let conn = conn.lock();
 
-        let result = conn.query_row("SELECT value FROM settings WHERE key = ?1", [key], |row| {
-            row.get::<_, String>(0)
-        });
-
-        match result {
-            Ok(value) => Ok(Some(value)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(e.into()),
-        }
+        // The free `optional_scalar` over the guard already held above — `Database`'s method
+        // would re-take a non-reentrant lock. A missing key is `None`; anything else is an error,
+        // which is what the hand-written match below did and what this keeps.
+        optional_scalar::<String>(&conn, "SELECT value FROM settings WHERE key = ?1", [key])
+            .map_err(Into::into)
     }
 
     /// Sets a setting value in the settings table

@@ -117,15 +117,10 @@ impl Database {
 
     /// Counts active drafts
     pub fn get_draft_count(&self) -> SqliteResult<i64> {
-        let conn = self.connection();
-        let conn = conn.lock();
-
-        let now = Utc::now().to_rfc3339();
-
-        conn.query_row(
-            "SELECT COUNT(*) FROM drafts WHERE expires_at IS NULL OR datetime(expires_at) > datetime(?1)",
-            [now],
-            |row| row.get(0),
+        self.select_scalar(
+            "SELECT COUNT(*) FROM drafts \
+             WHERE expires_at IS NULL OR datetime(expires_at) > datetime(?1)",
+            [Utc::now().to_rfc3339()],
         )
     }
 

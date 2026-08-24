@@ -3,7 +3,7 @@
 //! Tracks synchronization state for each resource type (products, operators, etc.)
 
 use chrono::{DateTime, Utc};
-use rusqlite::{OptionalExtension, Result as SqliteResult};
+use rusqlite::Result as SqliteResult;
 use serde::{Deserialize, Serialize};
 
 use super::Database;
@@ -85,15 +85,13 @@ impl Database {
 
     /// Gets ETag for a resource (for conditional GET)
     pub fn get_etag(&self, resource: SyncResource) -> SqliteResult<Option<String>> {
-        let conn = self.connection();
-        let conn = conn.lock();
-
-        conn.query_row(
+        // Optional because a resource that was never synced has no row — not because a failure
+        // should read as "no ETag", which would send an unconditional GET and re-download the
+        // catalogue every poll.
+        self.select_optional_scalar(
             "SELECT etag FROM sync_state WHERE resource = ?1",
             [resource.as_str()],
-            |row| row.get(0),
         )
-        .optional()
     }
 
     /// Updates sync state for a resource

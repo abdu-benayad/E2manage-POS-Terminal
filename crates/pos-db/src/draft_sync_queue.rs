@@ -328,13 +328,9 @@ impl Database {
 
     /// Counts pending draft sync items
     pub fn count_pending_draft_syncs(&self) -> SqliteResult<i64> {
-        let conn = self.connection();
-        let conn = conn.lock();
-
-        conn.query_row(
+        self.select_scalar(
             "SELECT COUNT(*) FROM draft_sync_queue WHERE sync_status = 'PENDING'",
             [],
-            |row| row.get(0),
         )
     }
 

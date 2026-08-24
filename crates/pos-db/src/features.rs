@@ -4,7 +4,7 @@
 //! for the Feature-Based Screen Library.
 
 use pos_models::{Feature, FeatureScreen};
-use rusqlite::{params, OptionalExtension, Result as SqliteResult};
+use rusqlite::{params, Result as SqliteResult};
 
 use super::Database;
 use crate::column;
@@ -143,17 +143,11 @@ impl Database {
 
     /// Checks if a screen is enabled (i.e., its parent feature is enabled)
     pub fn is_screen_enabled(&self, screen_id: &str) -> SqliteResult<bool> {
-        let conn = self.connection();
-        let conn = conn.lock();
-
-        let count: i64 = conn.query_row(
-            r#"
-            SELECT COUNT(*) FROM feature_screens fs
-            INNER JOIN features f ON fs.feature_id = f.feature_id
-            WHERE fs.screen_id = ?1 AND f.is_enabled = 1
-            "#,
+        let count: i64 = self.select_scalar(
+            "SELECT COUNT(*) FROM feature_screens fs \
+             INNER JOIN features f ON fs.feature_id = f.feature_id \
+             WHERE fs.screen_id = ?1 AND f.is_enabled = 1",
             params![screen_id],
-            |row| row.get(0),
         )?;
 
         Ok(count > 0)
@@ -161,13 +155,9 @@ impl Database {
 
     /// Checks if a feature is enabled
     pub fn is_feature_enabled(&self, feature_id: &str) -> SqliteResult<bool> {
-        let conn = self.connection();
-        let conn = conn.lock();
-
-        let count: i64 = conn.query_row(
+        let count: i64 = self.select_scalar(
             "SELECT COUNT(*) FROM features WHERE feature_id = ?1 AND is_enabled = 1",
             params![feature_id],
-            |row| row.get(0),
         )?;
 
         Ok(count > 0)
@@ -175,23 +165,13 @@ impl Database {
 
     /// Gets all enabled screen IDs
     pub fn get_enabled_screen_ids(&self) -> SqliteResult<Vec<String>> {
-        let conn = self.connection();
-        let conn = conn.lock();
-
-        let mut stmt = conn.prepare(
-            r#"
-            SELECT fs.screen_id FROM feature_screens fs
-            INNER JOIN features f ON fs.feature_id = f.feature_id
-            WHERE f.is_enabled = 1
-            ORDER BY f.display_order, fs.display_order
-            "#,
-        )?;
-
-        let screen_ids = stmt
-            .query_map([], |row| row.get(0))?
-            .collect::<Result<Vec<_>, _>>()?;
-
-        Ok(screen_ids)
+        self.select_scalars(
+            "SELECT fs.screen_id FROM feature_screens fs \
+             INNER JOIN features f ON fs.feature_id = f.feature_id \
+             WHERE f.is_enabled = 1 \
+             ORDER BY f.display_order, fs.display_order",
+            [],
+        )
     }
 
     /// Gets a feature's entry-point screen.
@@ -208,15 +188,10 @@ impl Database {
 
     /// Gets the feature ID for a screen
     pub fn get_screen_feature(&self, screen_id: &str) -> SqliteResult<Option<String>> {
-        let conn = self.connection();
-        let conn = conn.lock();
-
-        conn.query_row(
+        self.select_optional_scalar(
             "SELECT feature_id FROM feature_screens WHERE screen_id = ?1",
             params![screen_id],
-            |row| row.get(0),
         )
-        .optional()
     }
 
     /// Clears all features and screens (for sync refresh)

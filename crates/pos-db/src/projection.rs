@@ -611,14 +611,42 @@ pub const DECLARED_SHAPES: &[DeclaredShape] = &[
 // Reading against a connection the caller already holds
 // ============================================================================
 
-/// Reads a single-column, single-row query.
+/// Reads a single-column query that **must** match a row.
 ///
 /// A one-column projection has no ordinal to get wrong, which is why this exists rather than a
 /// mapping: `SELECT COUNT(*)`, `EXISTS` probes and `PRAGMA` scalars are not the defect and do not
 /// need the machinery. It takes a `&Connection` because most of its call sites are in
 /// `migrations.rs`, where there is no `Database` at all.
+///
+/// **The three scalar helpers differ only in what "no row" means, and that is the whole point of
+/// there being three.** An aggregate always returns exactly one row, so `QueryReturnedNoRows` from
+/// this function is a real failure and never an empty result — which is why the sites it replaced
+/// could write `.unwrap_or(0)` and be wrong rather than merely lax. A lookup by key genuinely may
+/// match nothing, and that is [`optional_scalar`]. A column read down a result set is
+/// [`scalars`]. Choosing between them is a decision about the query, made once at the call site,
+/// instead of a `.optional()` or an `.unwrap_or` bolted on afterwards.
 pub fn scalar<T: FromSql>(conn: &Connection, sql: &str, params: impl Params) -> SqliteResult<T> {
     conn.query_row(sql, params, |row| row.get(0))
+}
+
+/// Reads a single-column query that may match no row. See [`scalar`] on choosing between them.
+pub fn optional_scalar<T: FromSql>(
+    conn: &Connection,
+    sql: &str,
+    params: impl Params,
+) -> SqliteResult<Option<T>> {
+    conn.query_row(sql, params, |row| row.get(0)).optional()
+}
+
+/// Reads one column down every row a query matches. See [`scalar`] on choosing between them.
+pub fn scalars<T: FromSql>(
+    conn: &Connection,
+    sql: &str,
+    params: impl Params,
+) -> SqliteResult<Vec<T>> {
+    let mut statement = conn.prepare(sql)?;
+    let rows = statement.query_map(params, |row| row.get(0))?;
+    rows.collect()
 }
 
 /// Reads at most one row of `shape`.
@@ -767,11 +795,34 @@ impl Database {
         read_all_qualified(&conn, shape, alias, from_clause, params)
     }
 
-    /// Reads a single-column, single-row query. See the lock note above.
+    /// Reads a single-column query that must match a row. See the lock note above, and
+    /// [`scalar`] on choosing between the three.
     pub fn select_scalar<T: FromSql>(&self, sql: &str, params: impl Params) -> SqliteResult<T> {
         let conn = self.connection();
         let conn = conn.lock();
         scalar(&conn, sql, params)
+    }
+
+    /// Reads a single-column query that may match no row. See the lock note above.
+    pub fn select_optional_scalar<T: FromSql>(
+        &self,
+        sql: &str,
+        params: impl Params,
+    ) -> SqliteResult<Option<T>> {
+        let conn = self.connection();
+        let conn = conn.lock();
+        optional_scalar(&conn, sql, params)
+    }
+
+    /// Reads one column down every row a query matches. See the lock note above.
+    pub fn select_scalars<T: FromSql>(
+        &self,
+        sql: &str,
+        params: impl Params,
+    ) -> SqliteResult<Vec<T>> {
+        let conn = self.connection();
+        let conn = conn.lock();
+        scalars(&conn, sql, params)
     }
 
     /// Writes one row through `mapping`. See the lock note above.
