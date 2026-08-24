@@ -209,7 +209,7 @@ any artifact naming a `given` with no handler in `provider-states.ts`
 mode, but it means a new provider state is a platform-side change and not
 something the till can land alone.
 
-### Three rules that are not obvious
+### Rules that are not obvious
 
 - **Never declare an empty JSON request body in an interaction.**
   `json_body(json_pattern!({}))` records `"body": {}` plus a content-type and
@@ -219,6 +219,15 @@ something the till can land alone.
 - **Deserialise with the till's real types** (`pos_api::ApiErrorResponse` and
   friends), never a restatement of them. A contract test that restates the
   consumer's types tests itself.
+- **A matching rule at a path that does not exist is silence, not an error.** Measured 2026-08-24
+  against the platform's real verifier, four runs changing one thing: the same unsatisfiable regex
+  at `$.error.details.notAField` **passes, exit 0, unmentioned in the output**, while at
+  `$.error.code` it **fails**, exit 1, naming the path. So rules *are* enforced and the interaction
+  *is* verified — and a path typo silently disarms the rule. `$.data.sessionTokan` verifies green
+  forever, invisible in the artifact, in the diff, and in the run. **The only way to know a rule is
+  attached is to make it fail on purpose**: mutate it to something unsatisfiable, watch it go red,
+  restore. All 14 interactions were checked against their bodies when this was measured and none was
+  vacuous — the hazard is real and currently unexploited.
 - **A pact detects a field *moving*, never one *appearing*.** It cannot police data
   exposure. Expressing absence needs a V4 `eachKey` whitelist, and defining an
   each-key matcher at a node disables missing-key detection at that same node —
