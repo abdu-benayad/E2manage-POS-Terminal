@@ -380,6 +380,27 @@ only the authorship and the message are wrong. Say so, name the commit so its ow
 work, and leave it. Measured 2026-08-23: one such commit sits four back with three sessions' work
 on top of it.
 
+**And `git` cannot tell you whose commit it is.** Every commit in this checkout is authored
+`abdu-benayad <abdu-benayad@users.noreply.github.com>` — **98 of 98**, measured 2026-08-24. So
+`git log --author="$(git config user.name)"` returns *everyone's* work, and returns it as a plausible
+number rather than an error: a lane in the sibling repo ran exactly that with `--since=midnight`
+meaning to count its own commits, got 39, and caught it only because it had spent the day on
+predicates that answer a different question than the one asked. **A field that looks like it
+identifies the actor and is constant across all of them is worse than a missing one**, because the
+wrong answer is well-formed and nothing about it invites a second look. Attribution lives in the
+commit message and in what a lane says about itself — not in the author, and not in the *topic*
+either, which produced a wrong four-SHA list here the same day.
+
+**`| head` is for looking, never for counting.** A truncated stream does not announce itself, and a
+cut landing on a round number produces a **prefix that looks like a finding** — there is no ragged
+edge, so re-reading the output cannot catch it and only re-running without the pipe can. Measured
+2026-08-24: `grep -n 'pact_dir\|PactBuilder::new\|output_dir' contract.rs | head` returned five of
+each, clean and symmetrical, against a true count of **18**; the five then became the premise of a
+hazard warning that was right in its conclusion and **45% low** in magnitude. Count with `grep -c`
+or `wc -l` on the untruncated stream. Same family as `$?` after a pipe, and it bites for the same
+reason: the care goes into the argument, and nobody spends scepticism on how they printed the
+output.
+
 This is timing, not discipline — the same commands are clean whenever nothing else happens to be
 staged, which is why it survives review and bites later.
 
