@@ -13,8 +13,8 @@ use pos_api::{
     ApiClient, DeviceInfo, HardwareInfo, OsInfo, PairedTerminalInfo, PairingStatus,
     RegisterDeviceRequest,
 };
-use pos_models::HardwareEnrolment;
 use pos_db::Database;
+use pos_models::HardwareEnrolment;
 use rusqlite::params;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
