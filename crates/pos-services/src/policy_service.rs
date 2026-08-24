@@ -116,13 +116,74 @@ pub struct CachedPolicy {
     pub value: PolicyValue,
 }
 
+/// The policies the till holds, and whether it has ever held any.
+///
+/// # Why this is not a `HashMap`
+///
+/// It was one, constructed empty and only ever filled by a successful refresh — so *a till that
+/// has never reached the platform* and *a till whose company configured no policies* were the same
+/// value, and no code downstream could separate them. That matters more here than it looks:
+/// every `check_*` answers `Allow` for a code it cannot find, and `src/platform.rs:88-92` swallows
+/// a failed refresh and carries on. An offline-first till that boots without a network therefore
+/// holds no policies and permits everything — its routine state, not an error path.
+///
+/// Naming the absence is the prerequisite for refusing it. Task 05 is where the checks act on it;
+/// this type is what makes acting possible.
+#[derive(Debug)]
+enum HeldPolicies {
+    /// No refresh has ever succeeded. The till does not know what its policies are.
+    NeverLoaded,
+    /// A refresh succeeded. An empty map here is a real answer — the company configured none.
+    Loaded(HashMap<String, CachedPolicy>),
+}
+
+impl HeldPolicies {
+    /// The policy with this code, if one is held.
+    ///
+    /// `None` from [`HeldPolicies::NeverLoaded`] and `None` from a loaded map without the code are
+    /// deliberately the same answer *to this question* — "is there a policy called X" has one
+    /// truthful answer in both cases. The distinction lives in [`HeldPolicies::is_loaded`], which
+    /// is `loaded().is_some()`, which is the question the checks must ask first.
+    fn get(&self, code: &str) -> Option<&CachedPolicy> {
+        match self {
+            Self::NeverLoaded => None,
+            Self::Loaded(policies) => policies.get(code),
+        }
+    }
+
+    /// The held policies, or `None` if none have ever been loaded.
+    fn loaded(&self) -> Option<&HashMap<String, CachedPolicy>> {
+        match self {
+            Self::NeverLoaded => None,
+            Self::Loaded(policies) => Some(policies),
+        }
+    }
+}
+
+/// What the till can say about its policies without handing them over.
+///
+/// Separate from [`HeldPolicies`] because the answer to *"do you know your policies?"* is a fact
+/// about the cache, not the cache itself — it is `Copy`, comparable, and cannot be mistaken for
+/// the policies. `Loaded { count: 0 }` and `NeverLoaded` are different values, which is the whole
+/// point and what the predecessor `has_policies() -> bool` could not express.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PolicyStanding {
+    /// No refresh has ever succeeded.
+    NeverLoaded,
+    /// A refresh succeeded and the till holds this many policies, possibly none.
+    Loaded {
+        /// How many policies the platform sent.
+        count: usize,
+    },
+}
+
 /// Policy Service
 ///
 /// Manages security policies fetched from the platform.
 pub struct PolicyService {
     api: Arc<ApiClient>,
     /// Cached policies indexed by code
-    policies: RwLock<HashMap<String, CachedPolicy>>,
+    policies: RwLock<HeldPolicies>,
     /// Current version hash for caching
     version_hash: RwLock<Option<String>>,
     /// Last successful refresh timestamp
@@ -138,7 +199,7 @@ impl PolicyService {
     pub fn new(api: Arc<ApiClient>) -> Self {
         Self {
             api,
-            policies: RwLock::new(HashMap::new()),
+            policies: RwLock::new(HeldPolicies::NeverLoaded),
             version_hash: RwLock::new(None),
             last_refresh: RwLock::new(None),
         }
@@ -177,8 +238,7 @@ impl PolicyService {
 
     /// Updates the cached policies
     async fn update_policies(&self, response: SecurityPoliciesResponse) {
-        let mut policies = self.policies.write().await;
-        policies.clear();
+        let mut held = HashMap::new();
 
         for policy in response.policies {
             // The one place the platform's declared type is consulted. A value that does not
@@ -197,7 +257,7 @@ impl PolicyService {
                 "Caching policy: {} ({:?})",
                 policy.code, policy.enforcement_mode
             );
-            policies.insert(
+            held.insert(
                 policy.code.clone(),
                 CachedPolicy {
                     code: policy.code,
@@ -208,8 +268,8 @@ impl PolicyService {
             );
         }
 
-        info!("Cached {} security policies", policies.len());
-        drop(policies);
+        info!("Cached {} security policies", held.len());
+        *self.policies.write().await = HeldPolicies::Loaded(held);
 
         *self.version_hash.write().await = Some(response.version);
         *self.last_refresh.write().await = Some(std::time::Instant::now());
@@ -222,7 +282,21 @@ impl PolicyService {
 
     /// Gets the number of cached policies
     pub async fn policy_count(&self) -> usize {
-        self.policies.read().await.len()
+        self.policies.read().await.loaded().map_or(0, HashMap::len)
+    }
+
+    /// What the till knows about its policies.
+    ///
+    /// Replaces `has_policies() -> bool`, which answered `false` for both *never refreshed* and
+    /// *refreshed, and the company configured none* — a boolean standing in for a question with
+    /// three answers.
+    pub async fn standing(&self) -> PolicyStanding {
+        match self.policies.read().await.loaded() {
+            None => PolicyStanding::NeverLoaded,
+            Some(policies) => PolicyStanding::Loaded {
+                count: policies.len(),
+            },
+        }
     }
 
     /// Gets all policies in a category
@@ -230,20 +304,20 @@ impl PolicyService {
         self.policies
             .read()
             .await
-            .values()
-            .filter(|p| p.category == category)
-            .cloned()
-            .collect()
+            .loaded()
+            .map(|policies| {
+                policies
+                    .values()
+                    .filter(|p| p.category == category)
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     /// Gets a specific policy by code
     pub async fn get_policy(&self, code: &str) -> Option<CachedPolicy> {
         self.policies.read().await.get(code).cloned()
-    }
-
-    /// Checks if policies have been loaded
-    pub async fn has_policies(&self) -> bool {
-        !self.policies.read().await.is_empty()
     }
 
     // =========================================================================
@@ -548,10 +622,44 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_new_service() {
+    async fn a_fresh_service_has_never_loaded_its_policies() {
         let service = create_test_service();
-        assert!(!service.has_policies().await);
+
+        assert_eq!(service.standing().await, PolicyStanding::NeverLoaded);
         assert_eq!(service.policy_count().await, 0);
+    }
+
+    /// A platform that sends no policies is a different fact from a platform never reached.
+    ///
+    /// The predecessor `has_policies()` was `!is_empty()`, so both were `false` and nothing
+    /// downstream could separate them. This is the distinction task 05 acts on: a till that has
+    /// never loaded must not evaluate a policy check, while a till told there are no policies
+    /// legitimately has none to apply.
+    #[tokio::test]
+    async fn a_refresh_that_returns_no_policies_is_not_the_same_as_never_refreshing() {
+        let service = create_test_service();
+
+        service
+            .update_policies(SecurityPoliciesResponse {
+                version: "v1".to_string(),
+                policies: vec![],
+            })
+            .await;
+
+        assert_eq!(
+            service.standing().await,
+            PolicyStanding::Loaded { count: 0 }
+        );
+        assert_eq!(service.policy_count().await, 0);
+
+        // The control, and the reason it is asserted rather than left implied: both of the
+        // assertions above hold for `NeverLoaded` too if `count` is ignored, so without this the
+        // test passes on the very confusion it exists to rule out.
+        assert_ne!(
+            service.standing().await,
+            PolicyStanding::NeverLoaded,
+            "an empty load must not be indistinguishable from never having loaded"
+        );
     }
 
     #[tokio::test]

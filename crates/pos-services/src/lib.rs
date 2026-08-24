@@ -143,7 +143,7 @@ pub use platform_heartbeat_service::{
 };
 pub use platform_sync::{PlatformSync, WriteRefused};
 pub use policy_service::{
-    CachedPolicy, PolicyError, PolicyResult, PolicyService, PolicyServiceResult,
+    CachedPolicy, PolicyError, PolicyResult, PolicyService, PolicyServiceResult, PolicyStanding,
 };
 pub use policy_value::{PolicyValue, RangeBounds};
 pub use product_service::{ProductError, ProductService};
