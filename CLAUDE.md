@@ -400,6 +400,12 @@ wrong answer is well-formed and nothing about it invites a second look. Attribut
 commit message and in what a lane says about itself — not in the author, and not in the *topic*
 either, which produced a wrong four-SHA list here the same day.
 
+This repo's version is the easy one: 98 of 98 is a plain constant and the first check catches it.
+The platform's is `claude-bot` at **443 of 448**, which *varies* — so it passes “can this reading
+come out differently?” while separating nothing you would ask about, because observable variance is
+what retires suspicion. **Ask whether the variation you can see is the variation you are asking
+about.** A field with two values across 448 rows is a constant wearing a discriminator's clothes.
+
 **`| head` is for looking, never for counting.** A truncated stream does not announce itself, and a
 cut landing on a round number produces a **prefix that looks like a finding** — there is no ragged
 edge, so re-reading the output cannot catch it and only re-running without the pipe can. Measured
