@@ -415,21 +415,49 @@ pub struct DeclaredShape {
 /// that disagrees — see `crates/pos-db/tests/mappings.rs`. The rule it enforces is the one this
 /// list encodes: **a shape declared `pub const` belongs here**; a shape declared inside a test
 /// module does not.
-pub const DECLARED_SHAPES: &[DeclaredShape] = &[DeclaredShape {
-    name: "OPERATOR_ROW",
-    table: || Some(crate::operators::OPERATOR_ROW.table()),
-    projected: || {
-        crate::operators::OPERATOR_ROW
-            .reader()
-            .column_names()
-            .collect()
+pub const DECLARED_SHAPES: &[DeclaredShape] = &[
+    DeclaredShape {
+        name: "OPERATOR_ROW",
+        table: || Some(crate::operators::OPERATOR_ROW.table()),
+        projected: || {
+            crate::operators::OPERATOR_ROW
+                .reader()
+                .column_names()
+                .collect()
+        },
+        inserted: || {
+            crate::operators::OPERATOR_ROW
+                .insert_column_names()
+                .collect()
+        },
     },
-    inserted: || {
-        crate::operators::OPERATOR_ROW
-            .insert_column_names()
-            .collect()
+    DeclaredShape {
+        name: "PRODUCT_ROW",
+        table: || Some(crate::products::PRODUCT_ROW.table()),
+        projected: || {
+            crate::products::PRODUCT_ROW
+                .reader()
+                .column_names()
+                .collect()
+        },
+        inserted: || crate::products::PRODUCT_ROW.insert_column_names().collect(),
     },
-}];
+    DeclaredShape {
+        name: "CATEGORY_ROW",
+        table: || Some(crate::products::CATEGORY_ROW.table()),
+        projected: || {
+            crate::products::CATEGORY_ROW
+                .reader()
+                .column_names()
+                .collect()
+        },
+        inserted: || {
+            crate::products::CATEGORY_ROW
+                .insert_column_names()
+                .collect()
+        },
+    },
+];
 
 // ============================================================================
 // Reading against a connection the caller already holds

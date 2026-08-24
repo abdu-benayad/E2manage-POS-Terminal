@@ -327,6 +327,77 @@ fn optional_string_to_sql(value: &Option<String>) -> SqliteResult<Value> {
 pub const OPTIONAL_TEXT: ColumnCodec<Option<String>> =
     ColumnCodec::new(optional_string, optional_string_to_sql);
 
+// ---------------------------------------------------------------------------------------------
+// Columns a migration added, and the fallbacks that stand in for the rows written before it
+// ---------------------------------------------------------------------------------------------
+//
+// Schema v11 added `product_type`, `track_inventory` and `product_nature` with SQL `DEFAULT`s, so
+// a NULL in one of them is not "unknown" — it is a row somebody wrote explicitly as NULL. The
+// three readers below preserve the fallbacks `products.rs` has always applied, and they are named
+// for the value they fall back to rather than for the column, so a declaration says out loud that
+// a default is in play. In a closure the same fallback was invisible at every call site.
+//
+// **These are the only defaulting codecs in this module and they should stay the only ones.**
+// Every other codec here refuses what it cannot read, because a fallback and a real value are
+// indistinguishable afterwards — see `an_unrecognised_role_is_refused_rather_than_read_as_cashier`.
+// Whether these three should refuse too is a live question and its own issue; this module carries
+// today's behaviour, not a decision about it.
+
+/// Reads `products.product_type`, standing in `PHYSICAL_GOOD` for a NULL.
+pub fn product_type_or_physical_good(row: &Row<'_>, index: usize) -> SqliteResult<String> {
+    Ok(row
+        .get::<_, Option<String>>(index)?
+        .unwrap_or_else(|| "PHYSICAL_GOOD".to_string()))
+}
+
+#[expect(
+    clippy::ptr_arg,
+    reason = "`ColumnCodec<String>`'s write half is a `fn(&String) -> SqliteResult<Value>`; a \
+              `&str` parameter does not have that type, so the lint's suggestion does not compile"
+)]
+fn product_type_to_sql(value: &String) -> SqliteResult<Value> {
+    Ok(text(value.clone()))
+}
+
+/// `products.product_type`, defaulting to `PHYSICAL_GOOD`. See the note above the declaration.
+pub const PRODUCT_TYPE_OR_PHYSICAL_GOOD: ColumnCodec<String> =
+    ColumnCodec::new(product_type_or_physical_good, product_type_to_sql);
+
+/// Reads `products.track_inventory`, standing in `true` for a NULL.
+pub fn tracks_inventory_unless_said_otherwise(row: &Row<'_>, index: usize) -> SqliteResult<bool> {
+    Ok(row.get::<_, Option<bool>>(index)?.unwrap_or(true))
+}
+
+fn tracks_inventory_to_sql(value: &bool) -> SqliteResult<Value> {
+    Ok(Value::Integer(i64::from(*value)))
+}
+
+/// `products.track_inventory`, defaulting to tracked. See the note above the declaration.
+pub const TRACKS_INVENTORY_UNLESS_SAID_OTHERWISE: ColumnCodec<bool> = ColumnCodec::new(
+    tracks_inventory_unless_said_otherwise,
+    tracks_inventory_to_sql,
+);
+
+/// Reads `products.product_nature`, standing in `TANGIBLE` for a NULL.
+pub fn product_nature_or_tangible(row: &Row<'_>, index: usize) -> SqliteResult<String> {
+    Ok(row
+        .get::<_, Option<String>>(index)?
+        .unwrap_or_else(|| "TANGIBLE".to_string()))
+}
+
+#[expect(
+    clippy::ptr_arg,
+    reason = "`ColumnCodec<String>`'s write half is a `fn(&String) -> SqliteResult<Value>`; a \
+              `&str` parameter does not have that type, so the lint's suggestion does not compile"
+)]
+fn product_nature_to_sql(value: &String) -> SqliteResult<Value> {
+    Ok(text(value.clone()))
+}
+
+/// `products.product_nature`, defaulting to `TANGIBLE`. See the note above the declaration.
+pub const PRODUCT_NATURE_OR_TANGIBLE: ColumnCodec<String> =
+    ColumnCodec::new(product_nature_or_tangible, product_nature_to_sql);
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -465,6 +536,39 @@ mod tests {
         let empty = Some(String::new());
         assert_eq!(round_trip(OPTIONAL_TEXT, &empty), empty);
         assert_eq!(OPTIONAL_TEXT.write(&None).unwrap(), Value::Null);
+    }
+
+    #[test]
+    fn the_three_defaulting_columns_survive_both_directions_unchanged() {
+        // A stored value must come back as itself, not as the default. This is the half a test of
+        // the fallback alone would not cover, and it is the half that matters more: a fallback
+        // firing over real data is silent.
+        assert_eq!(
+            round_trip(PRODUCT_TYPE_OR_PHYSICAL_GOOD, &"SERVICE".to_string()),
+            "SERVICE"
+        );
+        assert_eq!(
+            round_trip(PRODUCT_NATURE_OR_TANGIBLE, &"INTANGIBLE".to_string()),
+            "INTANGIBLE"
+        );
+        assert!(!round_trip(TRACKS_INVENTORY_UNLESS_SAID_OTHERWISE, &false));
+        assert!(round_trip(TRACKS_INVENTORY_UNLESS_SAID_OTHERWISE, &true));
+    }
+
+    #[test]
+    fn a_null_in_the_three_defaulting_columns_reads_as_the_documented_default() {
+        // The behaviour `products.rs` has always had, moved rather than changed. Each default is
+        // asserted against a value it is *not* equal to above, so this test and that one cannot
+        // both pass on a codec that ignores what it read.
+        assert_eq!(
+            read_one(PRODUCT_TYPE_OR_PHYSICAL_GOOD, Value::Null).unwrap(),
+            "PHYSICAL_GOOD"
+        );
+        assert_eq!(
+            read_one(PRODUCT_NATURE_OR_TANGIBLE, Value::Null).unwrap(),
+            "TANGIBLE"
+        );
+        assert!(read_one(TRACKS_INVENTORY_UNLESS_SAID_OTHERWISE, Value::Null).unwrap());
     }
 
     #[test]
