@@ -973,6 +973,193 @@ mod guards {
         );
     }
 
+    /// The till never asks the platform to hand back its own secret.
+    ///
+    /// `POST /api/pos/terminals/pairing/recover` took a `hardwareId` and returned that terminal's
+    /// **raw secret**, with no authentication and no rate limit. A `hardwareId` is client-chosen,
+    /// validated only for length, unique across every tenant, and was written to the platform's
+    /// application log — so the secret was retrievable by anyone who could guess a device name.
+    /// The till was not the victim of that hole; it was the caller, and its whole re-enrolment
+    /// story was the attack performed by the legitimate client.
+    ///
+    /// The platform deleted the route in `566e5c62` and asserts its absence in
+    /// `presentation/__tests__/pairing-recover-is-gone.test.ts`. This is the consumer-side mirror.
+    ///
+    /// **There is no safe version of this endpoint, which is why the guard bans the name rather
+    /// than policing its use.** A till that has lost its secret is indistinguishable from an
+    /// attacker claiming that hardware id: whatever the device could prove is the thing it lost.
+    /// Re-enrolment goes through `pairing/request` and an administrator, and nothing hands a
+    /// credential to an unauthenticated caller.
+    ///
+    /// The scan reads comment-stripped lines, so the explanatory comment standing where
+    /// `recover_registration` used to be in `crates/pos-api/src/auth.rs` names the route freely.
+    /// That is deliberate and the module docs require it: documenting why a shape is forbidden
+    /// must never break the build.
+    #[test]
+    fn the_till_never_asks_for_its_own_secret_back() {
+        const ROUTE: &str = "pairing/recover";
+        const METHOD: &str = "fn recover_registration";
+
+        let lines = scanned_lines();
+
+        // The positive control, and the reason this guard is not vacuous. A scan for an absence
+        // reports a clean tree in exactly the same words as a tree it could not read, so prove the
+        // same matcher still finds the sibling routes it is *not* banning.
+        for witness in ["pairing/request", "pairing/status"] {
+            assert!(
+                lines.iter().any(|line| line.code.contains(witness)),
+                "no scanned line contains `{witness}`. The sibling pairing routes are this \
+                 guard's only witness that it is reading the tree at all — without one, its \
+                 green means nothing. If `pos-api` genuinely stopped naming them, give this \
+                 guard another witness rather than deleting the assertion"
+            );
+        }
+
+        let offences: Vec<String> = lines
+            .iter()
+            .filter(|line| line.code.contains(ROUTE) || line.code.contains(METHOD))
+            .map(|line| format!("{}:{} {}", line.path, line.number, line.code.trim()))
+            .collect();
+
+        assert!(
+            offences.is_empty(),
+            "the till names the deleted secret-recovery route in {} place(s). That endpoint \
+             returned a terminal's raw secret for a client-chosen hardware id and the platform \
+             removed it; there is no replacement and none is possible, because a till that has \
+             lost its secret cannot be told apart from an attacker claiming its hardware id. \
+             Re-enrol through `pairing/request` and an administrator:\n  {}",
+            offences.len(),
+            offences.join("\n  ")
+        );
+    }
+
+    /// A refusal is read from a machine code, never out of prose — and the list of places that
+    /// still get this wrong only shrinks.
+    ///
+    /// Messages are translated, product names contain digits, and none of it is a contract.
+    /// `ServerErrorCode` is. The worst instance matched the word `"invalid"`, which classified
+    /// `POS_OPERATOR_SESSION_INVALID` as a permanent data fault and **abandoned a queued sale
+    /// forever**; the pairing path matched `"409"` and `"already registered"` to decide whether to
+    /// ask the platform for its own secret back.
+    ///
+    /// # Why this keys on the SHAPE of the line and not on which words it looks for
+    ///
+    /// The first version of this guard matched `contains("4xx")` / `contains("5xx")` — the
+    /// spellings found by surveying the tree. Measured against the real population, that was blind
+    /// to **seven of the nine** matchers in `SyncFailureType::classify` alone: `"invalid"`,
+    /// `"conflict"`, `"duplicate"`, `"already exists"`, `"not found"`, `"validation failed"`,
+    /// `"malformed"` — including the exact word whose damage is named above. A guard keyed on the
+    /// vocabulary you happened to find silently defines its target as *"a thing shaped like the
+    /// ones I saw"*, and its green then reads as coverage it does not have.
+    ///
+    /// **The vocabulary is the survey; the shape is the rule.** So this matches a *branch* —
+    /// a line that begins `if` / `} else if` / `||` / `&&` / `return` and tests an error-shaped
+    /// value with `.contains("` — and says nothing about which string. That distinguishes
+    /// *deciding* from *describing*: the assertions in `pos-models/src/operator.rs` and
+    /// `pos-api/src/client.rs` that check a rendered message begin with the receiver instead, and
+    /// are correctly ignored. One of them asserts a rejected **discount percent** reaches an error
+    /// message via `contains("500")` — nothing to do with HTTP, and a false positive the first
+    /// version of this guard would have turned red on day one.
+    ///
+    /// # The allowance list is a ratchet, not an exemption
+    ///
+    /// These files carry branches this issue did not own. Listing them is what lets the guard
+    /// exist at all — a flat ban cannot pass today — and every property below exists to stop the
+    /// list becoming permanent furniture. It is keyed on **paths, not counts**, deliberately:
+    /// other sessions edit these files concurrently, and a pinned count would collide with work
+    /// this guard has no opinion about. It still turns red the moment the pattern reaches a file
+    /// that is not listed.
+    #[test]
+    fn the_till_never_reads_a_refusal_out_of_prose() {
+        /// Files that still branch on prose, and the issues that own them. A path leaves this list
+        /// when its branches are gone — never because the list was tidied.
+        const ALLOWED: [&str; 3] = [
+            "crates/pos-services/src/offline_service.rs",
+            "crates/pos-services/src/sync_service.rs",
+            "crates/pos-services/src/shared_draft_service.rs",
+        ];
+
+        /// A line that *decides* something, as opposed to one that describes or asserts.
+        const BRANCH: [&str; 5] = ["if ", "} else if ", "|| ", "&& ", "return "];
+
+        /// Reading a rendered error. `.to_string()` / `.to_lowercase()` catch the chained forms,
+        /// including `!e.to_string().contains(…)`.
+        const READS_AN_ERROR: [&str; 10] = [
+            "msg.contains(\"",
+            "message.contains(\"",
+            "err.contains(\"",
+            "err_str.contains(\"",
+            "error.contains(\"",
+            "error_msg.contains(\"",
+            "error_str.contains(\"",
+            "e.contains(\"",
+            ".to_string().contains(\"",
+            ".to_lowercase().contains(\"",
+        ];
+
+        fn branches_on_prose(code: &str) -> bool {
+            let trimmed = code.trim_start();
+            BRANCH.iter().any(|start| trimmed.starts_with(start))
+                && READS_AN_ERROR.iter().any(|read| trimmed.contains(read))
+        }
+
+        let lines = scanned_lines();
+        let matches: Vec<&SourceLine> = lines
+            .iter()
+            .filter(|line| branches_on_prose(&line.code))
+            .collect();
+
+        // The positive control. Without it, a matcher broken in any way reports a clean tree —
+        // and so do BOTH assertions below, which would then fail open together.
+        assert!(
+            !matches.is_empty(),
+            "the matcher found no prose branch anywhere in the tree. Measured 2026-08-24 there \
+             are eleven, nine of them in `SyncFailureType::classify`. Finding none means this \
+             guard is scanning something it cannot read, and its green is about nothing"
+        );
+
+        let offences: Vec<String> = matches
+            .iter()
+            .filter(|line| {
+                let path = line.path.replace('\\', "/");
+                !ALLOWED.iter().any(|allowed| path == *allowed)
+            })
+            .map(|line| format!("{}:{} {}", line.path, line.number, line.code.trim()))
+            .collect();
+
+        assert!(
+            offences.is_empty(),
+            "a refusal is being read out of a rendered message in {} new place(s). Branch on \
+             `ServerErrorCode`, never on prose: messages are translated, product names contain \
+             digits, and none of it is a contract. The worst instance of this matched the word \
+             \"invalid\", classified `POS_OPERATOR_SESSION_INVALID` as a permanent data fault, \
+             and abandoned a queued sale forever:\n  {}",
+            offences.len(),
+            offences.join("\n  ")
+        );
+
+        // An allowance that has stopped matching is an exemption nobody noticed expiring, and the
+        // module docs refuse those. A path leaves this list deliberately, not by rotting.
+        for allowed in ALLOWED {
+            let path = repo_root().join(allowed);
+            assert!(
+                path.is_file(),
+                "{} is on the prose-branching allowance list and does not exist. Remove the entry \
+                 in the same commit that moved the file, rather than leaving a pattern that \
+                 matches nothing",
+                path.display()
+            );
+            assert!(
+                matches
+                    .iter()
+                    .any(|line| line.path.replace('\\', "/") == *allowed),
+                "{allowed} is on the prose-branching allowance list and no longer branches on \
+                 prose. That is good news and the list must shrink to record it: delete the entry \
+                 so the next file to acquire one cannot hide behind a stale allowance"
+            );
+        }
+    }
+
     /// `pos-models` knows nothing about storage or the network.
     ///
     /// It is the apex of the dependency diamond — `pos-db`, `pos-api`, `pos-printing` and
