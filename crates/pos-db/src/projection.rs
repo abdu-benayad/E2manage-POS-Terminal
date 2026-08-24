@@ -458,6 +458,42 @@ pub const DECLARED_SHAPES: &[DeclaredShape] = &[
         },
     },
     DeclaredShape {
+        name: "DRAFT_ROW",
+        table: || Some(crate::drafts::DRAFT_ROW.table()),
+        projected: || crate::drafts::DRAFT_ROW.reader().column_names().collect(),
+        inserted: || crate::drafts::DRAFT_ROW.insert_column_names().collect(),
+    },
+    DeclaredShape {
+        name: "SHARED_DRAFT_ROW",
+        table: || Some(crate::shared_drafts::SHARED_DRAFT_ROW.table()),
+        projected: || {
+            crate::shared_drafts::SHARED_DRAFT_ROW
+                .reader()
+                .column_names()
+                .collect()
+        },
+        inserted: || {
+            crate::shared_drafts::SHARED_DRAFT_ROW
+                .insert_column_names()
+                .collect()
+        },
+    },
+    DeclaredShape {
+        name: "DRAFT_SYNC_QUEUE_ITEM_ROW",
+        table: || Some(crate::draft_sync_queue::DRAFT_SYNC_QUEUE_ITEM_ROW.table()),
+        projected: || {
+            crate::draft_sync_queue::DRAFT_SYNC_QUEUE_ITEM_ROW
+                .reader()
+                .column_names()
+                .collect()
+        },
+        inserted: || {
+            crate::draft_sync_queue::DRAFT_SYNC_QUEUE_ITEM_ROW
+                .insert_column_names()
+                .collect()
+        },
+    },
+    DeclaredShape {
         name: "CATEGORY_ROW",
         table: || Some(crate::products::CATEGORY_ROW.table()),
         projected: || {
