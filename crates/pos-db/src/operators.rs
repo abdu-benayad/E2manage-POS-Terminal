@@ -4,7 +4,11 @@
 
 use pos_models::{OperatorId, OperatorName, OperatorPermissions, OperatorRole};
 
-use crate::column::{operator_id, operator_name, operator_role};
+// `read_permissions` moved to `crate::column` as the read half of `column::PERMISSIONS`. It was a
+// fourth positional reader living outside the module that owns them, which is why no measurement
+// of this repo's positional reads has ever counted it. Aliased rather than renamed at the call
+// sites so this task changes one line; task 04 migrates the four callers and drops the alias.
+use crate::column::{operator_id, operator_name, operator_role, permissions as read_permissions};
 use rusqlite::{params, OptionalExtension, Result as SqliteResult};
 
 use super::Database;
@@ -22,28 +26,6 @@ fn permissions_json(operator: &OperatorRow) -> SqliteResult<Option<String>> {
                 .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))
         })
         .transpose()
-}
-
-/// Reads an operator's permissions back out of the column.
-///
-/// A row whose permissions will not parse is a **read failure the caller sees**. It used to be
-/// `.ok().unwrap_or_default()`, which turned an unreadable column into an operator holding no
-/// privileges — the same value as a genuinely unprivileged cashier, and indistinguishable from
-/// one. It failed closed, so nobody noticed; the mechanism was indifferent to direction.
-fn read_permissions(
-    row: &rusqlite::Row<'_>,
-    index: usize,
-) -> SqliteResult<Option<OperatorPermissions>> {
-    match row.get::<_, Option<String>>(index)? {
-        None => Ok(None),
-        Some(json) => serde_json::from_str(&json).map(Some).map_err(|error| {
-            rusqlite::Error::FromSqlConversionFailure(
-                index,
-                rusqlite::types::Type::Text,
-                Box::new(error),
-            )
-        }),
-    }
 }
 
 /// Operator row from database (HR Employee integrated)
