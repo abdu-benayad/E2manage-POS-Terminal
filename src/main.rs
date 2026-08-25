@@ -16,7 +16,9 @@ mod driver;
 use std::process::ExitCode;
 
 use driver::{data_directory, AuthDriver, StartupFailure, TillServices};
-use e2manage_pos_terminal::screen::{self, install_environment, reads_right_to_left, Reading};
+use e2manage_pos_terminal::screen::{
+    self, install_environment, page_fill, reads_right_to_left, Reading,
+};
 use e2manage_pos_terminal::ui::sign_in::{
     advance, apply, AuthEnquiry, AuthPhase, EnquiryIds, EnquiryKind, PendingEnquiry,
 };
@@ -224,6 +226,20 @@ impl Till {
 }
 
 impl eframe::App for Till {
+    /// What the window is cleared to, before any widget is drawn.
+    ///
+    /// Overriding this is load-bearing. eframe's default is `rgba(12, 12, 12, 180)` — near-black —
+    /// and [`eframe::App::ui`] hands out a `Ui` with no background of its own, so leaving both
+    /// alone draws the light-theme sign-in screen on black. It did: the stalled heading measured
+    /// 1.20:1 against its background in a photograph of the running binary, where 4.5:1 is the
+    /// floor for body text.
+    ///
+    /// The value comes from [`page_fill`], which reads the same environment the widgets resolve
+    /// against, so the window and its contents cannot disagree about which theme is installed.
+    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
+        page_fill().to_normalized_gamma_f32()
+    }
+
     /// eframe 0.34 hands the app a [`egui::Ui`] rather than a [`egui::Context`] — `App::ui` is the
     /// required method and `App::update` is a provided one that does nothing. Implementing
     /// `update` compiles as an inherent-looking override and never runs, so the window would open
@@ -260,6 +276,75 @@ impl eframe::App for Till {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// WCAG 2.1 relative luminance, then the contrast ratio between two opaque colours.
+    ///
+    /// Written out rather than taken from a crate: it is four lines, and a dependency added for a
+    /// single test is a dependency the offline build has to carry.
+    fn contrast_ratio(text: egui::Color32, background: egui::Color32) -> f32 {
+        fn luminance(colour: egui::Color32) -> f32 {
+            let channel = |value: u8| {
+                let value = f32::from(value) / 255.0;
+                if value <= 0.039_28 {
+                    value / 12.92
+                } else {
+                    ((value + 0.055) / 1.055).powf(2.4)
+                }
+            };
+            0.2126 * channel(colour.r())
+                + 0.7152 * channel(colour.g())
+                + 0.0722 * channel(colour.b())
+        }
+
+        let (lighter, darker) = {
+            let (a, b) = (luminance(text), luminance(background));
+            if a >= b {
+                (a, b)
+            } else {
+                (b, a)
+            }
+        };
+
+        (lighter + 0.05) / (darker + 0.05)
+    }
+
+    /// The fill the window is cleared to carries the body text that will be drawn on it.
+    ///
+    /// This is the assertion the sign-in suite could not make. A window fill reaches no
+    /// accessibility node, and the snapshot references are captured over the harness's own
+    /// background rather than over this value — so eight green layer-1 tests and three green
+    /// reference comparisons all held over a binary drawing light-theme text on near-black.
+    #[test]
+    fn the_window_fill_carries_the_text_that_is_drawn_on_it() {
+        let theme = screen::chrome().theme;
+        let ratio = contrast_ratio(theme.foreground, page_fill());
+
+        assert!(
+            ratio >= 4.5,
+            "body text on the window fill measures {ratio:.2}:1, below the 4.5:1 floor"
+        );
+    }
+
+    /// The control for the assertion above, and the reason it is not vacuous.
+    ///
+    /// A contrast check that returns a comfortable number for *any* pair proves nothing. This
+    /// feeds it the exact fill the defect shipped — eframe's default clear colour, composited
+    /// over black — and requires it to fail. Without this, a broken ratio function would pass the
+    /// test above and the guard would be decoration.
+    #[test]
+    fn the_same_check_refuses_the_fill_the_defect_shipped() {
+        // `rgba(12, 12, 12, 180)` over black is what the screenshots measured: sRGB 8.
+        let eframes_default_over_black = egui::Color32::from_rgb(8, 8, 8);
+        let ratio = contrast_ratio(
+            screen::chrome().theme.foreground,
+            eframes_default_over_black,
+        );
+
+        assert!(
+            ratio < 4.5,
+            "the check passed the fill the defect shipped ({ratio:.2}:1), so it separates nothing"
+        );
+    }
 
     /// The whole screen mirrors on this answer, and the default locale depends on it being right
     /// for a bare `ar`. Both directions are asserted: a predicate that answered `true` for

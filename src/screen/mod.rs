@@ -209,6 +209,24 @@ pub fn chrome() -> Environment {
     Environment::light().egui_coherence(EguiCoherence::AlignSelector)
 }
 
+/// The fill the window is cleared to, before a single widget is drawn.
+///
+/// # This is not optional, and neither test layer can see it
+///
+/// eframe hands [`eframe::App::ui`] a `Ui` with *no background of its own* and clears the window
+/// to its own default — `rgba(12, 12, 12, 180)`, a near-black. A screen that never states a fill
+/// is therefore drawn on that, and light-theme widgets over it are unreadable: measured at a
+/// 1.20:1 contrast ratio for the stalled heading, against a 4.5:1 floor.
+///
+/// Nothing in the suite could catch it. A window fill reaches no accessibility node, so layer 1
+/// is blind by construction; the snapshot references are captured over the harness's own
+/// transparent background rather than over this value, so layer 2 photographs a window fill the
+/// binary never had. The instrument is the test beside `clear_color` in `main.rs`, which asserts
+/// the fill carries the foreground it will be drawn under.
+pub fn page_fill() -> egui::Color32 {
+    chrome().theme.background
+}
+
 /// The till's presentation for one locale.
 pub fn environment(locale: &str) -> Environment {
     chrome().locale(Locale {
