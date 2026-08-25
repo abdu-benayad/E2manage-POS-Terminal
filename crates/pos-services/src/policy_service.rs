@@ -69,12 +69,12 @@ pub enum NotEvaluableReason {
     /// mode introduced in future deserialises to `Unknown` on every deployed till. Answering
     /// `Allow` there means the platform *tightening* a policy reads as no policy at all.
     EnforcementModeUnrecognised,
-    /// The policy is readable and this check cannot interpret it — a boolean question asked of a
-    /// range policy.
+    /// The policy is readable and the question asked of it cannot interpret it — a boolean
+    /// question asked of a range policy, or a range accessor asked of a boolean one.
     ///
     /// The only variant that reports a defect in the till rather than in the platform's data.
-    /// Nothing rejected this before: the caller chose the interpreter by choosing which `check_*`
-    /// to call, so it was a well-typed call that silently misread a perfectly good value.
+    /// Nothing rejected this before: the caller chose the interpreter by choosing which method to
+    /// call, so it was a well-typed call that silently misread a perfectly good value.
     CheckDoesNotFitTheDeclaredType,
 }
 
@@ -467,11 +467,6 @@ impl PolicyService {
         self.version_hash.read().await.clone()
     }
 
-    /// Gets the number of cached policies
-    pub async fn policy_count(&self) -> usize {
-        self.policies.read().await.loaded().map_or(0, HashMap::len)
-    }
-
     /// What the till knows about its policies.
     ///
     /// Replaces `has_policies() -> bool`, which answered `false` for both *never refreshed* and
@@ -549,7 +544,22 @@ impl PolicyService {
     /// Three different facts, kept apart because they call for different repairs: fix the
     /// platform's data, update this till, or fix this till's caller.
     fn cannot_read(code: &str, value: &PolicyValue) -> PolicyResult {
-        let reason = match value {
+        PolicyResult::NotEvaluable {
+            code: code.to_string(),
+            reason: Self::unreadable_reason(code, value),
+        }
+    }
+
+    /// Why a held policy yielded no answer — the discrimination itself, with no verdict on it.
+    ///
+    /// Shared by the check family (through [`PolicyService::cannot_read`]) and by the accessors
+    /// (through [`PolicyService::configured_range`]), which need the same three facts and return
+    /// different types. What is shared is deliberately the **reason**, not a `PolicyResult`: that
+    /// type carries four verdicts an accessor can never produce, and pushing a value question
+    /// through it would need either a catch-all that is only currently unreachable or an
+    /// `unreachable!()`, which is a panic path this codebase does not accept.
+    fn unreadable_reason(code: &str, value: &PolicyValue) -> NotEvaluableReason {
+        match value {
             PolicyValue::Malformed { declared, .. } => {
                 warn!("policy {code} declares {declared:?} and its value does not match");
                 NotEvaluableReason::ValueDoesNotMatchDeclaredType
@@ -559,18 +569,77 @@ impl PolicyService {
                 NotEvaluableReason::DeclaredTypeUnrecognised
             }
             // The value is fine and the question is wrong: a boolean check against a range
-            // policy. Nothing rejected this before — the caller chose the interpreter by
-            // choosing which `check_*` to call, so it was a well-typed call that silently
-            // misread the value.
+            // policy, or a range accessor against a boolean one. Nothing rejected this before —
+            // the caller chose the interpreter by choosing which method to call, so it was a
+            // well-typed call that silently misread the value.
             readable => {
-                error!("policy {code} holds {readable:?}, which this check cannot interpret");
+                error!("policy {code} holds {readable:?}, which this question cannot interpret");
                 NotEvaluableReason::CheckDoesNotFitTheDeclaredType
             }
+        }
+    }
+
+    /// Resolves a code to the numeric setting the platform configured for it.
+    ///
+    /// The accessor-side counterpart of [`PolicyService::lookup`], and deliberately **not** built
+    /// on it. `lookup` answers *may this proceed*; this answers *what did the platform configure*,
+    /// and the two differ on more than their return type:
+    ///
+    /// - `lookup` folds *loaded, no such code* into `Allow`, because an unconfigured policy
+    ///   correctly permits. Here it is [`PolicyReading::NotConfigured`], which is an answer in its
+    ///   own right and not the same as the till not knowing.
+    /// - **This does not look at `enforcement_mode`, and that is a decision.** `lookup` treats
+    ///   `Disabled` as `Allow`, because a policy the platform is not enforcing cannot refuse
+    ///   anything. A disabled policy still *has* a configured value, and an accessor is being
+    ///   asked what that value is, not whether to enforce it. A caller that needs to know whether
+    ///   the policy is live reads [`CachedPolicy::enforcement_mode`] through
+    ///   [`PolicyService::get_policy`].
+    ///
+    /// The first `loaded()` is the whole repair: [`HeldPolicies::get`] returns `None` for
+    /// *never loaded* and for *loaded, absent* alike — deliberately, because that is one answer to
+    /// *is there a policy called X* — so an accessor that starts from `get` cannot recover the
+    /// distinction afterwards. Asking the standing first is what makes the two separable.
+    fn configured_range(held: &HeldPolicies, code: &str) -> PolicyReading<Decimal> {
+        let Some(policies) = held.loaded() else {
+            debug!("cannot read {code}: this till has never loaded its security policies");
+            return PolicyReading::NotEvaluable(NotEvaluableReason::PoliciesNeverLoaded);
         };
 
-        PolicyResult::NotEvaluable {
-            code: code.to_string(),
-            reason,
+        let Some(policy) = policies.get(code) else {
+            debug!("the platform configured no policy {code}");
+            return PolicyReading::NotConfigured;
+        };
+
+        match &policy.value {
+            PolicyValue::Range(range) => PolicyReading::Configured(range.configured()),
+            other => PolicyReading::NotEvaluable(Self::unreadable_reason(code, other)),
+        }
+    }
+
+    /// The same reading, narrowed to the whole-number quantity four of these policies are.
+    ///
+    /// A minute count, a second count, a day count and a PIN length are whole numbers; the
+    /// platform sends them inside the same `Range`, in [`Decimal`]. The narrowing can fail — a
+    /// negative bound, or one past `u32::MAX` — and that failure is why this family exists:
+    /// `range.min as u32` saturated silently, so a bound the till could not make sense of became
+    /// a minimum PIN length of **zero**.
+    ///
+    /// A setting that will not narrow is reported as
+    /// [`NotEvaluableReason::ValueDoesNotMatchDeclaredType`]: the platform declared a whole-number
+    /// quantity and sent something that is not one.
+    fn configured_whole_number(held: &HeldPolicies, code: &str) -> PolicyReading<u32> {
+        match Self::configured_range(held, code) {
+            PolicyReading::Configured(setting) => match setting.to_u32() {
+                Some(whole) => PolicyReading::Configured(whole),
+                None => {
+                    warn!("policy {code} is set to {setting}, which is not a whole count");
+                    PolicyReading::NotEvaluable(NotEvaluableReason::ValueDoesNotMatchDeclaredType)
+                }
+            },
+            // Restated rather than mapped, so a variant added to `PolicyReading` later is a
+            // compile error here instead of being folded into whichever arm a catch-all chose.
+            PolicyReading::NotConfigured => PolicyReading::NotConfigured,
+            PolicyReading::NotEvaluable(reason) => PolicyReading::NotEvaluable(reason),
         }
     }
 
@@ -769,32 +838,25 @@ impl PolicyService {
 
     /// The shortest PIN this till should accept.
     ///
-    /// # Why `Option<u32>` and not `u32`
+    /// # Why a reading and not `u32`, and why not `Option<u32>` either
     ///
     /// This read `range.min as u32` — a saturating float-to-integer cast with no error path, so a
     /// bound the till could not make sense of became **a minimum PIN length of zero**. That is the
     /// one member of this family that reaches a person: a till accepting an empty PIN.
     ///
-    /// `to_u32()` returns `None` where the cast invented a number. A minimum length the till could
-    /// not determine is not zero, and the type now says so rather than leaving it to whoever
-    /// writes the next caller.
-    pub async fn get_min_pin_length(&self) -> Option<u32> {
-        let policies = self.policies.read().await;
-        let policy = policies.get("MIN_PIN_LENGTH")?;
-        let PolicyValue::Range(range) = &policy.value else {
-            return None;
-        };
-        range.configured().to_u32()
+    /// Narrowing through `to_u32()` closed the invented number. It left the *absence* wrong:
+    /// `None` meant the platform set no minimum, and it meant this till has never been online, and
+    /// a caller choosing a fallback could not tell which it had. [`PolicyReading`] separates them,
+    /// and offers no `unwrap_or`, so the caller's fallback is written where the caller can see it.
+    pub async fn get_min_pin_length(&self) -> PolicyReading<u32> {
+        let held = self.policies.read().await;
+        Self::configured_whole_number(&held, "MIN_PIN_LENGTH")
     }
 
-    /// Gets the session timeout in minutes
-    pub async fn get_session_timeout_minutes(&self) -> Option<u32> {
-        let policies = self.policies.read().await;
-        let policy = policies.get("SESSION_TIMEOUT_MINUTES")?;
-        let PolicyValue::Range(range) = &policy.value else {
-            return None;
-        };
-        range.configured().to_u32()
+    /// How long a session may idle before this till locks it.
+    pub async fn get_session_timeout_minutes(&self) -> PolicyReading<u32> {
+        let held = self.policies.read().await;
+        Self::configured_whole_number(&held, "SESSION_TIMEOUT_MINUTES")
     }
 
     /// The largest sale this till may complete while offline.
@@ -806,26 +868,21 @@ impl PolicyService {
     /// `as_f64()` at the point of use, back when the policy value arrived untyped and there was
     /// nowhere to declare what it meant.
     ///
-    /// `None` means the till cannot say: no such policy, or a value it could not read. **It does
-    /// not mean zero**, and a caller must not treat it as one — an offline ceiling of zero refuses
-    /// every sale, while an unknown ceiling is a decision for whoever owns the offline path.
-    pub async fn get_offline_max_amount(&self) -> Option<Decimal> {
-        let policies = self.policies.read().await;
-        let policy = policies.get("OFFLINE_MAX_AMOUNT")?;
-        let PolicyValue::Range(range) = &policy.value else {
-            return None;
-        };
-        Some(range.configured())
+    /// Anything other than [`PolicyReading::Configured`] means **the till has no ceiling to apply**
+    /// — and it does not mean zero. A caller must not treat it as one: an offline ceiling of zero
+    /// refuses every sale. Which of the two non-answers it is matters here more than anywhere else
+    /// in this family, because they call for opposite handling. `NotConfigured` is the platform
+    /// declining to cap offline sales; `NotEvaluable` is a till that cannot yet say whether it is
+    /// capped, which is a decision for whoever owns the offline path rather than a licence.
+    pub async fn get_offline_max_amount(&self) -> PolicyReading<Decimal> {
+        let held = self.policies.read().await;
+        Self::configured_range(&held, "OFFLINE_MAX_AMOUNT")
     }
 
-    /// Gets the heartbeat interval in seconds
-    pub async fn get_heartbeat_interval_seconds(&self) -> Option<u32> {
-        let policies = self.policies.read().await;
-        let policy = policies.get("HEARTBEAT_INTERVAL_SECONDS")?;
-        let PolicyValue::Range(range) = &policy.value else {
-            return None;
-        };
-        range.configured().to_u32()
+    /// How often this till should report itself to the platform.
+    pub async fn get_heartbeat_interval_seconds(&self) -> PolicyReading<u32> {
+        let held = self.policies.read().await;
+        Self::configured_whole_number(&held, "HEARTBEAT_INTERVAL_SECONDS")
     }
 
     /// Checks if PCI compliance mode is enabled
@@ -849,14 +906,10 @@ impl PolicyService {
             .unwrap_or_default()
     }
 
-    /// Gets the receipt retention days
-    pub async fn get_receipt_retention_days(&self) -> Option<u32> {
-        let policies = self.policies.read().await;
-        let policy = policies.get("RECEIPT_RETENTION_DAYS")?;
-        let PolicyValue::Range(range) = &policy.value else {
-            return None;
-        };
-        range.configured().to_u32()
+    /// How long this till should keep receipts before discarding them.
+    pub async fn get_receipt_retention_days(&self) -> PolicyReading<u32> {
+        let held = self.policies.read().await;
+        Self::configured_whole_number(&held, "RECEIPT_RETENTION_DAYS")
     }
 }
 
@@ -864,6 +917,7 @@ impl PolicyService {
 mod tests {
     use super::*;
     use pos_api::{ApiClient, PolicyType, SecurityPolicy};
+    use serde_json::json;
 
     fn create_test_service() -> PolicyService {
         let api = Arc::new(ApiClient::new("https://api.example.com"));
@@ -958,7 +1012,16 @@ mod tests {
         let service = create_test_service();
 
         assert_eq!(service.standing().await, PolicyStanding::NeverLoaded);
-        assert_eq!(service.policy_count().await, 0);
+
+        // The control. `NeverLoaded` is the *only* other variant, so asserting it alone cannot
+        // fail if `standing()` were broken to a constant — the sibling test below pins the other
+        // one against the same service type, and these two together are what make either
+        // assertion mean anything.
+        assert_ne!(
+            service.standing().await,
+            PolicyStanding::Loaded { count: 0 },
+            "never loaded is not the same fact as loaded and empty"
+        );
     }
 
     /// A platform that sends no policies is a different fact from a platform never reached.
@@ -982,7 +1045,6 @@ mod tests {
             service.standing().await,
             PolicyStanding::Loaded { count: 0 }
         );
-        assert_eq!(service.policy_count().await, 0);
 
         // The control, and the reason it is asserted rather than left implied: both of the
         // assertions above hold for `NeverLoaded` too if `count` is ignored, so without this the
@@ -1316,7 +1378,228 @@ mod tests {
             .await
             .expect("cached, not dropped");
         assert!(matches!(bad.value, PolicyValue::Malformed { .. }));
-        assert_eq!(service.policy_count().await, 2);
+        assert_eq!(
+            service.standing().await,
+            PolicyStanding::Loaded { count: 2 }
+        );
+    }
+
+    fn range_policy(code: &str, value: serde_json::Value) -> SecurityPolicy {
+        SecurityPolicy {
+            code: code.to_string(),
+            category: SecurityCategory::Authentication,
+            policy_type: PolicyType::Range,
+            policy_value: value,
+            enforcement_mode: EnforcementMode::Block,
+        }
+    }
+
+    async fn service_holding(policies: Vec<SecurityPolicy>) -> PolicyService {
+        let service = create_test_service();
+        service
+            .update_policies(SecurityPoliciesResponse {
+                version: "v1".to_string(),
+                policies,
+            })
+            .await;
+        service
+    }
+
+    /// Every state `get_min_pin_length` can be in, asserted as a distinct variant.
+    ///
+    /// Written as one test on purpose. Split across four, each would assert a single value and
+    /// none would show that the four are *different* — which is the entire claim. The predecessor
+    /// returned `Option<u32>` and answered `None` to four of these five questions, so a caller
+    /// picking a fallback could not tell a platform that set no minimum from a till that has
+    /// never been online. This is the till accepting an empty PIN, one type away.
+    #[tokio::test]
+    async fn a_pin_length_reading_says_which_of_the_five_things_it_is() {
+        let never_loaded = create_test_service();
+        assert_eq!(
+            never_loaded.get_min_pin_length().await,
+            PolicyReading::NotEvaluable(NotEvaluableReason::PoliciesNeverLoaded),
+            "a till that has never reached the platform knows no minimum"
+        );
+
+        let loaded_without_it = service_holding(vec![]).await;
+        assert_eq!(
+            loaded_without_it.get_min_pin_length().await,
+            PolicyReading::NotConfigured,
+            "and a platform that configured no minimum is a different fact"
+        );
+
+        let configured = service_holding(vec![range_policy(
+            "MIN_PIN_LENGTH",
+            json!({"min": 4, "max": 8}),
+        )])
+        .await;
+        assert_eq!(
+            configured.get_min_pin_length().await,
+            PolicyReading::Configured(4)
+        );
+
+        let unreadable =
+            service_holding(vec![range_policy("MIN_PIN_LENGTH", json!("not a range"))]).await;
+        assert_eq!(
+            unreadable.get_min_pin_length().await,
+            PolicyReading::NotEvaluable(NotEvaluableReason::ValueDoesNotMatchDeclaredType)
+        );
+
+        // The narrowing failure, which is the original defect stated as a test: `range.min as u32`
+        // turned this into a minimum PIN length of **zero**, and a saturating cast has no error
+        // path to notice it in.
+        let will_not_narrow = service_holding(vec![range_policy(
+            "MIN_PIN_LENGTH",
+            json!({"min": -1, "max": 8}),
+        )])
+        .await;
+        assert_eq!(
+            will_not_narrow.get_min_pin_length().await,
+            PolicyReading::NotEvaluable(NotEvaluableReason::ValueDoesNotMatchDeclaredType)
+        );
+        assert_ne!(
+            will_not_narrow.get_min_pin_length().await,
+            PolicyReading::Configured(0),
+            "the cast that invented this zero is what the whole family exists to close"
+        );
+        // …and this is that case rather than the unreadable one above it. Both report the same
+        // reason, so without pinning the cached value the two are indistinguishable here and the
+        // narrowing path could stop being exercised without any assertion noticing.
+        assert!(
+            matches!(
+                will_not_narrow
+                    .get_policy("MIN_PIN_LENGTH")
+                    .await
+                    .expect("cached")
+                    .value,
+                PolicyValue::Range(_)
+            ),
+            "the range parsed; it is the narrowing to u32 that refuses"
+        );
+    }
+
+    /// A question the policy's declared type cannot answer is reported as that, not as absence.
+    ///
+    /// The accessor reaches the same discrimination the `check_*` family does, through the shared
+    /// `unreadable_reason`. Without this the boolean case would fall into whichever reason the
+    /// range path happened to use, and the log would blame the platform's data for a defect in
+    /// the till's call.
+    #[tokio::test]
+    async fn a_range_accessor_asked_of_a_boolean_policy_says_so() {
+        let service = service_holding(vec![SecurityPolicy {
+            code: "MIN_PIN_LENGTH".to_string(),
+            category: SecurityCategory::Authentication,
+            policy_type: PolicyType::Boolean,
+            policy_value: json!(true),
+            enforcement_mode: EnforcementMode::Block,
+        }])
+        .await;
+
+        assert_eq!(
+            service.get_min_pin_length().await,
+            PolicyReading::NotEvaluable(NotEvaluableReason::CheckDoesNotFitTheDeclaredType)
+        );
+    }
+
+    /// A disabled policy still has a configured value, and an accessor reports it.
+    ///
+    /// Deliberate, and the one place the accessors part company with `lookup`, which folds
+    /// `Disabled` into `Allow` because a policy the platform is not enforcing cannot refuse
+    /// anything. An accessor is asked *what did the platform configure*, not *may this proceed*.
+    /// Asserted so that a later reader "fixing" the resolver to consult `enforcement_mode` has to
+    /// delete a test that says why it does not.
+    #[tokio::test]
+    async fn an_unenforced_policy_still_has_a_value_to_read() {
+        let service = service_holding(vec![SecurityPolicy {
+            code: "SESSION_TIMEOUT_MINUTES".to_string(),
+            category: SecurityCategory::Authentication,
+            policy_type: PolicyType::Range,
+            policy_value: json!({"min": 5, "max": 60, "default": 15}),
+            enforcement_mode: EnforcementMode::Disabled,
+        }])
+        .await;
+
+        assert_eq!(
+            service.get_session_timeout_minutes().await,
+            PolicyReading::Configured(15)
+        );
+    }
+
+    /// The money accessor keeps its value in [`Decimal`] and its non-answers apart.
+    ///
+    /// `NotConfigured` and `NotEvaluable` are asserted as distinct here rather than through
+    /// `is_none()`, because the caller that owns the offline path has to treat them differently:
+    /// one is the platform declining to cap offline sales, the other is a till that cannot say.
+    #[tokio::test]
+    async fn an_offline_ceiling_that_is_absent_is_not_a_ceiling_that_is_unknown() {
+        let loaded_without_it = service_holding(vec![]).await;
+        assert_eq!(
+            loaded_without_it.get_offline_max_amount().await,
+            PolicyReading::NotConfigured
+        );
+
+        let never_loaded = create_test_service();
+        assert_eq!(
+            never_loaded.get_offline_max_amount().await,
+            PolicyReading::NotEvaluable(NotEvaluableReason::PoliciesNeverLoaded)
+        );
+
+        // Money keeps its exact decimal — the predecessor returned `Option<f64>`, and this
+        // codebase's first rule is that a sale value is never a float.
+        let configured = service_holding(vec![range_policy(
+            "OFFLINE_MAX_AMOUNT",
+            json!({"min": 0, "max": 10000, "default": 1500.25}),
+        )])
+        .await;
+        assert_eq!(
+            configured.get_offline_max_amount().await,
+            PolicyReading::Configured(Decimal::new(150025, 2))
+        );
+    }
+
+    /// The remaining three whole-number accessors read their own codes and not each other's.
+    ///
+    /// The five share one resolver, so a transposed code string would be invisible in a test that
+    /// only ever configures one policy at a time: each accessor would still find *a* range and
+    /// return *a* number. Holding all three at once with distinct values is what makes the
+    /// mapping assertable.
+    #[tokio::test]
+    async fn each_accessor_reads_its_own_policy_code() {
+        let service = service_holding(vec![
+            range_policy(
+                "SESSION_TIMEOUT_MINUTES",
+                json!({"min": 5, "max": 60, "default": 15}),
+            ),
+            range_policy(
+                "HEARTBEAT_INTERVAL_SECONDS",
+                json!({"min": 30, "max": 300, "default": 60}),
+            ),
+            range_policy(
+                "RECEIPT_RETENTION_DAYS",
+                json!({"min": 1, "max": 365, "default": 90}),
+            ),
+        ])
+        .await;
+
+        assert_eq!(
+            service.get_session_timeout_minutes().await,
+            PolicyReading::Configured(15)
+        );
+        assert_eq!(
+            service.get_heartbeat_interval_seconds().await,
+            PolicyReading::Configured(60)
+        );
+        assert_eq!(
+            service.get_receipt_retention_days().await,
+            PolicyReading::Configured(90)
+        );
+
+        // The control for the three above: an accessor whose code is absent from a service that
+        // holds three other ranges must still say `NotConfigured`, not pick up a neighbour's.
+        assert_eq!(
+            service.get_min_pin_length().await,
+            PolicyReading::NotConfigured
+        );
     }
 
     /// An enforcement mode this till has never heard of does not permit.

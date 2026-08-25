@@ -10,8 +10,8 @@
 
 use crate::api::ApiClient;
 use crate::services::{
-    HeartbeatEvent, PlatformHeartbeatService, PolicyService, UpdateService,
-    DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
+    HeartbeatEvent, PlatformHeartbeatService, PolicyReading, PolicyService, PolicyStanding,
+    UpdateService, DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
 };
 use std::sync::Arc;
 use tokio::runtime::Runtime;
@@ -81,10 +81,26 @@ impl PlatformServices {
                 match policy.refresh().await {
                     Ok(updated) => {
                         if updated {
-                            info!(
-                                "Security policies loaded: {} policies",
-                                policy.policy_count().await
-                            );
+                            // Both arms are written out because the whole point of `standing()` is
+                            // that it separates them. The count alone printed `0 policies` for a
+                            // till that had never reached the platform and for one the platform
+                            // had told to enforce nothing — the same line for opposite states.
+                            //
+                            // `NeverLoaded` cannot arise inside this arm, which reports a refresh
+                            // that just succeeded. It is still matched honestly rather than with
+                            // `unreachable!()`: an arm that cannot fire today is not a licence to
+                            // put a panic where the next caller will reach it.
+                            match policy.standing().await {
+                                PolicyStanding::Loaded { count } => {
+                                    info!("Security policies loaded: {} policies", count);
+                                }
+                                PolicyStanding::NeverLoaded => {
+                                    warn!(
+                                        "Security policies reported as updated, \
+                                         but this till holds none"
+                                    );
+                                }
+                            }
                         } else {
                             debug!("Security policies not modified");
                         }
@@ -138,14 +154,35 @@ impl PlatformServices {
 
         std::thread::spawn(move || {
             runtime.block_on(async move {
-                // Get heartbeat interval from policy, or use default
-                let interval = policy
-                    .get_heartbeat_interval_seconds()
-                    .await
-                    .unwrap_or(DEFAULT_HEARTBEAT_INTERVAL_SECONDS as u32)
-                    as u64;
+                // The fallback is unchanged — both non-answers still default, exactly as the
+                // `unwrap_or` this replaces did. What changed is that it is now a decision
+                // written here rather than one the type supplied, and that the log line says
+                // which of the three cases produced the interval it is about to use.
+                //
+                // Without the provenance, a till heartbeating on the default because it has
+                // never reached the platform logs the same line as one heartbeating on a
+                // configured interval, so the condition is invisible in exactly the deployment
+                // where it matters.
+                let (interval, provenance) = match policy.get_heartbeat_interval_seconds().await {
+                    PolicyReading::Configured(seconds) => (seconds, "configured by the platform"),
+                    PolicyReading::NotConfigured => (
+                        DEFAULT_HEARTBEAT_INTERVAL_SECONDS as u32,
+                        "default: the platform configured no interval",
+                    ),
+                    PolicyReading::NotEvaluable(reason) => {
+                        warn!("heartbeat interval falling back to the default: {}", reason);
+                        (
+                            DEFAULT_HEARTBEAT_INTERVAL_SECONDS as u32,
+                            "default: this till could not read an interval",
+                        )
+                    }
+                };
+                let interval = interval as u64;
 
-                info!("Starting heartbeat service with {}s interval", interval);
+                info!(
+                    "Starting heartbeat service with {}s interval ({})",
+                    interval, provenance
+                );
                 heartbeat.start(interval, heartbeat_tx).await;
             });
         });
