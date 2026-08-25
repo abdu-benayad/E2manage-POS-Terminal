@@ -129,6 +129,12 @@ pub enum PolicyResult {
     /// Action is allowed but will be audited (enforcement mode is AUDIT)
     Audit(String),
     /// The till could not evaluate the policy, and says so instead of guessing.
+    ///
+    /// The value-reading family says the same thing with
+    /// [`PolicyReading::NotEvaluable`], over the same [`NotEvaluableReason`]. A reader who
+    /// finds one of the two should find the other: they are one commitment applied to the
+    /// two shapes a policy question comes in — *may I do this* and *what did the platform
+    /// configure*.
     NotEvaluable {
         /// The policy that could not be evaluated.
         code: String,
@@ -170,6 +176,72 @@ impl PolicyResult {
             Self::Block(msg) | Self::Warn(msg) | Self::Audit(msg) => Some(msg),
             Self::NotEvaluable { reason, .. } => Some(reason.as_str()),
         }
+    }
+}
+
+/// What an accessor can say about a configured policy value.
+///
+/// The accessor-side twin of [`PolicyResult::NotEvaluable`]. That variant exists so a *check* with
+/// no basis for a verdict says so instead of returning one. This type is the same commitment for
+/// the family that reads *values* — which was left returning a bare `Option` when the checks were
+/// repaired, and so still compressed four distinct states into one absence.
+///
+/// # Why three variants and not two
+///
+/// [`PolicyReading::NotConfigured`] means the till holds its policies and the platform configured
+/// no such rule. That is **an answer**, and a caller may legitimately act on it.
+/// [`PolicyReading::NotEvaluable`] means the till has no basis for one: it has never been online,
+/// or the value does not match the type the platform declared for it.
+///
+/// Folding the two into a single absent case rebuilds the defect this type exists to remove, with
+/// a better name on it. `None` meaning *the platform has decided* and `None` meaning *this till
+/// does not know* is exactly the compression that let a till with no network answer permissively.
+///
+/// # A precedent, not an invention
+///
+/// The same shape already carries this distinction three times here: `PinVerification::Undetermined`
+/// and `HardwareEnrolment::Undetermined` in `pos-models`, and [`crate::PlatformSync`]'s. Each names
+/// *the till could not establish this* as a case a caller must handle, rather than an absence it
+/// may default away.
+///
+/// # There is deliberately no `unwrap_or`
+///
+/// A fallback is a decision, and the point of this type is that the decision is made and visible at
+/// the call site. [`PolicyReading::configured`] exists for a caller that has genuinely concluded
+/// both non-answers mean the same thing to it — and that caller has to write it down.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PolicyReading<T> {
+    /// The platform configured this policy and the till read its value.
+    Configured(T),
+    /// The till holds its policies, and none of them has this code.
+    NotConfigured,
+    /// The till has no basis for an answer.
+    NotEvaluable(NotEvaluableReason),
+}
+
+impl<T> PolicyReading<T> {
+    /// The configured value, for a caller that has decided both non-answers mean the same to it.
+    ///
+    /// Named `configured` rather than `value` or `ok` because what it discards is *why* there is
+    /// no value, and the name should make that discard legible where it happens. A caller reaching
+    /// for this is asserting that *the platform configured no such rule* and *this till does not
+    /// know* lead it to the same behaviour — sometimes true, and it must be said rather than
+    /// assumed by the type.
+    pub fn configured(self) -> Option<T> {
+        match self {
+            Self::Configured(value) => Some(value),
+            Self::NotConfigured | Self::NotEvaluable(_) => None,
+        }
+    }
+
+    /// Whether the till can answer at all — true for both [`PolicyReading::Configured`] and
+    /// [`PolicyReading::NotConfigured`].
+    ///
+    /// **Not the complement of "has a value", and the gap is the point** — the same gap as the one
+    /// between [`PolicyResult::is_allowed`] and [`PolicyResult::is_blocked`]. *The platform
+    /// configured nothing* is knowledge; *this till has never been online* is not.
+    pub fn is_known(&self) -> bool {
+        matches!(self, Self::Configured(_) | Self::NotConfigured)
     }
 }
 
@@ -831,6 +903,54 @@ mod tests {
         assert!(PolicyResult::Warn("noted".to_string()).is_allowed());
         assert!(PolicyResult::Audit("recorded".to_string()).is_allowed());
         assert!(!PolicyResult::Warn("noted".to_string()).is_blocked());
+    }
+
+    /// The three cases a value reading has, and the two questions worth asking of one.
+    ///
+    /// The assertion that matters is the last pair: `NotConfigured` is **known** and
+    /// `NotEvaluable` is not, while both answer `None` to `configured()`. A `PolicyReading`
+    /// collapsed back to two variants would still satisfy every `configured()` assertion here
+    /// and fail these, which is the only reason they are separate lines.
+    #[test]
+    fn a_reading_separates_what_the_platform_decided_from_what_the_till_does_not_know() {
+        let configured: PolicyReading<u32> = PolicyReading::Configured(6);
+        let absent: PolicyReading<u32> = PolicyReading::NotConfigured;
+        let unknown: PolicyReading<u32> =
+            PolicyReading::NotEvaluable(NotEvaluableReason::PoliciesNeverLoaded);
+
+        assert_eq!(configured.clone().configured(), Some(6));
+        assert_eq!(absent.clone().configured(), None);
+        assert_eq!(unknown.clone().configured(), None);
+
+        assert!(configured.is_known(), "a value the platform set is known");
+        assert!(
+            absent.is_known(),
+            "and so is the platform having set nothing — that is an answer"
+        );
+        assert!(
+            !unknown.is_known(),
+            "a till that has never been online knows neither"
+        );
+    }
+
+    /// The reason survives the reading, so a caller can tell *why* it cannot answer.
+    ///
+    /// Without this, `NotEvaluable` would be as uninformative as the `None` it replaces — the
+    /// caller would know the till cannot answer and have nothing to log or show.
+    #[test]
+    fn a_reading_that_cannot_be_evaluated_carries_why() {
+        let unknown: PolicyReading<Decimal> =
+            PolicyReading::NotEvaluable(NotEvaluableReason::ValueDoesNotMatchDeclaredType);
+
+        let PolicyReading::NotEvaluable(reason) = unknown else {
+            panic!("constructed as NotEvaluable");
+        };
+        assert_eq!(reason, NotEvaluableReason::ValueDoesNotMatchDeclaredType);
+        assert_ne!(
+            reason,
+            NotEvaluableReason::PoliciesNeverLoaded,
+            "the reasons are distinguishable, so the assertion above is not vacuous"
+        );
     }
 
     #[tokio::test]
