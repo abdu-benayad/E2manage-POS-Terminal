@@ -579,7 +579,7 @@ impl PolicyService {
         }
     }
 
-    /// Resolves a code to the numeric setting the platform configured for it.
+    /// Resolves a code to the setting the platform configured for it, whatever its type.
     ///
     /// The accessor-side counterpart of [`PolicyService::lookup`], and deliberately **not** built
     /// on it. `lookup` answers *may this proceed*; this answers *what did the platform configure*,
@@ -599,7 +599,16 @@ impl PolicyService {
     /// *never loaded* and for *loaded, absent* alike — deliberately, because that is one answer to
     /// *is there a policy called X* — so an accessor that starts from `get` cannot recover the
     /// distinction afterwards. Asking the standing first is what makes the two separable.
-    fn configured_range(held: &HeldPolicies, code: &str) -> PolicyReading<Decimal> {
+    ///
+    /// `read` says only which shape this question wants; every way of *not* getting one is decided
+    /// here, in one place, for all five value types. That is the point of it being generic: an
+    /// accessor cannot accidentally supply its own permissive answer for a case it forgot, because
+    /// it never sees the cases.
+    fn configured_value<T>(
+        held: &HeldPolicies,
+        code: &str,
+        read: impl FnOnce(&PolicyValue) -> Option<T>,
+    ) -> PolicyReading<T> {
         let Some(policies) = held.loaded() else {
             debug!("cannot read {code}: this till has never loaded its security policies");
             return PolicyReading::NotEvaluable(NotEvaluableReason::PoliciesNeverLoaded);
@@ -610,10 +619,41 @@ impl PolicyService {
             return PolicyReading::NotConfigured;
         };
 
-        match &policy.value {
-            PolicyValue::Range(range) => PolicyReading::Configured(range.configured()),
-            other => PolicyReading::NotEvaluable(Self::unreadable_reason(code, other)),
+        match read(&policy.value) {
+            Some(setting) => PolicyReading::Configured(setting),
+            None => PolicyReading::NotEvaluable(Self::unreadable_reason(code, &policy.value)),
         }
+    }
+
+    /// The numeric setting, in the [`Decimal`] the platform sent.
+    fn configured_range(held: &HeldPolicies, code: &str) -> PolicyReading<Decimal> {
+        Self::configured_value(held, code, |value| match value {
+            PolicyValue::Range(range) => Some(range.configured()),
+            _ => None,
+        })
+    }
+
+    /// The boolean setting, with `false` kept distinct from every way of not having one.
+    ///
+    /// `Configured(false)` is the platform saying *no*, and it is not what a till that has never
+    /// been online answers. The predecessor could not hold that apart: `.unwrap_or(false)` gave
+    /// the same `false` to both.
+    fn configured_flag(held: &HeldPolicies, code: &str) -> PolicyReading<bool> {
+        Self::configured_value(held, code, |value| match value {
+            PolicyValue::Boolean(flag) => Some(*flag),
+            _ => None,
+        })
+    }
+
+    /// The list the platform configured, with the empty list kept distinct from no list.
+    ///
+    /// See [`PolicyService::get_allowed_payment_methods`] for why that separation is the sharpest
+    /// one in this family.
+    fn configured_list(held: &HeldPolicies, code: &str) -> PolicyReading<Vec<String>> {
+        Self::configured_value(held, code, |value| match value {
+            PolicyValue::List(items) => Some(items.clone()),
+            _ => None,
+        })
     }
 
     /// The same reading, narrowed to the whole-number quantity four of these policies are.
@@ -885,25 +925,46 @@ impl PolicyService {
         Self::configured_whole_number(&held, "HEARTBEAT_INTERVAL_SECONDS")
     }
 
-    /// Checks if PCI compliance mode is enabled
-    pub async fn is_pci_compliance_enabled(&self) -> bool {
-        let policies = self.policies.read().await;
-        policies
-            .get("PCI_COMPLIANCE_MODE")
-            .map(|p| matches!(&p.value, PolicyValue::Boolean(true)))
-            .unwrap_or(false)
+    /// Whether the platform has put this till into PCI compliance mode.
+    ///
+    /// # Why this returned `bool` and could not have been right
+    ///
+    /// It was `.unwrap_or(false)` over `matches!(value, Boolean(true))`, so **every** way of not
+    /// having an answer became *compliance mode is off* — the permissive branch. A till that had
+    /// never reached the platform, a till the platform had not configured, and a till holding a
+    /// value that contradicted its declared type all reported the same thing, and no caller could
+    /// tell it was being guessed at, because `bool` has nowhere to say so.
+    ///
+    /// This is the `bcrypt::verify(..).unwrap_or(false)` shape this codebase has already paid once
+    /// to remove: a security question whose error path is indistinguishable from its safe answer.
+    ///
+    /// `Configured(false)` now means *the platform says no* and nothing else.
+    pub async fn is_pci_compliance_enabled(&self) -> PolicyReading<bool> {
+        let held = self.policies.read().await;
+        Self::configured_flag(&held, "PCI_COMPLIANCE_MODE")
     }
 
-    /// Gets allowed payment methods
-    pub async fn get_allowed_payment_methods(&self) -> Vec<String> {
-        let policies = self.policies.read().await;
-        policies
-            .get("ALLOWED_PAYMENT_METHODS")
-            .map(|p| match &p.value {
-                PolicyValue::List(values) => values.clone(),
-                _ => Vec::new(),
-            })
-            .unwrap_or_default()
+    /// Which payment methods the platform permits at this till.
+    ///
+    /// # The empty list is the subtle one
+    ///
+    /// [`PolicyService::check_list`] reads an empty allow-list as *permit everything*, and **that
+    /// is correct there**: `lookup` and `cannot_read` divert never-loaded, absent and unreadable
+    /// *before* the `is_empty()` test, so by the time it runs, empty can only mean the platform
+    /// explicitly configured `{"allowed": []}` — a rule it is entitled to declare.
+    ///
+    /// This accessor bypassed all of that. `.unwrap_or_default()` over a `_ => Vec::new()` meant
+    /// its `[]` carried four meanings where `check_list`'s carries one: explicitly empty, never
+    /// loaded, unconfigured, and unreadable. Read under the same *empty permits everything*
+    /// convention — which is the only convention this codebase has for an empty allow-list — an
+    /// offline till permitted every payment method there is.
+    ///
+    /// After this, `Configured(vec![])` means exactly what `check_list`'s empty means and nothing
+    /// else. That sentence is the whole issue: the accessors now go through the discipline that
+    /// made the check family honest.
+    pub async fn get_allowed_payment_methods(&self) -> PolicyReading<Vec<String>> {
+        let held = self.policies.read().await;
+        Self::configured_list(&held, "ALLOWED_PAYMENT_METHODS")
     }
 
     /// How long this till should keep receipts before discarding them.
@@ -1394,6 +1455,29 @@ mod tests {
         }
     }
 
+    fn flag_policy(code: &str, setting: bool) -> SecurityPolicy {
+        SecurityPolicy {
+            code: code.to_string(),
+            category: SecurityCategory::Authentication,
+            policy_type: PolicyType::Boolean,
+            policy_value: json!(setting),
+            enforcement_mode: EnforcementMode::Block,
+        }
+    }
+
+    /// The value goes in whole, wrapper included: the platform sends `{"allowed": [...]}` and a
+    /// bare array is deliberately refused, so a fixture that took the items and wrapped them for
+    /// the caller would be testing a shape the platform does not send.
+    fn list_policy(code: &str, value: serde_json::Value) -> SecurityPolicy {
+        SecurityPolicy {
+            code: code.to_string(),
+            category: SecurityCategory::Payment,
+            policy_type: PolicyType::List,
+            policy_value: value,
+            enforcement_mode: EnforcementMode::Block,
+        }
+    }
+
     async fn service_holding(policies: Vec<SecurityPolicy>) -> PolicyService {
         let service = create_test_service();
         service
@@ -1599,6 +1683,128 @@ mod tests {
         assert_eq!(
             service.get_min_pin_length().await,
             PolicyReading::NotConfigured
+        );
+    }
+
+    /// Compliance mode being *off* and this till not knowing are no longer the same answer.
+    ///
+    /// The predecessor was `.unwrap_or(false)` over `matches!(value, Boolean(true))`, so a till
+    /// that had never reached the platform reported *compliance mode is off* — the permissive
+    /// branch — and `bool` gave the caller nowhere to learn it was a guess.
+    ///
+    /// All three controls are here, and the third is the one that matters: without a *loaded but
+    /// absent* case, a resolver that never separated absence from ignorance would pass the other
+    /// two and have rebuilt the defect under a better type.
+    #[tokio::test]
+    async fn compliance_mode_off_is_not_the_same_answer_as_a_till_that_cannot_say() {
+        let never_loaded = create_test_service();
+        assert_eq!(
+            never_loaded.is_pci_compliance_enabled().await,
+            PolicyReading::NotEvaluable(NotEvaluableReason::PoliciesNeverLoaded)
+        );
+
+        let loaded_without_it = service_holding(vec![]).await;
+        assert_eq!(
+            loaded_without_it.is_pci_compliance_enabled().await,
+            PolicyReading::NotConfigured,
+            "the platform configuring no compliance policy is an answer, not ignorance"
+        );
+        assert_ne!(
+            loaded_without_it.is_pci_compliance_enabled().await,
+            PolicyReading::NotEvaluable(NotEvaluableReason::PoliciesNeverLoaded),
+            "and it is a different answer from the one above it"
+        );
+
+        // Both settings reach `Configured`, so a resolver broken to answer `NotEvaluable` for
+        // everything cannot satisfy this test — and `false` is pinned as a real answer rather
+        // than being the shape every failure also produces.
+        let off = service_holding(vec![flag_policy("PCI_COMPLIANCE_MODE", false)]).await;
+        assert_eq!(
+            off.is_pci_compliance_enabled().await,
+            PolicyReading::Configured(false)
+        );
+
+        let on = service_holding(vec![flag_policy("PCI_COMPLIANCE_MODE", true)]).await;
+        assert_eq!(
+            on.is_pci_compliance_enabled().await,
+            PolicyReading::Configured(true)
+        );
+
+        let unreadable = service_holding(vec![SecurityPolicy {
+            code: "PCI_COMPLIANCE_MODE".to_string(),
+            category: SecurityCategory::Authentication,
+            policy_type: PolicyType::Boolean,
+            policy_value: json!("yes please"),
+            enforcement_mode: EnforcementMode::Block,
+        }])
+        .await;
+        assert_eq!(
+            unreadable.is_pci_compliance_enabled().await,
+            PolicyReading::NotEvaluable(NotEvaluableReason::ValueDoesNotMatchDeclaredType)
+        );
+    }
+
+    /// An empty allow-list means what `check_list` means by it, and only that.
+    ///
+    /// `check_list` reads empty as *permit everything*, correctly: `lookup` and `cannot_read`
+    /// divert never-loaded, absent and unreadable before its `is_empty()` runs. The accessor
+    /// bypassed all of it, so its `[]` carried four meanings under a convention written for one —
+    /// an offline till permitting every payment method there is.
+    ///
+    /// The assertions below are what pins that: three non-answers, none of them `Configured`, and
+    /// an explicitly empty list that **is**.
+    #[tokio::test]
+    async fn an_empty_allow_list_is_only_ever_one_the_platform_configured() {
+        let never_loaded = create_test_service();
+        assert_eq!(
+            never_loaded.get_allowed_payment_methods().await,
+            PolicyReading::NotEvaluable(NotEvaluableReason::PoliciesNeverLoaded)
+        );
+
+        let loaded_without_it = service_holding(vec![]).await;
+        assert_eq!(
+            loaded_without_it.get_allowed_payment_methods().await,
+            PolicyReading::NotConfigured
+        );
+        assert_ne!(
+            loaded_without_it.get_allowed_payment_methods().await,
+            PolicyReading::NotEvaluable(NotEvaluableReason::PoliciesNeverLoaded),
+            "unconfigured and unknown are separable, which is the third control"
+        );
+
+        let unreadable = service_holding(vec![SecurityPolicy {
+            code: "ALLOWED_PAYMENT_METHODS".to_string(),
+            category: SecurityCategory::Payment,
+            policy_type: PolicyType::List,
+            policy_value: json!({"not": "a list"}),
+            enforcement_mode: EnforcementMode::Block,
+        }])
+        .await;
+        assert_eq!(
+            unreadable.get_allowed_payment_methods().await,
+            PolicyReading::NotEvaluable(NotEvaluableReason::ValueDoesNotMatchDeclaredType)
+        );
+
+        // None of the three above is `Configured(vec![])`, and this is. That is the separation the
+        // whole accessor family exists for, stated once against the case it was worst at.
+        let deliberately_empty = service_holding(vec![list_policy(
+            "ALLOWED_PAYMENT_METHODS",
+            json!({"allowed": []}),
+        )])
+        .await;
+        assert_eq!(
+            deliberately_empty.get_allowed_payment_methods().await,
+            PolicyReading::Configured(vec![])
+        );
+
+        let configured = service_holding(vec![list_policy(
+            "ALLOWED_PAYMENT_METHODS",
+            json!({"allowed": ["CASH", "CARD"]}),
+        )])
+        .await;
+        assert_eq!(
+            configured.get_allowed_payment_methods().await,
+            PolicyReading::Configured(vec!["CASH".to_string(), "CARD".to_string()])
         );
     }
 
