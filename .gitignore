@@ -54,3 +54,10 @@ wadi-pos-terminal-linux
 # unpinned graph makes the artifact change without anyone changing an expectation
 # — and a diff that is noisy every time is a diff nobody reads.
 !/crates/pos-contract/Cargo.lock
+
+# egui_kittest snapshot artifacts. The reference `.png` files ARE committed — they are the
+# assertion. These three are per-run output written beside them on a mismatch, and a clean tree
+# says nothing about whether the comparison passed: the detector is the test's own pass/fail.
+tests/snapshots/*.new.png
+tests/snapshots/*.diff.png
+tests/snapshots/*.old.png

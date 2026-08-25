@@ -100,17 +100,67 @@ not taken here only because `pos-db` was mid-refactor in another lane at the tim
 ## Snapshot tests
 
 ```bash
-cargo test -p e2manage-pos-terminal --features image-snapshots
+./scripts/verify.sh snapshots        # the lane; asserts a non-zero test count
 ```
+
+The lane wraps this, and the wrapper is the part that matters:
+
+```bash
+cargo test --features image-snapshots --test sign_in_both_directions -- snapshot_
+```
+
+A cargo test filter is a literal substring with no alternation, and **one that selects nothing
+exits 0 and prints `ok`**. So the lane sums the `N passed` across the run and fails if it is zero;
+a renamed test or a `#[cfg]` that stopped matching turns this into a green over nothing otherwise.
 
 The feature is declared on **this** crate as well as on the library, because a feature is
 selected on the crate under test: without the local declaration the command fails with *"none of
-the selected packages contains these features"* and never reaches a test.
+the selected packages contains these features"* and never reaches a test. It forwards to
+`abdu-egui-ui-testing/image-snapshots`, which pulls the wgpu stack and needs a Vulkan rasterizer
+present — lavapipe (`mesa-vulkan-drivers`) is what the committed references were rendered with.
+The lane treats a missing ICD as a named skip rather than a failure; nothing else is tolerated.
 
-`kittest.toml` beside the root manifest is a verbatim copy of the library's, comments included.
-It carries the comparison tolerance and — more usefully — the measurements behind it: what the
-two knobs actually do, and which class of defect they cannot catch at any setting. It ships with
-the first snapshot test rather than after the first spurious failure.
+### The test vocabulary is a dev-dependency, not a local helper
+
+```toml
+[dev-dependencies]
+abdu-egui-ui-testing = { path = "../abdu-egui-ui/abdu-egui-ui-testing" }
+```
+
+`egui_kittest` stays declared directly beside it, because the tests call its API themselves — the
+vocabulary crate deliberately wraps no query, click or key verb. What it adds is the two things
+kittest cannot know: it calls `TextEngine::validate` at harness construction and panics if no face
+resolved (without which a suite goes green over a screen with no visible text), and `wgpu_builder`
+keeps one renderer resident, which avoids a SIGSEGV from racing the Vulkan loader's ICD unload —
+the crash that otherwise gets filed as a lavapipe flake and is not one.
+
+Its guide is `abdu-egui-ui/docs/testing-consumers.md`.
+
+### `kittest.toml` is calibrated here, and must not be replaced with the library's
+
+It was a byte-identical copy of the sibling's until 2026-08-25 — including its threshold of 50,
+calibrated against ~300 text-heavy references, and prose citing two source files that have never
+existed in this repository. This corpus has six references. Measured fresh:
+
+| bracket | counted pixels | how |
+| --- | --- | --- |
+| floor | **0** | two renders byte-identical; re-comparing at `failed_pixel_count_threshold = 0` passes, so the zero is the comparator's and not `md5sum`'s |
+| smallest real break | **244** | `Reading::is_rtl` forced to `false` — the layout mirror stops while the text stays Arabic. The other two RTL references moved 81,546 and 234,107; the three LTR ones correctly did not move |
+
+Set to **20**. The floor is same-machine, same-driver, and one machine cannot sample the
+cross-Mesa-version drift this knob exists to absorb — the file records that as a borrowed
+assumption rather than a reading taken here.
+
+Keep the file even though it holds one line of configuration: kittest's config search walks to the
+filesystem root **with no workspace boundary**, so deleting it silently inherits whichever ancestor
+directory happens to hold one, with nothing reporting which.
+
+### Open every PNG before committing it
+
+`UPDATE_SNAPSHOTS=1` has no oracle and prints `ok` over whatever it rendered. Both defects found on
+2026-08-25 — egui's dark chrome behind light library surfaces, and a wire token (`SUPERVISOR`)
+rendered under an Arabic name — were found by looking at the pictures. Neither was visible to any
+assertion in the suite, and the second one the assertions actively *agreed with*.
 
 ## `Cargo.lock` is not committed, and that is a decision awaiting Abdu
 

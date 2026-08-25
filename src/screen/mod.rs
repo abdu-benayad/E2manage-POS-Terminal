@@ -18,7 +18,8 @@
 //! treatment that does not silently drop one.
 
 use abdu_egui_ui::enums::{ScaleStep, TextOverflow, Tone, TypeRole};
-use abdu_egui_ui::{Button, Code, Label, Spinner};
+use abdu_egui_ui::tokens::EguiCoherence;
+use abdu_egui_ui::{Button, Code, Environment, Label, Locale, Spinner};
 use pos_models::HardwareEnrolment;
 
 use crate::ui::sign_in::{AuthPhase, Intent, Sentence};
@@ -178,4 +179,64 @@ pub(crate) fn render_code(ui: &mut egui::Ui, code: &str) {
             .size(ScaleStep::Display)
             .tone(Tone::Default),
     );
+}
+
+// ============================================================================
+// The chrome the till runs in
+// ============================================================================
+
+/// The till's presentation, with no locale bound to it yet.
+///
+/// # Why `AlignSelector` is here and not left at the default
+///
+/// The library keeps a deliberate quarantine: `Environment::install` writes its own tokens and
+/// **never** egui's [`egui::Visuals`] or theme preference, which are the host's to own. Left at the
+/// default [`EguiCoherence::Manual`], egui's preference follows the operating system and *falls
+/// back to dark when there is no signal* — which is what a till on an embedded box with no desktop
+/// session is. The result is light library surfaces, correct in themselves, floating on egui's dark
+/// panel fill, with no diagnostic anywhere.
+///
+/// That was shipping. It was invisible to every assertion in `tests/sign_in_both_directions.rs`,
+/// because a panel's fill colour reaches no accessibility node; the first snapshot rendered showed
+/// a black band behind white cards and that is how it was found.
+///
+/// # Why this is a function the tests call rather than a value they restate
+///
+/// A snapshot photographs whatever environment it is handed. Had the test built its own
+/// `Environment::light()`, it would have pinned a configuration the binary does not use and gone on
+/// passing while the real till was wrong — the defect above, with a green suite over it.
+pub fn chrome() -> Environment {
+    Environment::light().egui_coherence(EguiCoherence::AlignSelector)
+}
+
+/// The till's presentation for one locale.
+pub fn environment(locale: &str) -> Environment {
+    chrome().locale(Locale {
+        current: locale.to_owned(),
+        rtl: reads_right_to_left(locale),
+        ..Locale::default()
+    })
+}
+
+/// Installs [`environment`] into a context.
+///
+/// Idempotent by the library's own contract — each token overwrites its slot in the context — so
+/// this is also the path a locale *change* takes. There is no separate replace call.
+pub fn install_environment(context: &egui::Context, locale: &str) {
+    environment(locale).install(context);
+}
+
+/// Whether a language tag is written right to left.
+///
+/// A short list rather than a library: these are the scripts this product ships into, and a wrong
+/// answer here mirrors an entire screen. Matching is on the language subtag, so `ar-SA` and `ar`
+/// agree.
+pub fn reads_right_to_left(locale: &str) -> bool {
+    let language = locale
+        .split(['-', '_'])
+        .next()
+        .unwrap_or(locale)
+        .to_ascii_lowercase();
+
+    matches!(language.as_str(), "ar" | "he" | "fa" | "ur")
 }

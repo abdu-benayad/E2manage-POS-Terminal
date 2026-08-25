@@ -1,53 +1,51 @@
-# egui_kittest snapshot comparison config (read by the `image-snapshots` feature).
+# egui_kittest snapshot comparison config, read by the `image-snapshots` feature.
 #
-# Why this file exists — the "lavapipe drift" that failed 9 snapshots every session:
+# ── This number is measured here. Do not copy one in, and do not copy this one out. ──
 #
-# Snapshots render through wgpu. egui_kittest 0.34 already prefers a CPU adapter,
-# so the renderer is Mesa's lavapipe (software Vulkan) here — forcing it with
-# VK_ICD_FILENAMES / WGPU_BACKEND changes nothing; it is already selected. But
-# lavapipe's glyph rasterization shifts by a few antialiased edge pixels between
-# Mesa *versions*. The committed reference PNGs were generated on one Mesa version;
-# a machine (or CI) on another version diffs by 1-6 pixels on text edges — pure
-# renderer noise, no layout change. At the egui_kittest default
-# (`failed_pixel_count_threshold = 0`) a single such pixel is a hard failure, which
-# is why the references appeared to need regenerating in every session. Regenerating
-# only moves the drift to the next Mesa version; it is not a fix.
+# A pixel threshold is a property of the *pictures it guards*, not of the tool. The file that
+# stood here until 2026-08-25 was a byte-identical copy of `abdu-egui-ui`'s, carrying its 50 and
+# its prose — including citations to `src/text/mark_acuity_probe.rs` and `src/text/paint.rs`,
+# which are files in that repository and have never existed in this one. Its 50 was calibrated
+# against ~300 text-heavy references. This corpus has six.
 #
-# These snapshots exist to catch *geometric* RTL regressions (a slot that stops
-# mirroring, a status dot on the wrong edge, alignment that fails to flip). Measured
-# floor of such a regression on this suite is 663 pixels, with most at 4000-6500 (a
-# failed mirror makes the RTL render equal the LTR one); several pairs even differ in
-# image size, which fails regardless of any threshold. Observed cross-version noise
-# tops out at 6 pixels. The tolerance below sits an order of magnitude above the
-# noise and an order of magnitude below the smallest real regression, so version
-# drift is absorbed while every genuine geometric break still fails.
+# ── The bracket, measured 2026-08-25 on this machine, lavapipe (Mesa software Vulkan) ──
 #
-# `threshold` (per-pixel perceptual sensitivity) stays at kittest's default 0.6, and only
-# the *count* is relaxed, and only on Linux, where the software rasterizer runs.
+#   floor   0 counted pixels.  Two consecutive renders of all six references are byte-identical,
+#                              and re-comparing at `failed_pixel_count_threshold = 0` passes — so
+#                              the zero is the comparator's, not just `md5sum`'s.
+#   break 244 counted pixels.  `Reading::is_rtl` forced to `false` — the layout mirror stops
+#                              while the text stays Arabic, which is exactly the regression class
+#                              these references exist to catch. The three RTL references diverged
+#                              by 244 (operators), 81,546 (pairing) and 234,107 (pin entry); the
+#                              three LTR ones correctly did not move at all.
 #
-# Two things this file used to claim about that default, both measured false on 2026-08-12
-# (`src/text/mark_acuity_probe.rs`; it asserts what follows, so this is not prose alone):
+# 20 sits an order of magnitude below the smallest break and absorbs roughly three times the
+# worst cross-Mesa glyph drift the sibling repo has observed (6 counted pixels over ~300
+# references). `threshold` stays at kittest's default.
 #
-#   1. *"0.6 is strict, so each counted pixel must still be perceptibly wrong."* dify computes
-#      its gate as `35215 * t * t`, so 0.6 admits a squared YIQ delta of 12677 out of 35215 —
-#      36 % of the maximum, against dify's own CLI default of 0.1. It is lax, not strict. It is
-#      also *inert* on real diffs from this suite: 0.6, 0.1 and 0.0 return byte-identical counts
-#      on all 28 references the Arabic mark fix changed. Whatever discriminating happens here,
-#      this number is not doing it.
+# ── What the floor above does NOT establish ──
 #
-#   2. *"only the count is relaxed."* The count is not the first filter — it is the last one.
-#      `egui_kittest` calls `dify::diff::get_results(previous, new, threshold, true, …)`, and
-#      that fourth argument is `detect_anti_aliased_pixels`: dify classifies such a pixel
-#      `AntiAliased` and **does not count it**. It is hardcoded in kittest and unreachable from
-#      this file. On those 28 references it discards a median 83 % of the changed pixels — 26 of
-#      the 28 exceed 50 *raw* changed pixels while only 6 exceed it as counted.
+# It is a *same-machine, same-driver* zero. The drift this knob exists to absorb appears between
+# Mesa **versions**, and one machine cannot sample that. So the lower bracket is an assumption
+# borrowed from the sibling repo's measurement, not a reading taken here, and the first CI host
+# or driver bump is the real measurement. If these six start failing together with small counts,
+# that is the floor arriving — raise this number and record the new reading; do not regenerate the
+# references, which only moves the drift to the next version.
 #
-# So read every number above — the 6 px of drift, the 663 px floor — as *post-AA-discard* counts.
-# That is the right calibration for a geometric break, which moves whole filled regions. It is the
-# wrong instrument for anything made entirely of antialiased edge: a glyph mark displaced a few
-# pixels is 2–4 counted pixels at 1×, i.e. under the drift floor, and no value of the two knobs in
-# this file can separate it. Such a defect needs an assertion, not a reference image — which is
-# where the mark-attachment guard lives (`src/text/paint.rs`), and why.
+# ── Two properties of the comparator worth knowing before trusting any number above ──
+#
+#   * The counts are *post-antialias-discard*. `egui_kittest` passes
+#     `detect_anti_aliased_pixels = true` to dify, hardcoded and unreachable from this file, so
+#     pixels dify classifies as antialiased are never counted.
+#   * Consequently this instrument is blind to anything made entirely of antialiased edge. A
+#     glyph mark displaced two pixels lands under any usable floor. Such a defect needs an
+#     assertion, not a reference image.
+#
+# ── The file is kept even though it holds one line of configuration ──
+#
+# kittest's config search walks to the filesystem root with no workspace boundary. Delete this
+# and the crate silently inherits whichever ancestor directory happens to hold a `kittest.toml` —
+# `/home/abdu/Downloads/abdu-egui-ui`'s, among others — and nothing reports which one was used.
 
 [linux]
-failed_pixel_count_threshold = 50
+failed_pixel_count_threshold = 20

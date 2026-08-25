@@ -15,9 +15,8 @@ mod driver;
 
 use std::process::ExitCode;
 
-use abdu_egui_ui::{Environment, Locale};
 use driver::{data_directory, AuthDriver, StartupFailure, TillServices};
-use e2manage_pos_terminal::screen::{self, Reading};
+use e2manage_pos_terminal::screen::{self, install_environment, reads_right_to_left, Reading};
 use e2manage_pos_terminal::ui::sign_in::{
     advance, apply, AuthEnquiry, AuthPhase, EnquiryIds, EnquiryKind, PendingEnquiry,
 };
@@ -122,35 +121,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     Ok(())
-}
-
-/// Installs the component library's tokens for one locale.
-///
-/// Idempotent by the library's own contract — each token overwrites its slot in the context — so
-/// this is also the path a locale *change* takes. There is no separate replace call.
-fn install_environment(context: &egui::Context, locale: &str) {
-    Environment::light()
-        .locale(Locale {
-            current: locale.to_owned(),
-            rtl: reads_right_to_left(locale),
-            ..Locale::default()
-        })
-        .install(context);
-}
-
-/// Whether a language tag is written right to left.
-///
-/// A short list rather than a library: these are the scripts this product ships into, and a wrong
-/// answer here mirrors an entire screen. Matching is on the language subtag, so `ar-SA` and `ar`
-/// agree.
-fn reads_right_to_left(locale: &str) -> bool {
-    let language = locale
-        .split(['-', '_'])
-        .next()
-        .unwrap_or(locale)
-        .to_ascii_lowercase();
-
-    matches!(language.as_str(), "ar" | "he" | "fa" | "ur")
 }
 
 /// The application: one phase, one driver.

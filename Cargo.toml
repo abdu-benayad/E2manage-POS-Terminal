@@ -218,7 +218,15 @@ hardware = ["serialport"]
 # --features image-snapshots` fails with "none of the selected packages contains
 # these features" without this line, and never reaches a test. Logic and AccessKit
 # tests run without it.
-image-snapshots = ["egui_kittest/wgpu", "egui_kittest/snapshot"]
+image-snapshots = [
+    "egui_kittest/wgpu",
+    "egui_kittest/snapshot",
+    # Forwarded, not merely enabled here: the testing crate gates its own snapshot helpers
+    # behind this name, and without the forward `snapshot_each_direction` and friends are
+    # simply absent from its public surface — an unresolved-import error rather than a
+    # missing-feature one, which reads as the wrong problem.
+    "abdu-egui-ui-testing/image-snapshots",
+]
 encrypted-db = []
 face-recognition = []
 
@@ -268,3 +276,20 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 # library's `0.34` line; `kittest.toml` beside this manifest carries the comparison
 # tolerance and the reasoning for it.
 egui_kittest = "0.34"
+
+# The component library's RTL and snapshot vocabulary, published as its own workspace member.
+#
+# `abdu-egui-ui`'s `src/test_support.rs` is a `#[cfg(test)] mod` whose items are `pub(crate)`, so
+# it ships in no artifact and a consumer cannot reach it. This crate is what a consumer gets
+# instead, and using it retires the "write a thin local helper" instruction this task carried:
+# that instruction's premise was that no public surface existed, and it now does.
+#
+# Two things it does that a hand-rolled harness here would not have:
+#
+#   - every harness calls `TextEngine::validate` at construction and panics if no face resolved
+#     for a text role. Without it the shaper resolves nothing, every widget paints blank, and the
+#     AccessKit assertions below still pass — a green suite over a screen with no text on it.
+#   - `wgpu_builder` keeps one renderer resident for the test process. A fresh wgpu instance per
+#     harness races the Vulkan loader's ICD unload and kills the process with SIGSEGV under
+#     parallel tests, which reads as a lavapipe flake and is not one.
+abdu-egui-ui-testing = { path = "../abdu-egui-ui/abdu-egui-ui-testing" }

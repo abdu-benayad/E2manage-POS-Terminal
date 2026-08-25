@@ -4,6 +4,7 @@
 #
 #   ./scripts/verify.sh quick [crate …]   per-task: fmt, clippy + tests for what you touched,
 #                                         ALWAYS plus the root package (where the guards live)
+#   ./scripts/verify.sh snapshots         the geometric RTL references (needs a Vulkan rasterizer)
 #   ./scripts/verify.sh sweep             every lane, including the crates --workspace cannot see
 #   ./scripts/verify.sh lanes             show the lanes and their commands
 #
@@ -49,12 +50,16 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO"
 
 readonly ROOT_PACKAGE="e2manage-pos-terminal"
+# The snapshot lane's target and filter. Named here rather than inline so `lanes` can print
+# them and a rename has one place to happen.
+readonly SNAPSHOT_TARGET="sign_in_both_directions"
+readonly SNAPSHOT_FILTER="snapshot_"
 readonly LOCK_TIMEOUT=900
 
 # ── The lock, taken once ────────────────────────────────────────────────────────────────
 # Only the lanes that actually run cargo take the lock. `lanes` is pure text, and a help
 # command that queues behind another lane's ten-minute sweep is a help command nobody runs.
-if [[ -z "${VERIFY_SH_HOLDS_CARGO_LOCK:-}" && ( "${1:-}" == "quick" || "${1:-}" == "sweep" ) ]]; then
+if [[ -z "${VERIFY_SH_HOLDS_CARGO_LOCK:-}" && ( "${1:-}" == "quick" || "${1:-}" == "sweep" || "${1:-}" == "snapshots" ) ]]; then
     export VERIFY_SH_HOLDS_CARGO_LOCK=1
     set +e
     lane-lock cargo --timeout "$LOCK_TIMEOUT" -- "$0" "$@"
@@ -136,6 +141,61 @@ lane_excluded() {
     return "$status"
 }
 
+# The geometric snapshot lane.
+#
+# Separate from `quick` because it costs what the others do not: the `image-snapshots` feature
+# pulls a wgpu stack into the test build and needs a Vulkan rasterizer present (lavapipe here).
+# Layer 1 in the same file needs neither, and runs in `quick` with everything else.
+#
+# THE COUNT ASSERTION IS THE POINT OF THIS FUNCTION, not decoration. A cargo test filter is a
+# literal substring with no alternation, and one that selects nothing **exits 0 and prints
+# `ok`** — so a renamed test, or a `#[cfg(feature)]` that stopped matching, silently converts
+# this lane into a green that ran nothing. That is the exact failure `pos-contract` spent five
+# task verifications in, one layer down.
+lane_snapshots() {
+    local label="snapshots"
+    echo "── ${label}"
+    echo "   \$ cargo test --features image-snapshots --test ${SNAPSHOT_TARGET} ${SNAPSHOT_FILTER}"
+
+    local output status
+    set +e
+    output="$( cargo test --features image-snapshots --test "$SNAPSHOT_TARGET" \
+                   -- "$SNAPSHOT_FILTER" 2>&1 )"
+    status=$?
+    set -e
+
+    # A host with no Vulkan ICD cannot render, and that is an environment fact rather than a
+    # regression — the one tolerated failure here, named, exactly as pos-updater's OpenSSL is.
+    if (( status != 0 )) && grep -Eq -- "no Vulkan|No adapter|Failed to create render state|VK_ERROR_INCOMPATIBLE_DRIVER" <<<"$output"; then
+        echo "   skipped: no Vulkan rasterizer on this host (install mesa-vulkan-drivers for lavapipe)"
+        SKIPPED+=("${label} — no Vulkan rasterizer on this host")
+        return 0
+    fi
+
+    if (( status != 0 )); then
+        echo "$output" >&2
+        echo "verify.sh: ${label} FAILED (exit ${status})." >&2
+        return "$status"
+    fi
+
+    # Sum the `N passed` across every `test result:` line rather than trusting the exit code.
+    local ran
+    ran="$( grep -oE '^test result: ok\. [0-9]+ passed' <<<"$output" \
+            | grep -oE '[0-9]+' | paste -sd+ - | bc )"
+    ran="${ran:-0}"
+
+    if (( ran == 0 )); then
+        echo "$output" >&2
+        echo "verify.sh: ${label} exited 0 having run NO test." >&2
+        echo "  The filter '${SNAPSHOT_FILTER}' selected nothing in --test ${SNAPSHOT_TARGET}." >&2
+        echo "  A cargo filter that matches nothing still exits 0; that is why this is checked." >&2
+        return 1
+    fi
+
+    echo "   ${ran} snapshot test(s) ran"
+    PASSED+=("${label} (${ran} test(s))")
+}
+
 lane_excluded_crates() {
     lane_excluded "crates/pos-contract" "" "" cargo test
     # pos-updater pulls reqwest 0.11 with default features, so it links native-tls and needs
@@ -196,23 +256,31 @@ cmd_sweep() {
     lane_workspace
     lane_root_package
     lane_excluded_crates
+    lane_snapshots
+    summarise
+}
+
+cmd_snapshots() {
+    lane_snapshots
     summarise
 }
 
 
 cmd_lanes() {
-    sed -n '3,8p' "$0"
+    sed -n '3,9p' "$0"
     echo
     echo "  quick lanes:  fmt · clippy/test per named crate · root package (guards, always)"
-    echo "  sweep lanes:  fmt · clippy+test --workspace · root package · each excluded crate"
+    echo "  sweep lanes:  fmt · clippy+test --workspace · root package · each excluded crate · snapshots"
+    echo "  snapshots:    cargo test --features image-snapshots --test '"$SNAPSHOT_TARGET"' -- '"$SNAPSHOT_FILTER"'"
     echo
     echo "  Excluded crates, which no --workspace command can see:"
     excluded_crates | sed 's/^/    /'
 }
 
 case "${1:-}" in
-    quick)  shift; cmd_quick "$@" ;;
-    sweep)  cmd_sweep ;;
+    quick)      shift; cmd_quick "$@" ;;
+    sweep)      cmd_sweep ;;
+    snapshots)  cmd_snapshots ;;
     lanes)  cmd_lanes ;;
-    *)      sed -n '3,8p' "$0" >&2; exit 2 ;;
+    *)      sed -n '3,9p' "$0" >&2; exit 2 ;;
 esac

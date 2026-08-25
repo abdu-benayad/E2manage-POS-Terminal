@@ -237,12 +237,32 @@ pub const CHECKING: Sentence = Sentence::new("جارٍ التحقق…", "Checki
 /// outcome but a wrong PIN can produce.
 pub const ATTEMPTS_REMAINING: Sentence = Sentence::new("محاولات متبقية", "attempts remaining");
 
+// ============================================================================
+// What an operator is
+// ============================================================================
+//
+// The card under a name used to render `OperatorRole::to_string()`, which is `as_wire_str` —
+// documented in `pos-models` as "the spelling the server and the store both use". That is a
+// *protocol* token, and it reached the shop floor: an Arabic till showed `SUPERVISOR` in Latin
+// capitals under an Arabic name. Naming the three here puts the roles where every other
+// user-facing string in this screen already lives, and makes the wire spelling unreachable from
+// the view by construction rather than by review.
+
+/// Rings sales, and is granted nothing else by default.
+pub const CASHIER: Sentence = Sentence::new("أمين صندوق", "Cashier");
+
+/// Rings sales and authorises a cashier's voids, refunds and discounts.
+pub const SUPERVISOR: Sentence = Sentence::new("مشرف", "Supervisor");
+
+/// A supervisor who may also reach the till's settings.
+pub const MANAGER: Sentence = Sentence::new("مدير", "Manager");
+
 /// Every sentence in this module, for tests that must enumerate rather than reach.
 ///
 /// **This is the witness for step 14's both-directions sweep.** A sentence absent from this array
 /// is invisible to that sweep, so a test asserts the array's length against the number of
 /// distinct sentences declared here.
-pub const EVERY_SENTENCE: [Sentence; 27] = [
+pub const EVERY_SENTENCE: [Sentence; 30] = [
     WRONG_PIN,
     LOCKED,
     OPERATOR_UNKNOWN,
@@ -270,4 +290,7 @@ pub const EVERY_SENTENCE: [Sentence; 27] = [
     SIGN_IN,
     CHECKING,
     ATTEMPTS_REMAINING,
+    CASHIER,
+    SUPERVISOR,
+    MANAGER,
 ];

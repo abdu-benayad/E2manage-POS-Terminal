@@ -192,6 +192,63 @@ right: `hardware_id` is not an error. The probe was wrong. Read a non-firing mut
 about the probe first and about the guard second, or you will weaken a correct predicate to make a
 bad probe pass.
 
+## A green suite over the wrong picture — 2026-08-25
+
+`tests/sign_in_both_directions.rs` asserted, in both reading directions, every sentence the
+sign-in screen shows, every operator name in the script being read, that a refused PIN and an
+undecided one share no words, and that a verification in flight offers no way out. Eight tests,
+all green, all correct.
+
+The screen was rendering **light widgets on a black panel**, and the heading was invisible on two
+of the five phases. The first reference image taken showed it immediately.
+
+**Why every assertion missed it.** They read the AccessKit tree. A panel's fill colour, a text
+colour, and the contrast between them reach **no accessibility node** — so there is no query that
+could have failed. This is not a gap in the tests; it is the boundary of the instrument, and the
+whole reason a second layer exists.
+
+**The mechanism, which is a live trap for any consumer of `abdu-egui-ui`.** The library keeps a
+deliberate quarantine: `Environment::install` writes its own tokens and never egui's `Visuals` or
+theme preference, which are documented as the host's to own. Left at the default
+`EguiCoherence::Manual`, egui's preference follows the operating system and **falls back to dark
+when there is no signal** — which is what a till on an embedded box is, and what a headless test
+harness is. The library's own widgets were correct throughout; egui's chrome behind them was not.
+The fix is one builder call, `.egui_coherence(EguiCoherence::AlignSelector)`, and the defect is
+invisible without a picture.
+
+**The second half, and the more general one.** The snapshot would have been just as blind if it
+had built its own `Environment::light()`. It would then have photographed a configuration
+**the binary does not use**, gone green, and certified nothing — a fixture composed from what the
+app *ought* to be set to rather than from what it *is*. So the chrome moved out of `src/main.rs`
+into `screen::chrome()`, one function, called by the binary and by every test. A test that
+restates its subject's configuration tests itself; this is that failure wearing pixels.
+
+**And a reference image is not self-certifying either.** `UPDATE_SNAPSHOTS=1` prints `ok` over
+whatever it rendered — it has no oracle, so a cropped capture, a legibility artifact and a correct
+render are the same output. The six references here were opened and looked at, which is how the
+black chrome was found, and how a *second* defect was found in the same glance: the operator card
+was rendering `OperatorRole::to_string()`, which is `as_wire_str` — documented in `pos-models` as
+"the spelling the server and the store both use". An Arabic till was showing `SUPERVISOR` in Latin
+capitals under an Arabic name. Layer 1 could not see that one either, and for a sharper reason
+than the chrome: the accessibility tree carried **the string the screen actually drew**, so an
+assertion about it would have agreed with the defect.
+
+**The threshold is a property of the pictures, not of the tool.** `kittest.toml` here was a
+byte-identical copy of the sibling repo's, including its 50 — calibrated against ~300 text-heavy
+references — and prose citing two source files that have never existed in this repository. Measured
+fresh on this corpus: floor **0** (two renders byte-identical, and re-comparing at
+`failed_pixel_count_threshold = 0` passes, so the zero is the comparator's rather than
+`md5sum`'s); smallest real break **244** counted pixels, from forcing `Reading::is_rtl` to `false`
+so the layout mirror stops while the text stays Arabic. Set to 20. The floor is **same-machine,
+same-driver** and one machine cannot sample cross-Mesa drift, so the lower bracket is recorded in
+the file as an assumption borrowed from the sibling's measurement rather than a reading taken here.
+
+**And the lane that runs it asserts a non-zero test count.** A cargo test filter is a literal
+substring with no alternation, and one that selects nothing **exits 0 and prints `ok`** — the same
+shape as `--workspace` silently skipping an excluded crate, one layer down. Controlled all three
+ways: the real filter reports 3, a filter matching nothing is caught and exits 1, and the real
+filter does not trip the check.
+
 ## The two rules a verification claim has to satisfy
 
 1. **Name the selector's blind spot before quoting its result.** `--workspace` excludes two

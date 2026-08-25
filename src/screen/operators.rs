@@ -5,10 +5,10 @@ use abdu_egui_ui::widgets::{
     CardGrid, CardGridContent, CardGridEvent, MaxColumns, MinTileWidth, TileHeight,
 };
 use abdu_egui_ui::{Avatar, EmptyState, Label};
-use pos_models::NameScript;
+use pos_models::{NameScript, OperatorRole};
 
 use super::Reading;
-use crate::ui::sign_in::{strings, Intent, OperatorCard};
+use crate::ui::sign_in::{strings, Intent, OperatorCard, Sentence};
 
 /// The narrowest a card may be before the grid drops a column.
 ///
@@ -55,7 +55,7 @@ pub fn render(ui: &mut egui::Ui, operators: &[OperatorCard], reading: Reading) -
         // The accessible name of each card. The operator's own name in the script being read,
         // never the id — a screen reader announcing `op-1` has announced nothing.
         |card: &OperatorCard| card.name().in_script(script).to_owned(),
-        |ui, card: &OperatorCard| draw_card(ui, card, script),
+        |ui, card: &OperatorCard| draw_card(ui, card, script, reading),
     );
 
     match response.event {
@@ -70,7 +70,7 @@ pub fn render(ui: &mut egui::Ui, operators: &[OperatorCard], reading: Reading) -
 }
 
 /// One operator: a face, a name, and what they are allowed to do.
-fn draw_card(ui: &mut egui::Ui, card: &OperatorCard, script: NameScript) {
+fn draw_card(ui: &mut egui::Ui, card: &OperatorCard, script: NameScript, reading: Reading) {
     ui.add(
         Avatar::new()
             .initials(card.name().initials(script))
@@ -82,10 +82,29 @@ fn draw_card(ui: &mut egui::Ui, card: &OperatorCard, script: NameScript) {
     ui.add(Label::new(card.name().in_script(script)).role(TypeRole::TitleMd));
 
     ui.add(
-        Label::new(card.role().to_string())
+        Label::new(reading.of(role_sentence(card.role())))
             .role(TypeRole::BodySm)
             .tone(Tone::Muted),
     );
+}
+
+/// What an operator is, in the language being read.
+///
+/// **Not `OperatorRole::to_string()`, and the difference is not cosmetic.** That `Display` writes
+/// `as_wire_str`, which `pos-models` documents as "the spelling the server and the store both
+/// use" — a protocol token. It rendered `SUPERVISOR`, in Latin capitals, under an Arabic name on
+/// an Arabic till, and layer 1 could not see it: the accessibility tree carried the string the
+/// screen actually drew, so an assertion about it would have agreed with the defect. A picture
+/// caught it.
+///
+/// No catch-all: a fourth role must fail to compile here rather than fall back to the wire
+/// spelling, which is the exact defect this function exists to remove.
+const fn role_sentence(role: OperatorRole) -> Sentence {
+    match role {
+        OperatorRole::Cashier => strings::CASHIER,
+        OperatorRole::Supervisor => strings::SUPERVISOR,
+        OperatorRole::Manager => strings::MANAGER,
+    }
 }
 
 /// Which script an operator's name is shown in.

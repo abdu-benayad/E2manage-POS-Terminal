@@ -576,6 +576,40 @@ staged, which is why it survives review and bites later.
 
 ## Verifying while other sessions edit the same tree
 
+**Run `./scripts/verify.sh`, do not assemble the commands yourself.** It takes the `cargo` lock
+itself, so do **not** wrap it in `lane-lock` — that deadlocks, and the script says so on exit 75.
+
+```bash
+./scripts/verify.sh quick [crate …]   # per task: fmt, clippy+test for what you touched, always
+                                      # plus the root package, where tests/guards.rs lives
+./scripts/verify.sh snapshots         # the geometric RTL references; needs a Vulkan rasterizer
+./scripts/verify.sh sweep             # every lane, including the crates --workspace cannot see
+./scripts/verify.sh lanes             # what each lane runs
+```
+
+`quick` does not run `snapshots`, deliberately: the `image-snapshots` feature pulls a wgpu stack
+into the test build and needs a rasterizer (lavapipe here), which the rest of the suite does not.
+**Run `snapshots` whenever you change anything under `src/screen/`, `src/ui/sign_in/strings.rs`, or
+the environment in `screen::chrome()`** — that lane is the only thing in this repo that can see
+layout, colour or contrast at all. Everything else asserts against the AccessKit tree, which
+carries no fill colour and no geometry: a screen drawn as light widgets on a black panel passes the
+entire both-directions suite. That is measured, not hypothetical — see
+`architecture/lessons/verification-and-false-greens.md#a-green-suite-over-the-wrong-picture--2026-08-25`.
+
+Two rules that come with it, both paid for:
+
+- **`UPDATE_SNAPSHOTS=1` has no oracle — it prints `ok` over whatever it rendered.** A cropped
+  capture, an unreadable render and a correct one are the same output. **Open every PNG before
+  committing it.** Both defects found on 2026-08-25 were found by looking, and one of them was a
+  string the accessibility assertions *agreed with*.
+- **`kittest.toml` is calibrated to this corpus** (floor 0, smallest real break 244, set to 20) and
+  must not be replaced with the sibling repo's. Keep the file even so: kittest's config search
+  crawls to the filesystem root with no workspace boundary, so deleting it silently inherits an
+  ancestor directory's.
+
+The view-layer test vocabulary is `abdu-egui-ui-testing`, a dev-dependency by path on the sibling
+repo (`../abdu-egui-ui/abdu-egui-ui-testing`); its guide is `abdu-egui-ui/docs/testing-consumers.md`.
+
 **Verify what you touched.** `cargo test --workspace` and `cargo clippy --workspace -- -D warnings`
 share one `target/` with every other session here, and switching between the vendored and crates.io
 modes re-resolves and rebuilds the lot (see Vendor Directory). Prefer `cargo test -p pos-services`,
