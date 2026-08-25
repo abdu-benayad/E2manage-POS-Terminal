@@ -1,8 +1,8 @@
 # CLAUDE.md
 
 E2Manage POS Terminal — offline-first Point of Sale built with **Rust 1.92** (edition 2021).
-The package currently ships no binary; the egui view layer is tracked by the
-`egui-auth-screen` issue.
+The package ships the workspace's only binary, `e2manage-pos` (`src/main.rs`), returned
+2026-08-24 by `egui-auth-screen`; the remaining screens are tracked by that issue.
 Connects to E2Manage ERP backend via REST APIs, stores data locally in SQLite, supports Arabic/RTL.
 
 **[`architecture/LESSONS.md`](architecture/LESSONS.md) is required reading before you
@@ -20,7 +20,7 @@ the group doc for the theme you are working in.
 cargo build                              # Dev build (mold linker)
 cargo build --release                    # Release (~5 min, thin LTO)
 cargo build --profile release-prod       # Production (~40+ min, full LTO)
-# (no `cargo run`: the package has no binary target until `egui-auth-screen` lands)
+cargo run                                # Runs `e2manage-pos` (needs a display)
 cargo check                              # Type check only
 cargo test                               # All tests
 cargo test --test cart_tests             # Specific test file
@@ -116,9 +116,18 @@ a C toolchain and is not in the vendored tree. Excluding it keeps
 - `hardware/` - Hardware abstraction (printers, scanners)
 - `utils/` - Utility functions
 
-There is no `[[bin]]` target: `src/main.rs`, `build.rs` and the old `ui/` tree went
-with the previous view layer. Do not add a UI dependency here without the
-`egui-auth-screen` issue.
+The `[[bin]]` target came back on 2026-08-24 (`b5d3b5f`): `src/main.rs` starts logging
+first and opens on Splash, and `src/driver.rs` holds `TillServices`. `build.rs` and the
+old `ui/` tree went with the previous view layer and have not returned. Do not add a UI
+dependency here without the `egui-auth-screen` issue.
+
+**`main()` does not construct `PlatformServices`.** It never mentions
+`init_platform_services`, `PolicyService` or the heartbeat, so everything in
+`src/platform.rs` is still unreached — including the policy accessors. **Read a
+zero-callers result there as *not yet wired*, not as dead**, and do not read it as *no
+entry point exists*: this file said exactly that for a day after the binary landed, which
+put a false severity into a filed issue. See
+`till/issue/policy-accessors-return-a-plausible-number-for-not-yet-known`.
 
 ### Key Services (in `pos-services`)
 
